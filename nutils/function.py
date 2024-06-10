@@ -758,17 +758,19 @@ class Custom(Array):
 
 class _CustomEvaluable(evaluable.Array):
 
-    def __init__(self, name, evalf, partial_derivative, args, shape: Tuple[int, ...], dtype: DType, spaces: FrozenSet[str], arguments: types.frozendict, lower_args: LowerArgs) -> None:
-        self.name = name
-        self.custom_evalf = evalf
-        self.custom_partial_derivative = partial_derivative
-        self.args = args
-        self.points_dim = len(lower_args.points_shape)
-        self.lower_args = lower_args
-        self.spaces = spaces
-        self.function_arguments = arguments
-        self.dtype = dtype
-        self.argshape = shape
+    name: str
+    custom_evalf: callable
+    custom_partial_derivative: callable
+    args: Tuple[evaluable.Array, ...]
+    argshape: Tuple[int, ...]
+    dtype: DType
+    spaces: FrozenSet[str]
+    function_arguments: types.frozendict
+    lower_args: LowerArgs
+
+    @property
+    def points_dim(self):
+        return len(self.lower_args.points_shape)
 
     @property
     def dependencies(self):

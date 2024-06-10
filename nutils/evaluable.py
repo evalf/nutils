@@ -134,7 +134,7 @@ class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning):
     pass
 
 
-class Evaluable(types.Singleton):
+class Evaluable(types.DataClass):
     'Base class'
 
     dependencies = util.abstract_property()
@@ -240,8 +240,7 @@ class Evaluable(types.Singleton):
 
 class Tuple(Evaluable):
 
-    def __init__(self, items):
-        self.items = items
+    items: typing.Tuple[Evaluable, ...]
 
     @property
     def dependencies(self):
@@ -704,14 +703,15 @@ class Array(Evaluable):
 class Orthonormal(Array):
     'make a vector orthonormal to a subspace'
 
+    _basis: Array
+    _vector: Array
+
     dtype = float
 
-    def __init__(self, basis: Array, vector: Array):
-        assert isinstance(basis, Array) and basis.ndim >= 2 and basis.dtype not in (bool, complex), f'basis={basis!r}'
-        assert isinstance(vector, Array) and vector.ndim >= 1 and vector.dtype not in (bool, complex), f'vector={vector!r}'
-        assert equalshape(basis.shape[:-1], vector.shape)
-        self._basis = basis
-        self._vector = vector
+    def __post_init__(self):
+        assert isinstance(self._basis, Array) and self._basis.ndim >= 2 and self._basis.dtype not in (bool, complex), f'basis={self._basis!r}'
+        assert isinstance(self._vector, Array) and self._vector.ndim >= 1 and self._vector.dtype not in (bool, complex), f'vector={self._vector!r}'
+        assert equalshape(self._basis.shape[:-1], self._vector.shape)
 
     @property
     def dependencies(self):
@@ -784,12 +784,16 @@ class Orthonormal(Array):
 
 class Constant(Array):
 
+    _value: types.arraydata
+
     dependencies = ()
 
-    def __init__(self, value: types.arraydata):
-        assert isinstance(value, types.arraydata), f'value={value!r}'
-        self._value = value
-        self.value = numpy.asarray(value)
+    def __post_init__(self):
+        assert isinstance(self._value, types.arraydata), f'value={self._value!r}'
+
+    @cached_property
+    def value(self):
+        return numpy.asarray(self._value)
 
     @cached_property
     def dtype(self):
@@ -797,7 +801,7 @@ class Constant(Array):
 
     @cached_property
     def shape(self):
-        return tuple(constant(n) for n in self.value.shape)
+        return tuple(constant(n) for n in self._value.shape)
 
     def _simplified(self):
         if not self.value.any():
@@ -909,11 +913,12 @@ class Constant(Array):
 
 class InsertAxis(Array):
 
-    def __init__(self, func: Array, length: Array):
-        assert isinstance(func, Array), f'func={func!r}'
-        assert _isindex(length), f'length={length!r}'
-        self.func = func
-        self.length = length
+    func: Array
+    length: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array), f'func={self.func!r}'
+        assert _isindex(self.length), f'length={self.length!r}'
 
     @property
     def dependencies(self):
@@ -1049,6 +1054,9 @@ class InsertAxis(Array):
 
 class Transpose(Array):
 
+    func: Array
+    axes: typing.Tuple[int, ...]
+
     def _end(array, *axes, post):
         ndim = array.ndim
         axes = [numeric.normdim(ndim, axis) for axis in axes]
@@ -1061,13 +1069,11 @@ class Transpose(Array):
     to_end = functools.partial(_end, post=tuple)
     from_end = functools.partial(_end, post=util.untake)
 
-    def __init__(self, func: Array, axes: typing.Tuple[int, ...]):
-        assert isinstance(func, Array), f'func={func!r}'
-        assert isinstance(axes, tuple) and all(isinstance(axis, int) for axis in axes), f'axes={axes!r}'
-        assert sorted(axes) == list(range(func.ndim))
-        assert axes != tuple(range(func.ndim))
-        self.func = func
-        self.axes = axes
+    def __post_init__(self):
+        assert isinstance(self.func, Array), f'func={self.func!r}'
+        assert isinstance(self.axes, tuple) and all(isinstance(axis, int) for axis in self.axes), f'axes={self.axes!r}'
+        assert sorted(self.axes) == list(range(self.func.ndim))
+        assert self.axes != tuple(range(self.func.ndim))
 
     @property
     def dependencies(self):
@@ -1242,9 +1248,10 @@ class Transpose(Array):
 
 class Product(Array):
 
-    def __init__(self, func: Array):
-        assert isinstance(func, Array), f'func={func!r}'
-        self.func = func
+    func: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array), f'func={self.func!r}'
 
     @property
     def dependencies(self):
@@ -1284,9 +1291,10 @@ class Inverse(Array):
     treated element-wise.
     '''
 
-    def __init__(self, func: Array):
-        assert isinstance(func, Array) and func.dtype in (float, complex) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
-        self.func = func
+    func: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.dtype in (float, complex) and self.func.ndim >= 2 and _equals_simplified(self.func.shape[-1], self.func.shape[-2]), f'func={self.func!r}'
 
     @property
     def dependencies(self):
@@ -1338,9 +1346,10 @@ class Inverse(Array):
 
 class Determinant(Array):
 
-    def __init__(self, func: Array):
-        assert isarray(func) and func.dtype in (float, complex) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2])
-        self.func = func
+    func: Array
+
+    def __post_init__(self):
+        assert isarray(self.func) and self.func.dtype in (float, complex) and self.func.ndim >= 2 and _equals_simplified(self.func.shape[-1], self.func.shape[-2])
 
     @property
     def dependencies(self):
@@ -1375,10 +1384,11 @@ class Determinant(Array):
 
 class Multiply(Array):
 
-    def __init__(self, funcs: types.frozenmultiset):
-        assert isinstance(funcs, types.frozenmultiset), f'funcs={funcs!r}'
-        self.funcs = funcs
-        func1, func2 = funcs
+    funcs: types.frozenmultiset
+
+    def __post_init__(self):
+        assert isinstance(self.funcs, types.frozenmultiset), f'funcs={self.funcs!r}'
+        func1, func2 = self.funcs
         assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Multiply({}, {})'.format(func1, func2)
 
     @property
@@ -1561,10 +1571,11 @@ class Multiply(Array):
 
 class Add(Array):
 
-    def __init__(self, funcs: types.frozenmultiset):
-        assert isinstance(funcs, types.frozenmultiset) and len(funcs) == 2, f'funcs={funcs!r}'
-        self.funcs = funcs
-        func1, func2 = funcs
+    funcs: types.frozenmultiset
+
+    def __post_init__(self):
+        assert isinstance(self.funcs, types.frozenmultiset) and len(self.funcs) == 2, f'funcs={self.funcs!r}'
+        func1, func2 = self.funcs
         assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Add({}, {})'.format(func1, func2)
 
     @property
@@ -1710,30 +1721,32 @@ class Add(Array):
 
 class Einsum(Array):
 
-    def __init__(self, args: typing.Tuple[Array, ...], args_idx: typing.Tuple[typing.Tuple[int, ...], ...], out_idx: typing.Tuple[int, ...]):
-        assert isinstance(args, tuple) and all(isinstance(arg, Array) for arg in args), f'arg={arg!r}'
-        assert isinstance(args_idx, tuple) and all(isinstance(arg_idx, tuple) and all(isinstance(n, int) for n in arg_idx) for arg_idx in args_idx), f'args_idx={args_idx!r}'
-        assert isinstance(out_idx, tuple) and all(isinstance(n, int) for n in out_idx) and len(out_idx) == len(set(out_idx)), f'out_idx={out_idx!r}'
-        assert len(args_idx) == len(args) and all(len(idx) == arg.ndim for idx, arg in zip(args_idx, args)), f'len(args_idx)={len(args_idx)}, len(args)={len(args)}'
-        dtype = args[0].dtype
-        if dtype == bool or any(arg.dtype != dtype for arg in args[1:]):
+    args: typing.Tuple[Array, ...]
+    args_idx: typing.Tuple[typing.Tuple[int, ...], ...]
+    out_idx: typing.Tuple[int, ...]
+
+    def __post_init__(self):
+        assert isinstance(self.args, tuple) and all(isinstance(arg, Array) for arg in self.args), f'arg={arg!r}'
+        assert isinstance(self.args_idx, tuple) and all(isinstance(arg_idx, tuple) and all(isinstance(n, int) for n in arg_idx) for arg_idx in self.args_idx), f'args_idx={self.args_idx!r}'
+        assert isinstance(self.out_idx, tuple) and all(isinstance(n, int) for n in self.out_idx) and len(self.out_idx) == len(set(self.out_idx)), f'out_idx={self.out_idx!r}'
+        assert len(self.args_idx) == len(self.args) and all(len(idx) == arg.ndim for idx, arg in zip(self.args_idx, self.args)), f'len(args_idx)={len(self.args_idx)}, len(args)={len(self.args)}'
+        dtype = self.args[0].dtype
+        if dtype == bool or any(arg.dtype != dtype for arg in self.args[1:]):
             raise ValueError('Inconsistent or invalid dtypes.')
         lengths = {}
-        for idx, arg in zip(args_idx, args):
+        for idx, arg in zip(self.args_idx, self.args):
             for i, length in zip(idx, arg.shape):
                 if i not in lengths:
                     lengths[i] = length
                 elif not _equals_simplified(lengths[i], length):
                     raise ValueError('Axes with index {} have different lengths.'.format(i))
-        try:
-            shape = tuple(lengths[i] for i in out_idx)
-        except KeyError:
-            raise ValueError('Output axis {} is not listed in any of the arguments.'.format(', '.join(i for i in out_idx if i not in lengths)))
-        self.args = args
-        self.args_idx = args_idx
-        self.out_idx = out_idx
-        self._einsumfmt = ','.join(''.join(chr(97+i) for i in idx) for idx in args_idx) + '->' + ''.join(chr(97+i) for i in out_idx)
-        self._has_summed_axes = len(lengths) > len(out_idx)
+        for i in self.out_idx:
+            if i not in lengths:
+                raise ValueError(f'Output axis {i} is not listed in any of the arguments.')
+
+    @cached_property
+    def _einsumfmt(self):
+        return ','.join(''.join(chr(97+i) for i in idx) for idx in self.args_idx) + '->' + ''.join(chr(97+i) for i in self.out_idx)
 
     @property
     def dependencies(self):
@@ -1768,10 +1781,14 @@ class Einsum(Array):
 
 class Sum(Array):
 
-    def __init__(self, func: Array):
-        assert isinstance(func, Array), f'func={func!r}'
-        self.func = func
-        self.evalf = functools.partial(numpy.any if func.dtype == bool else numpy.sum, axis=-1)
+    func: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array), f'func={self.func!r}'
+
+    @cached_property
+    def evalf(self):
+        return functools.partial(numpy.any if self.func.dtype == bool else numpy.sum, axis=-1)
 
     @property
     def dependencies(self):
@@ -1849,9 +1866,10 @@ class Sum(Array):
 
 class TakeDiag(Array):
 
-    def __init__(self, func: Array):
-        assert isinstance(func, Array) and func.ndim >= 2 and _equals_simplified(*func.shape[-2:]), f'func={func!r}'
-        self.func = func
+    func: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.ndim >= 2 and _equals_simplified(*self.func.shape[-2:]), f'func={self.func!r}'
 
     @property
     def dependencies(self):
@@ -1906,11 +1924,12 @@ class TakeDiag(Array):
 
 class Take(Array):
 
-    def __init__(self, func: Array, indices: Array):
-        assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
-        assert isinstance(indices, Array) and indices.dtype == int, f'indices={indices!r}'
-        self.func = func
-        self.indices = indices
+    func: Array
+    indices: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.ndim > 0, f'func={self.func!r}'
+        assert isinstance(self.indices, Array) and self.indices.dtype == int, f'indices={self.indices!r}'
 
     @property
     def dependencies(self):
@@ -1966,12 +1985,13 @@ class Take(Array):
 
 class Power(Array):
 
-    def __init__(self, func: Array, power: Array):
-        assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
-        assert isinstance(power, Array) and (power.dtype in (float, complex) or power.dtype == int and power._intbounds[0] >= 0), f'power={power!r}'
-        assert equalshape(func.shape, power.shape) and func.dtype == power.dtype, 'Power({}, {})'.format(func, power)
-        self.func = func
-        self.power = power
+    func: Array
+    power: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.dtype != bool, f'func={self.func!r}'
+        assert isinstance(self.power, Array) and (self.power.dtype in (float, complex) or self.power.dtype == int and self.power._intbounds[0] >= 0), f'power={self.power!r}'
+        assert equalshape(self.func.shape, self.power.shape) and self.func.dtype == self.power.dtype, 'Power({}, {})'.format(self.func, self.power)
 
     @property
     def dependencies(self):
@@ -2044,23 +2064,16 @@ class Pointwise(Array):
     '''
 
     deriv = None
+    parameters = ()
+    dependencies = util.abstract_property()
 
-    def __init__(self, *args: Array, **params):
-        assert all(isinstance(arg, Array) for arg in args), f'args={args!r}'
-        shape0 = args[0].shape
-        assert all(equalshape(arg.shape, shape0) for arg in args[1:]), 'pointwise arguments have inconsistent shapes'
-        self.args = args
-        self.params = params
-        if params:
-            self.evalf = functools.partial(self.evalf, **params)
-
-    @property
-    def dependencies(self):
-        return self.args
+    def __post_init__(self):
+        shape0 = self.dependencies[0].shape
+        assert all(equalshape(arg.shape, shape0) for arg in self.dependencies[1:]), 'pointwise arguments have inconsistent shapes'
 
     @cached_property
     def shape(self):
-        return self.args[0].shape
+        return self.dependencies[0].shape
 
     def _newargs(self, *args):
         '''
@@ -2068,7 +2081,7 @@ class Pointwise(Array):
         as these are considered part of the type.
         '''
 
-        return self.__class__(*args, **self.params)
+        return self.__class__(*args, *self.parameters)
 
     @classmethod
     def outer(cls, *args):
@@ -2088,10 +2101,10 @@ class Pointwise(Array):
         return cls(*(prependaxes(appendaxes(arg, shape[r:]), shape[:l]) for arg, l, r in zip(args, offsets[:-1], offsets[1:])))
 
     def _simplified(self):
-        if len(self.args) == 1 and isinstance(self.args[0], Transpose):
-            arg, = self.args
+        if len(self.dependencies) == 1 and isinstance(self.dependencies[0], Transpose):
+            arg, = self.dependencies
             return Transpose(self._newargs(arg.func), arg.axes)
-        *uninserted, where = unalign(*self.args)
+        *uninserted, where = unalign(*self.dependencies)
         if len(where) != self.ndim:
             return align(self._newargs(*uninserted), where, self.shape)
 
@@ -2099,18 +2112,18 @@ class Pointwise(Array):
         if self.dtype == complex or var.dtype == complex:
             raise NotImplementedError('The complex derivative is not implemented.')
         elif self.deriv is not None:
-            return util.sum(einsum('A,AB->AB', deriv(*self.args, **self.params), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
+            return util.sum(einsum('A,AB->AB', deriv(*self.dependencies, *self.parameters), derivative(arg, var, seen)) for arg, deriv in zip(self.dependencies, self.deriv))
         else:
             return super()._derivative(var, seen)
 
     def _takediag(self, axis1, axis2):
-        return self._newargs(*[_takediag(arg, axis1, axis2) for arg in self.args])
+        return self._newargs(*[_takediag(arg, axis1, axis2) for arg in self.dependencies])
 
     def _take(self, index, axis):
-        return self._newargs(*[_take(arg, index, axis) for arg in self.args])
+        return self._newargs(*[_take(arg, index, axis) for arg in self.dependencies])
 
     def _unravel(self, axis, shape):
-        return self._newargs(*[unravel(arg, axis, shape) for arg in self.args])
+        return self._newargs(*[unravel(arg, axis, shape) for arg in self.dependencies])
 
 
 class Holomorphic(Pointwise):
@@ -2118,16 +2131,21 @@ class Holomorphic(Pointwise):
     Abstract base class for holomorphic array functions.
     '''
 
+    arg: Array
+
+    @property
+    def dependencies(self):
+        return self.arg,
+
     @cached_property
     def dtype(self):
-        arg, = self.args
-        if arg.dtype not in (float, complex):
-            raise ValueError(f'{self.__class__.__name__} is not defined for arguments of dtype {arg.dtype}')
-        return arg.dtype
+        if self.arg.dtype not in (float, complex):
+            raise ValueError(f'{self.__class__.__name__} is not defined for arguments of dtype {self.arg.dtype}')
+        return self.arg.dtype
 
     def _derivative(self, var, seen):
         if self.deriv is not None:
-            return util.sum(einsum('A,AB->AB', deriv(*self.args, **self.params), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
+            return util.sum(einsum('A,AB->AB', deriv(*self.dependencies, *self.parameters), derivative(arg, var, seen)) for arg, deriv in zip(self.dependencies, self.deriv))
         else:
             return super()._derivative(var, seen)
 
@@ -2138,40 +2156,47 @@ class Reciprocal(Holomorphic):
         return _pyast.Variable('numpy').get_attr('reciprocal').call(value)
 
 
-class Negative(Pointwise):
+class Negative(Holomorphic):
 
     def _compile_expression(self, py_self, value):
         return _pyast.UnaryOp('-', value)
 
     @cached_property
     def dtype(self):
-        T = self.args[0].dtype
+        T = self.arg.dtype
         if T == bool:
             raise ValueError('boolean values cannot be negated')
         return T
 
     def _intbounds_impl(self):
-        lower, upper = self.args[0]._intbounds
+        lower, upper = self.arg._intbounds
         return -upper, -lower
 
 
 class FloorDivide(Pointwise):
+
+    dividend: Array
+    divisor: Array
+
+    @property
+    def dependencies(self):
+        return self.dividend, self.divisor
 
     def _compile_expression(self, py_self, dividend, divisor):
         return _pyast.BinOp(dividend, '//', divisor)
 
     @cached_property
     def dtype(self):
-        dividend, divisor = [arg.dtype for arg in self.args]
-        if dividend != divisor:
+        dtype = self.dividend.dtype
+        if self.divisor.dtype != dtype:
             raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
-        if dividend == bool:
+        if dtype == bool:
             raise ValueError(f'The boolean floor division is not supported.')
-        return dividend
+        return dtype
 
     def _intbounds_impl(self):
-        lower, upper = self.args[0]._intbounds
-        divisor_lower, divisor_upper = self.args[1]._intbounds
+        lower, upper = self.dividend._intbounds
+        divisor_lower, divisor_upper = self.divisor._intbounds
         if divisor_upper < 0:
             divisor_lower, divisor_upper = -divisor_upper, -divisor_lower
             lower, upper = -upper, -lower
@@ -2191,18 +2216,24 @@ class FloorDivide(Pointwise):
 
 class Absolute(Pointwise):
 
+    arg: Array
+
+    @property
+    def dependencies(self):
+        return self.arg,
+
     def _compile_expression(self, py_self, value):
         return _pyast.Variable('numpy').get_attr('absolute').call(value)
 
     @cached_property
     def dtype(self):
-        T = self.args[0].dtype
+        T = self.arg.dtype
         if T == bool:
             raise ValueError('The boolean absolute value is not implemented.')
         return float if T == complex else T
 
     def _intbounds_impl(self):
-        lower, upper = self.args[0]._intbounds
+        lower, upper = self.arg._intbounds
         extrema = builtins.abs(lower), builtins.abs(upper)
         if lower <= 0 and upper >= 0:
             return 0, max(extrema)
@@ -2216,8 +2247,7 @@ class Cos(Holomorphic):
     deriv = lambda x: -Sin(x),
 
     def _simplified(self):
-        arg, = self.args
-        if iszero(arg):
+        if iszero(self.arg):
             return ones(self.shape, dtype=self.dtype)
         return super()._simplified()
 
@@ -2228,8 +2258,7 @@ class Sin(Holomorphic):
     deriv = Cos,
 
     def _simplified(self):
-        arg, = self.args
-        if iszero(arg):
+        if iszero(self.arg):
             return zeros(self.shape, dtype=self.dtype)
         return super()._simplified()
 
@@ -2259,7 +2288,14 @@ class ArcTan(Holomorphic):
 
 
 class Sinc(Holomorphic):
-    evalf = staticmethod(numeric.sinc)
+
+    n: int = 0
+
+    @property
+    def parameters(self):
+        return self.n,
+
+    evalf = lambda self, x: numeric.sinc(x, self.n)
     deriv = lambda x, n: Sinc(x, n=n+1),
 
 
@@ -2299,25 +2335,31 @@ class Log(Holomorphic):
 
 class Mod(Pointwise):
 
+    dividend: Array
+    divisor: Array
+
+    @property
+    def dependencies(self):
+        return self.dividend, self.divisor
+
     def _compile_expression(self, py_self, dividend, divisor):
         return _pyast.BinOp(dividend, '%', divisor)
 
     @cached_property
     def dtype(self):
-        dividend, divisor = [arg.dtype for arg in self.args]
-        if dividend != divisor:
+        dtype = self.dividend.dtype
+        if self.divisor.dtype != dtype:
             raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
-        if dividend == bool:
+        if dtype == bool:
             raise ValueError(f'The boolean floor division is not supported.')
-        if dividend == complex:
+        if dtype == complex:
             raise ValueError(f'The complex floor division is not supported.')
-        return dividend
+        return dtype
 
     def _intbounds_impl(self):
-        dividend, divisor = self.args
-        lower_divisor, upper_divisor = divisor._intbounds
+        lower_divisor, upper_divisor = self.divisor._intbounds
         if lower_divisor > 0:
-            lower_dividend, upper_dividend = dividend._intbounds
+            lower_dividend, upper_dividend = self.dividend._intbounds
             if 0 <= lower_dividend and upper_dividend < lower_divisor:
                 return lower_dividend, upper_dividend
             else:
@@ -2326,59 +2368,79 @@ class Mod(Pointwise):
             return super()._intbounds_impl()
 
     def _simplified(self):
-        dividend, divisor = self.args
-        lower_divisor, upper_divisor = divisor._intbounds
+        lower_divisor, upper_divisor = self.divisor._intbounds
         if lower_divisor > 0:
-            lower_dividend, upper_dividend = dividend._intbounds
+            lower_dividend, upper_dividend = self.dividend._intbounds
             if 0 <= lower_dividend and upper_dividend < lower_divisor:
-                return dividend
+                return self.dividend
         return super()._simplified()
 
 
 class ArcTan2(Pointwise):
+
+    x: Array
+    y: Array
+
+    @property
+    def dependencies(self):
+        return self.x, self.y
+
     evalf = staticmethod(numpy.arctan2)
     deriv = lambda x, y: y / (x**astype(2, x.dtype) + y**astype(2, x.dtype)), lambda x, y: -x / (x**astype(2, x.dtype) + y**astype(2, x.dtype))
 
     @cached_property
     def dtype(self):
-        T1, T2 = [arg.dtype for arg in self.args]
-        if T1 == complex or T2 == complex:
+        if self.x.dtype == complex or self.y.dtype == complex:
             raise ValueError('arctan2 is not defined for complex numbers')
         return float
 
 
 class Greater(Pointwise):
+
+    x: Array
+    y: Array
+
+    @property
+    def dependencies(self):
+        return self.x, self.y
+
     evalf = staticmethod(numpy.greater)
 
     @cached_property
     def dtype(self):
-        T1, T2 = [arg.dtype for arg in self.args]
-        if T1 != T2:
+        dtype = self.x.dtype
+        if self.y.dtype != dtype:
             raise ValueError('Cannot compare different dtypes.')
-        elif T1 == complex:
+        elif dtype == complex:
             raise ValueError('Complex numbers have no total order.')
-        elif T1 == bool:
+        elif dtype == bool:
             raise ValueError('Use logical operators to compare booleans.')
         return bool
 
 
 class Equal(Pointwise):
+
+    x: Array
+    y: Array
+
+    @property
+    def dependencies(self):
+        return self.x, self.y
+
     evalf = staticmethod(numpy.equal)
 
     @cached_property
     def dtype(self):
-        T1, T2 = [arg.dtype for arg in self.args]
-        if T1 != T2:
+        if self.x.dtype != self.y.dtype:
             raise ValueError('Cannot compare different dtypes.')
         return bool
 
     def _simplified(self):
-        a1, a2 = self.args
-        if a1 == a2:
+        if self.x == self.y:
             return ones(self.shape, bool)
         if self.ndim == 2:
-            u1, w1 = unalign(a1)
-            u2, w2 = unalign(a2)
+            u1, w1 = unalign(self.x)
+            u2, w2 = unalign(self.y)
             if u1.ndim == u2.ndim == 1 and u1 == u2 and w1 != w2 and isinstance(u1, Range):
                 # NOTE: Once we introduce isunique we can relax the Range bound
                 return Diagonalize(ones(u1.shape, bool))
@@ -2386,137 +2448,189 @@ class Equal(Pointwise):
 
 
 class Less(Pointwise):
+
+    x: Array
+    y: Array
+
+    @property
+    def dependencies(self):
+        return self.x, self.y
+
     evalf = staticmethod(numpy.less)
 
     @cached_property
     def dtype(self):
-        T1, T2 = [arg.dtype for arg in self.args]
-        if T1 != T2:
+        dtype = self.x.dtype
+        if self.y.dtype != dtype:
             raise ValueError('Cannot compare different dtypes.')
-        elif T1 == complex:
+        elif dtype == complex:
             raise ValueError('Complex numbers have no total order.')
-        elif T1 == bool:
+        elif dtype == bool:
             raise ValueError('Use logical operators to compare booleans.')
         return bool
 
 
 class LogicalNot(Pointwise):
+
+    x: Array
+
+    @property
+    def dependencies(self):
+        return self.x,
+
     evalf = staticmethod(numpy.logical_not)
 
     @cached_property
     def dtype(self):
-        T = self.args[0].dtype
-        if T != bool:
+        if self.x.dtype != bool:
             raise ValueError(f'Expected a boolean but got {T}.')
         return bool
 
     def _simplified(self):
-        arg, = self.args
-        if isinstance(arg, LogicalNot):
-            return arg.args[0]
+        if isinstance(self.x, LogicalNot):
+            return self.x.x
         return super()._simplified()
 
 
 class Minimum(Pointwise):
+
+    x: Array
+    y: Array
+
+    @property
+    def dependencies(self):
+        return self.x, self.y
+
     evalf = staticmethod(numpy.minimum)
     deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
 
     @cached_property
     def dtype(self):
-        T1, T2 = [arg.dtype for arg in self.args]
+        T1 = self.x.dtype
+        T2 = self.y.dtype
         if T1 == complex or T2 == complex:
             raise ValueError('Complex numbers have no total order.')
         return float if float in (T1, T2) else int if int in (T1, T2) else bool
 
     def _simplified(self):
         if self.dtype == int:
-            lower1, upper1 = self.args[0]._intbounds
-            lower2, upper2 = self.args[1]._intbounds
+            lower1, upper1 = self.x._intbounds
+            lower2, upper2 = self.y._intbounds
             if upper1 <= lower2:
-                return self.args[0]
+                return self.x
             elif upper2 <= lower1:
-                return self.args[1]
+                return self.y
         return super()._simplified()
 
     def _intbounds_impl(self):
-        lower1, upper1 = self.args[0]._intbounds
-        lower2, upper2 = self.args[1]._intbounds
+        lower1, upper1 = self.x._intbounds
+        lower2, upper2 = self.y._intbounds
         return min(lower1, lower2), min(upper1, upper2)
 
 
 class Maximum(Pointwise):
+
+    x: Array
+    y: Array
+
+    @property
+    def dependencies(self):
+        return self.x, self.y
+
     evalf = staticmethod(numpy.maximum)
     deriv = lambda x, y: .5 + .5 * Sign(x - y), lambda x, y: .5 - .5 * Sign(x - y)
 
     @cached_property
     def dtype(self):
-        T1, T2 = [arg.dtype for arg in self.args]
+        T1 = self.x.dtype
+        T2 = self.y.dtype
         if T1 == complex or T2 == complex:
             raise ValueError('Complex numbers have no total order.')
         return float if float in (T1, T2) else int if int in (T1, T2) else bool
 
     def _simplified(self):
         if self.dtype == int:
-            lower1, upper1 = self.args[0]._intbounds
-            lower2, upper2 = self.args[1]._intbounds
+            lower1, upper1 = self.x._intbounds
+            lower2, upper2 = self.y._intbounds
             if upper2 <= lower1:
-                return self.args[0]
+                return self.x
             elif upper1 <= lower2:
-                return self.args[1]
+                return self.y
         return super()._simplified()
 
     def _intbounds_impl(self):
-        lower1, upper1 = self.args[0]._intbounds
-        lower2, upper2 = self.args[1]._intbounds
+        lower1, upper1 = self.x._intbounds
+        lower2, upper2 = self.y._intbounds
         return max(lower1, lower2), max(upper1, upper2)
 
 
 class Conjugate(Pointwise):
+
+    arg: Array
+
+    @property
+    def dependencies(self):
+        return self.arg,
+
     evalf = staticmethod(numpy.conjugate)
 
     @cached_property
     def dtype(self):
-        T = self.args[0].dtype
+        T = self.arg.dtype
         if T != complex:
             raise ValueError(f'Conjugate is not defined for arguments of type {T}')
         return complex
 
     def _simplified(self):
-        retval = self.args[0]._conjugate()
+        retval = self.arg._conjugate()
         if retval is not None:
             return retval
         return super()._simplified()
 
 
 class Real(Pointwise):
+
+    arg: Array
+
+    @property
+    def dependencies(self):
+        return self.arg,
+
     evalf = staticmethod(numpy.real)
 
     @cached_property
     def dtype(self):
-        T = self.args[0].dtype
+        T = self.arg.dtype
         if T != complex:
             raise ValueError(f'Real is not defined for arguments of type {T}')
         return float
 
     def _simplified(self):
-        retval = self.args[0]._real()
+        retval = self.arg._real()
         if retval is not None:
             return retval
         return super()._simplified()
 
 
 class Imag(Pointwise):
+
+    arg: Array
+
+    @property
+    def dependencies(self):
+        return self.arg,
+
     evalf = staticmethod(numpy.imag)
 
     @cached_property
     def dtype(self):
-        T = self.args[0].dtype
+        T = self.arg.dtype
         if T != complex:
             raise ValueError(f'Real is not defined for arguments of type {T}')
         return float
 
     def _simplified(self):
-        retval = self.args[0]._imag()
+        retval = self.arg._imag()
         if retval is not None:
             return retval
         return super()._simplified()
@@ -2524,26 +2638,35 @@ class Imag(Pointwise):
 
 class Cast(Pointwise):
 
+    arg: Array
+
+    @property
+    def dependencies(self):
+        return self.arg,
+
+    @property
+    def dependencies(self):
+        return self.arg,
+
     def _compile_expression(self, py_self, arg):
         return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=_pyast.Variable(self.dtype.__name__))
 
     def _simplified(self):
-        arg, = self.args
-        if iszero(arg):
+        if iszero(self.arg):
             return zeros_like(self)
-        for axis, parts in arg._inflations:
+        for axis, parts in self.arg._inflations:
             return util.sum(_inflate(self._newargs(func), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
         return super()._simplified()
 
     def _intbounds_impl(self):
-        if self.args[0].dtype == bool:
+        if self.arg.dtype == bool:
             return 0, 1
         else:
-            return self.args[0]._intbounds
+            return self.arg._intbounds
 
     @property
     def _const_uniform(self):
-        value = self.args[0]._const_uniform
+        value = self.arg._const_uniform
         if value is not None:
             return self.dtype(value)
 
@@ -2552,7 +2675,7 @@ class BoolToInt(Cast):
 
     @cached_property
     def dtype(self):
-        T = self.args[0].dtype
+        T = self.arg.dtype
         if T != bool:
             raise TypeError(f'Expected an array with dtype bool but got {T.__name__}.')
         return int
@@ -2562,28 +2685,28 @@ class IntToFloat(Cast):
 
     @cached_property
     def dtype(self):
-        T = self.args[0].dtype
+        T = self.arg.dtype
         if T != int:
             raise TypeError(f'Expected an array with dtype int but got {T.__name__}.')
         return float
 
     def _add(self, other):
         if isinstance(other, __class__):
-            return self._newargs(self.args[0] + other.args[0])
+            return self._newargs(self.arg + other.arg)
 
     def _multiply(self, other):
         if isinstance(other, __class__):
-            return self._newargs(self.args[0] * other.args[0])
+            return self._newargs(self.arg * other.arg)
 
     def _sum(self, axis):
-        return self._newargs(sum(self.args[0], axis))
+        return self._newargs(sum(self.arg, axis))
 
     def _product(self):
-        return self._newargs(product(self.args[0], -1))
+        return self._newargs(product(self.arg, -1))
 
     def _sign(self):
         assert self.dtype != complex
-        return self._newargs(sign(self.args[0]))
+        return self._newargs(sign(self.arg))
 
     def _derivative(self, var, seen):
         return Zeros(self.shape + var.shape, dtype=self.dtype)
@@ -2593,30 +2716,30 @@ class FloatToComplex(Cast):
 
     @cached_property
     def dtype(self):
-        T = self.args[0].dtype
+        T = self.arg.dtype
         if T != float:
             raise TypeError(f'Expected an array with dtype float but got {T.__name__}.')
         return complex
 
     def _add(self, other):
         if isinstance(other, __class__):
-            return self._newargs(self.args[0] + other.args[0])
+            return self._newargs(self.arg + other.arg)
 
     def _multiply(self, other):
         if isinstance(other, __class__):
-            return self._newargs(self.args[0] * other.args[0])
+            return self._newargs(self.arg * other.arg)
 
     def _sum(self, axis):
-        return self._newargs(sum(self.args[0], axis))
+        return self._newargs(sum(self.arg, axis))
 
     def _product(self):
-        return self._newargs(product(self.args[0], -1))
+        return self._newargs(product(self.arg, -1))
 
     def _real(self):
-        return self.args[0]
+        return self.arg
 
     def _imag(self):
-        return zeros_like(self.args[0])
+        return zeros_like(self.arg)
 
     def _conjugate(self):
         return self
@@ -2624,8 +2747,7 @@ class FloatToComplex(Cast):
     def _derivative(self, var, seen):
         if var.dtype == complex:
             raise ValueError('The complex derivative does not exist.')
-        arg, = self.args
-        return FloatToComplex(derivative(arg, var, seen))
+        return FloatToComplex(derivative(self.arg, var, seen))
 
 
 def astype(arg, dtype):
@@ -2643,9 +2765,10 @@ def astype(arg, dtype):
 
 class Sign(Array):
 
-    def __init__(self, func: Array):
-        assert isinstance(func, Array) and func.dtype != complex, f'func={func!r}'
-        self.func = func
+    func: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.dtype != complex, f'func={self.func!r}'
 
     @property
     def dependencies(self):
@@ -2700,21 +2823,20 @@ class Sampled(Array):
         Interpolation scheme to map points to target: "none" or "nearest".
     '''
 
+    points: Array
+    target: Array
+    interpolation: str
+
     dtype = float
 
-    def __init__(self, points: Array, target: Array, interpolation: str):
-        assert isinstance(points, Array) and points.ndim == 2, f'points={points!r}'
-        assert isinstance(target, Array) and target.ndim == 2, f'target={target!r}'
-        assert points.shape[1] == target.shape[1]
-        self.points = points
-        self.target = target
-        self.interpolation = interpolation
-        if interpolation == 'none':
-            self.evalf = self.evalf_none
-        elif interpolation == 'nearest':
-            self.evalf = self.evalf_nearest
-        else:
-            raise ValueError(f'invalid interpolation {interpolation!r}; valid values are "none" and "nearest"')
+    def __post_init__(self):
+        assert isinstance(self.points, Array) and self.points.ndim == 2, f'points={self.points!r}'
+        assert isinstance(self.target, Array) and self.target.ndim == 2, f'target={self.target!r}'
+        assert self.points.shape[1] == self.target.shape[1]
+
+    @property
+    def evalf(self):
+        return self.evalf_methods[self.interpolation]
 
     @property
     def dependencies(self):
@@ -2724,16 +2846,16 @@ class Sampled(Array):
     def shape(self):
         return self.points.shape[0], self.target.shape[0]
 
-    @staticmethod
     def evalf_none(points, target):
         if points.shape != target.shape or not numpy.equal(points, target).all():
             raise ValueError('points do not correspond to the target sample; consider using "nearest" interpolation if this is desired')
         return numpy.eye(len(points))
 
-    @staticmethod
     def evalf_nearest(points, target):
         nearest = numpy.linalg.norm(points[:,numpy.newaxis,:] - target[numpy.newaxis,:,:], axis=2).argmin(axis=1)
         return numpy.eye(len(target))[nearest]
+
+    evalf_methods = dict(none=evalf_none, nearest=evalf_nearest)
 
 
 def Elemwise(data: typing.Tuple[types.arraydata, ...], index: Array, dtype: Dtype):
@@ -2770,13 +2892,20 @@ def Elemwise(data: typing.Tuple[types.arraydata, ...], index: Array, dtype: Dtyp
 
 class Eig(Evaluable):
 
-    def __init__(self, func: Array, symmetric: bool = False):
-        assert isinstance(func, Array) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
-        assert isinstance(symmetric, bool), f'symmetric={symmetric!r}'
-        self.symmetric = symmetric
-        self.func = func
-        self._w_dtype = float if symmetric else complex
-        self._vt_dtype = float if symmetric and func.dtype != complex else complex
+    func: Array
+    symmetric: bool = False
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.ndim >= 2 and _equals_simplified(self.func.shape[-1], self.func.shape[-2]), f'func={self.func!r}'
+        assert isinstance(self.symmetric, bool), f'symmetric={self.symmetric!r}'
+
+    @property
+    def _w_dtype(self):
+        return float if self.symmetric else complex
+
+    @property
+    def _vt_dtype(self):
+        return float if self.symmetric and self.func.dtype != complex else complex
 
     @property
     def dependencies(self):
@@ -2808,13 +2937,14 @@ class Eig(Evaluable):
 
 class ArrayFromTuple(Array):
 
-    def __init__(self, arrays: Evaluable, index: int, shape: typing.Tuple[Array, ...], dtype: Dtype):
-        assert isinstance(arrays, Evaluable), f'arrays={arrays!r}'
-        assert isinstance(index, int), f'index=f{index}'
-        self.arrays = arrays
-        self.index = index
-        self.shape = shape
-        self.dtype = dtype
+    arrays: Evaluable
+    index: int
+    shape: typing.Tuple[Array, ...]
+    dtype: Dtype
+
+    def __post_init__(self):
+        assert isinstance(self.arrays, Evaluable), f'arrays={self.arrays!r}'
+        assert isinstance(self.index, int), f'index={self.index!r}'
 
     @property
     def dependencies(self):
@@ -2845,12 +2975,13 @@ class ArrayFromTuple(Array):
 
 class Singular(Array):
 
+    dtype: Dtype
+
     shape = ()
     dependencies = ()
 
-    def __init__(self, dtype):
-        assert dtype in (float, complex), 'Singular dtype must be float or complex'
-        self.dtype = dtype
+    def __post_init__(self):
+        assert self.dtype in (float, complex), 'Singular dtype must be float or complex'
 
     def evalf(self):
         warnings.warn('singular matrix', RuntimeWarning)
@@ -2860,9 +2991,8 @@ class Singular(Array):
 class Zeros(Array):
     'zero'
 
-    def __init__(self, shape, dtype):
-        self.shape = shape
-        self.dtype = dtype
+    shape: typing.Tuple[Array, ...]
+    dtype: Dtype
 
     @property
     def dependencies(self):
@@ -2945,15 +3075,15 @@ class Zeros(Array):
 
 class Inflate(Array):
 
-    def __init__(self, func: Array, dofmap: Array, length: Array):
-        assert isinstance(func, Array), f'func={func!r}'
-        assert isinstance(dofmap, Array), f'dofmap={dofmap!r}'
-        assert _isindex(length), f'length={length!r}'
-        assert equalshape(func.shape[func.ndim-dofmap.ndim:], dofmap.shape), f'func.shape={func.shape!r}, dofmap.shape={dofmap.shape!r}'
-        self.func = func
-        self.dofmap = dofmap
-        self.length = length
-        self.warn = not dofmap.isconstant
+    func: Array
+    dofmap: Array
+    length: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array), f'func={self.func!r}'
+        assert isinstance(self.dofmap, Array), f'dofmap={self.dofmap!r}'
+        assert _isindex(self.length), f'length={self.length!r}'
+        assert equalshape(self.func.shape[self.func.ndim-self.dofmap.ndim:], self.dofmap.shape), f'func.shape={self.func.shape!r}, dofmap.shape={self.dofmap.shape!r}'
 
     @property
     def dependencies(self):
@@ -2994,7 +3124,7 @@ class Inflate(Array):
     def evalf(self, array, indices, length):
         assert indices.ndim == self.dofmap.ndim
         assert length.ndim == 0
-        if self.warn and int(length) > indices.size:
+        if not self.dofmap.isconstant and int(length) > indices.size:
             warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
         inflated = numpy.zeros(array.shape[:array.ndim-indices.ndim] + (length,), dtype=self.dtype)
         numpy.add.at(inflated, (slice(None),)*(self.ndim-1)+(indices,), array)
@@ -3093,9 +3223,8 @@ class Inflate(Array):
 
 class SwapInflateTake(Evaluable):
 
-    def __init__(self, inflateidx, takeidx):
-        self.inflateidx = inflateidx
-        self.takeidx = takeidx
+    inflateidx: Array
+    takeidx: Array
 
     @property
     def dependencies(self):
@@ -3145,9 +3274,10 @@ class SwapInflateTake(Evaluable):
 
 class Diagonalize(Array):
 
-    def __init__(self, func: Array):
-        assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
-        self.func = func
+    func: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.ndim > 0, f'func={self.func!r}'
 
     @property
     def dependencies(self):
@@ -3253,9 +3383,10 @@ class Diagonalize(Array):
 class Guard(Array):
     'bar all simplifications'
 
-    def __init__(self, fun: Array):
-        assert isinstance(fun, Array), f'fun={fun!r}'
-        self.fun = fun
+    fun: Array
+
+    def __post_init__(self):
+        assert isinstance(self.fun, Array), f'fun={self.fun!r}'
 
     @property
     def dependencies(self):
@@ -3283,11 +3414,12 @@ class Guard(Array):
 class Find(Array):
     'indices of boolean index vector'
 
+    where: Array
+
     dtype = int
 
-    def __init__(self, where: Array):
-        assert isarray(where) and where.ndim == 1 and where.dtype == bool
-        self.where = where
+    def __post_init__(self):
+        assert isarray(self.where) and self.where.ndim == 1 and self.where.dtype == bool
 
     @property
     def dependencies(self):
@@ -3334,38 +3466,37 @@ class WithDerivative(Array):
     :class:`IdentifierDerivativeTarget` : a virtual derivative target
     '''
 
-    def __init__(self, func: Array, var: DerivativeTargetBase, derivative: Array) -> None:
-        self._func = func
-        self._var = var
-        self._deriv = derivative
+    func: Array
+    var: DerivativeTargetBase
+    derivative: Array
 
     @property
     def dependencies(self):
-        return self._func,
+        return self.func,
 
     @cached_property
     def dtype(self):
-        return self._func.dtype
+        return self.func.dtype
 
     @cached_property
     def shape(self):
-        return self._func.shape
+        return self.func.shape
 
     @property
     def arguments(self):
-        return self._func.arguments | {self._var}
+        return self.func.arguments | {self.var}
 
     def _compile(self, builder):
-        return builder.compile(self._func)
+        return builder.compile(self.func)
 
     def _derivative(self, var: DerivativeTargetBase, seen) -> Array:
-        if var == self._var:
-            return self._deriv
+        if var == self.var:
+            return self.derivative
         else:
-            return derivative(self._func, var, seen)
+            return derivative(self.func, var, seen)
 
     def _simplified(self) -> Array:
-        return self._func
+        return self.func
 
 
 class Argument(DerivativeTargetBase):
@@ -3393,12 +3524,13 @@ class Argument(DerivativeTargetBase):
         The shape of this argument.
     '''
 
-    def __init__(self, name: str, shape: typing.Tuple[Array, ...], dtype: Dtype = float):
-        assert isinstance(name, str), f'name={name!r}'
-        assert isinstance(shape, tuple) and all(_isindex(n) for n in shape), f'shape={shape!r}'
-        self._name = name
-        self.dtype = dtype
-        self.shape = shape
+    _name: str
+    shape: typing.Tuple[Array, ...]
+    dtype: Dtype = float
+
+    def __post_init__(self):
+        assert isinstance(self._name, str), f'name={self._name!r}'
+        assert isinstance(self.shape, tuple) and all(_isindex(n) for n in self.shape), f'shape={self.shape!r}'
 
     @property
     def dependencies(self):
@@ -3460,12 +3592,11 @@ class IdentifierDerivativeTarget(DerivativeTargetBase):
     :class:`WithDerivative` : :class:`Array` wrapper with additional derivative
     '''
 
+    identifier: typing.Any
+    shape: typing.Tuple[Array, ...]
+
     dtype = float
     dependencies = ()
-
-    def __init__(self, identifier, shape):
-        self.identifier = identifier
-        self.shape = shape
 
     def _compile(self, builder):
         raise Exception(f'{type(self).__name__} cannot be evaluated')
@@ -3473,9 +3604,10 @@ class IdentifierDerivativeTarget(DerivativeTargetBase):
 
 class Ravel(Array):
 
-    def __init__(self, func: Array):
-        assert isinstance(func, Array) and func.ndim >= 2, f'func={func!r}'
-        self.func = func
+    func: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.ndim >= 2, f'func={self.func!r}'
 
     @property
     def dependencies(self):
@@ -3597,14 +3729,15 @@ class Ravel(Array):
 
 class Unravel(Array):
 
-    def __init__(self, func: Array, sh1: Array, sh2: Array):
-        assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
-        assert _isindex(sh1), f'sh1={sh1!r}'
-        assert _isindex(sh2), f'sh2={sh2!r}'
-        assert _equals_simplified(func.shape[-1], sh1 * sh2)
-        self.sh1 = sh1
-        self.sh2 = sh2
-        self.func = func
+    func: Array
+    sh1: Array
+    sh2: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.ndim > 0, f'func={self.func!r}'
+        assert _isindex(self.sh1), f'sh1={self.sh1!r}'
+        assert _isindex(self.sh2), f'sh2={self.sh2!r}'
+        assert _equals_simplified(self.func.shape[-1], self.sh1 * self.sh2)
 
     @property
     def dependencies(self):
@@ -3652,18 +3785,22 @@ class Unravel(Array):
 
 class RavelIndex(Array):
 
+    _ia: Array
+    _ib: Array
+    _na: Array
+    _nb: Array
+
     dtype = int
 
-    def __init__(self, ia: Array, ib: Array, na: Array, nb: Array):
-        assert isinstance(ia, Array), f'ia={ia!r}'
-        assert isinstance(ib, Array), f'ib={ib!r}'
-        assert _isindex(na), f'na={na!r}'
-        assert _isindex(nb), f'nb={nb!r}'
-        self._ia = ia
-        self._ib = ib
-        self._na = na
-        self._nb = nb
-        self._length = na * nb
+    def __post_init__(self):
+        assert isinstance(self._ia, Array), f'ia={self._ia!r}'
+        assert isinstance(self._ib, Array), f'ib={self._ib!r}'
+        assert _isindex(self._na), f'na={self._na!r}'
+        assert _isindex(self._nb), f'nb={self._nb!r}'
+
+    @cached_property
+    def _length(self):
+        return self._na * self._nb
 
     @property
     def dependencies(self):
@@ -3706,11 +3843,12 @@ class RavelIndex(Array):
 
 class Range(Array):
 
+    length: Array
+
     dtype = int
 
-    def __init__(self, length: Array):
-        assert _isindex(length), f'length={length!r}'
-        self.length = length
+    def __post_init__(self):
+        assert _isindex(self.length), f'length={self.length!r}'
 
     @property
     def dependencies(self):
@@ -3745,13 +3883,14 @@ class Range(Array):
 
 class InRange(Array):
 
+    index: Array
+    length: Array
+
     dtype = int
 
-    def __init__(self, index: Array, length: Array):
-        assert isinstance(index, Array) and index.dtype == int, f'index={index!r}'
-        assert isinstance(length, Array) and length.dtype == int and length.ndim == 0, f'length={length!r}'
-        self.index = index
-        self.length = length
+    def __post_init__(self):
+        assert isinstance(self.index, Array) and self.index.dtype == int, f'index={self.index!r}'
+        assert isinstance(self.length, Array) and self.length.dtype == int and self.length.ndim == 0, f'length={self.length!r}'
 
     @property
     def dependencies(self):
@@ -3803,14 +3942,18 @@ class Polyval(Array):
         All remaining axes are treated pointwise.
     '''
 
+    coeffs: Array
+    points: Array
+
     dtype = float
 
-    def __init__(self, coeffs: Array, points: Array):
-        assert isinstance(coeffs, Array) and coeffs.dtype == float and coeffs.ndim >= 1, f'coeffs={coeffs!r}'
-        assert isinstance(points, Array) and points.dtype == float and points.ndim >= 1 and points.shape[-1].isconstant, f'points={points!r}'
-        self.points_ndim = int(points.shape[-1])
-        self.coeffs = coeffs
-        self.points = points
+    def __post_init__(self):
+        assert isinstance(self.coeffs, Array) and self.coeffs.dtype == float and self.coeffs.ndim >= 1, f'coeffs={self.coeffs!r}'
+        assert isinstance(self.points, Array) and self.points.dtype == float and self.points.ndim >= 1 and self.points.shape[-1].isconstant, f'points={self.points!r}'
+
+    @cached_property
+    def points_ndim(self):
+        return int(self.points.shape[-1])
 
     @property
     def dependencies(self):
@@ -3864,14 +4007,15 @@ class PolyDegree(Array):
     See :class:`Polyval` for a definition of the polynomial.
     '''
 
+    ncoeffs: Array
+    nvars: int
+
     dtype = int
     shape = ()
 
-    def __init__(self, ncoeffs: Array, nvars: int) -> None:
-        assert isinstance(ncoeffs, Array) and ncoeffs.ndim == 0 and ncoeffs.dtype == int, 'ncoeffs={ncoeffs!r}'
-        assert isinstance(nvars, int) and nvars >= 0, 'nvars={nvars!r}'
-        self.ncoeffs = ncoeffs
-        self.nvars = nvars
+    def __post_init__(self):
+        assert isinstance(self.ncoeffs, Array) and self.ncoeffs.ndim == 0 and self.ncoeffs.dtype == int, 'ncoeffs={self.ncoeffs!r}'
+        assert isinstance(self.nvars, int) and self.nvars >= 0, 'nvars={self.nvars!r}'
 
     @property
     def dependencies(self):
@@ -3911,14 +4055,15 @@ class PolyNCoeffs(Array):
     See :class:`Polyval` for a definition of the polynomial.
     '''
 
+    nvars: int
+    degree: Array
+
     dtype = int
     shape = ()
 
-    def __init__(self, nvars: int, degree: Array) -> None:
-        assert isinstance(degree, Array) and degree.ndim == 0 and degree.dtype == int, f'degree={degree!r}'
-        assert isinstance(nvars, int) and nvars >= 0, 'nvars={nvars!r}'
-        self.nvars = nvars
-        self.degree = degree
+    def __post_init__(self):
+        assert isinstance(self.degree, Array) and self.degree.ndim == 0 and self.degree.dtype == int, f'degree={self.degree!r}'
+        assert isinstance(self.nvars, int) and self.nvars >= 0, 'nvars={self.nvars!r}'
 
     @property
     def dependencies(self):
@@ -3968,17 +4113,24 @@ class PolyMul(Array):
     See :class:`Polyval` for a definition of the polynomial.
     '''
 
+    coeffs_left: Array
+    coeffs_right: Array
+    vars: typing.Tuple[poly.MulVar, ...]
+
     dtype = float
 
-    def __init__(self, coeffs_left: Array, coeffs_right: Array, vars: typing.Tuple[poly.MulVar, ...]):
-        assert isinstance(coeffs_left, Array) and coeffs_left.ndim >= 1 and coeffs_left.dtype == float, f'coeffs_left={coeffs_left!r}'
-        assert isinstance(coeffs_right, Array) and coeffs_right.ndim >= 1 and coeffs_right.dtype == float, f'coeffs_right={coeffs_right!r}'
-        assert equalshape(coeffs_left.shape[:-1], coeffs_right.shape[:-1]), 'PolyMul({}, {})'.format(coeffs_left, coeffs_right)
-        self.coeffs_left = coeffs_left
-        self.coeffs_right = coeffs_right
-        self.vars = vars
-        self.degree_left = PolyDegree(coeffs_left.shape[-1], builtins.sum(var != poly.MulVar.Right for var in vars))
-        self.degree_right = PolyDegree(coeffs_right.shape[-1], builtins.sum(var != poly.MulVar.Left for var in vars))
+    def __post_init__(self):
+        assert isinstance(self.coeffs_left, Array) and self.coeffs_left.ndim >= 1 and self.coeffs_left.dtype == float, f'coeffs_left={self.coeffs_left!r}'
+        assert isinstance(self.coeffs_right, Array) and self.coeffs_right.ndim >= 1 and self.coeffs_right.dtype == float, f'coeffs_right={self.coeffs_right!r}'
+        assert equalshape(self.coeffs_left.shape[:-1], self.coeffs_right.shape[:-1]), 'PolyMul({}, {})'.format(self.coeffs_left, self.coeffs_right)
+
+    @cached_property
+    def degree_left(self):
+        return PolyDegree(self.coeffs_left.shape[-1], builtins.sum(var != poly.MulVar.Right for var in self.vars))
+
+    @cached_property
+    def degree_right(self):
+        return PolyDegree(self.coeffs_right.shape[-1], builtins.sum(var != poly.MulVar.Left for var in self.vars))
 
     @property
     def dependencies(self):
@@ -4038,14 +4190,18 @@ class PolyGrad(Array):
     See :class:`Polyval` for a definition of the polynomial.
     '''
 
+    coeffs: Array
+    nvars: int
+
     dtype = float
 
-    def __init__(self, coeffs: Array, nvars: int):
-        assert isinstance(coeffs, Array) and coeffs.dtype == float and coeffs.ndim >= 1, f'coeffs={coeffs!r}'
-        assert isinstance(nvars, int) and nvars >= 0, f'nvars={nvars!r}'
-        self.coeffs = coeffs
-        self.nvars = nvars
-        self.degree = PolyDegree(coeffs.shape[-1], nvars)
+    def __post_init__(self):
+        assert isinstance(self.coeffs, Array) and self.coeffs.dtype == float and self.coeffs.ndim >= 1, f'coeffs={self.coeffs!r}'
+        assert isinstance(self.nvars, int) and self.nvars >= 0, f'nvars={self.nvars!r}'
+
+    @cached_property
+    def degree(self):
+        return PolyDegree(self.coeffs.shape[-1], self.nvars)
 
     @property
     def dependencies(self):
@@ -4096,13 +4252,14 @@ class Legendre(Array):
         The degree of the last polynomial of the series.
     '''
 
+    _x: Array
+    _degree: int
+
     dtype = float
 
-    def __init__(self, x: Array, degree: int) -> None:
-        assert isinstance(x, Array) and x.dtype == float, f'x={x!r}'
-        assert isinstance(degree, int) and degree >= 0, f'degree={degree!r}'
-        self._x = x
-        self._degree = degree
+    def __post_init__(self):
+        assert isinstance(self._x, Array) and self._x.dtype == float, f'x={self._x!r}'
+        assert isinstance(self._degree, int) and self._degree >= 0, f'degree={self._degree!r}'
 
     @property
     def dependencies(self):
@@ -4151,12 +4308,13 @@ class Legendre(Array):
 class Choose(Array):
     '''Function equivalent of :func:`numpy.choose`.'''
 
-    def __init__(self, index: Array, choices: Array):
-        assert isinstance(index, Array) and index.dtype == int, f'index={index!r}'
-        assert isinstance(choices, Array), f'choices={choices!r}'
-        assert equalshape(choices.shape[:-1], index.shape)
-        self.index = index
-        self.choices = choices
+    index: Array
+    choices: Array
+
+    def __post_init__(self):
+        assert isinstance(self.index, Array) and self.index.dtype == int, f'index={self.index!r}'
+        assert isinstance(self.choices, Array), f'choices={self.choices!r}'
+        assert equalshape(self.choices.shape[:-1], self.index.shape)
 
     @property
     def dependencies(self):
@@ -4213,18 +4371,19 @@ class Choose(Array):
 
 class NormDim(Array):
 
-    def __init__(self, length: Array, index: Array):
-        assert isinstance(length, Array) and length.dtype == int, f'length={length!r}'
-        assert isinstance(index, Array) and index.dtype == int, f'index={index!r}'
-        assert equalshape(length.shape, index.shape)
+    length: Array
+    index: Array
+
+    def __post_init__(self):
+        assert isinstance(self.length, Array) and self.length.dtype == int, f'length={self.length!r}'
+        assert isinstance(self.index, Array) and self.index.dtype == int, f'index={self.index!r}'
+        assert equalshape(self.length.shape, self.index.shape)
         # The following corner cases makes the assertion fail, hence we can only
         # assert the bounds if the arrays are guaranteed to be unempty:
         #
         #     Take(func, NormDim(func.shape[-1], Range(0) + func.shape[-1]))
-        if all(n._intbounds[0] > 0 for n in index.shape):
-            assert -length._intbounds[1] <= index._intbounds[0] and index._intbounds[1] <= length._intbounds[1] - 1
-        self.length = length
-        self.index = index
+        if all(n._intbounds[0] > 0 for n in self.index.shape):
+            assert -self.length._intbounds[1] <= self.index._intbounds[0] and self.index._intbounds[1] <= self.length._intbounds[1] - 1
 
     @property
     def dependencies(self):
@@ -4285,17 +4444,18 @@ class TransformCoords(Array):
         The spatial part of the source coordinates.
     '''
 
+    _target: typing.Optional['transformseq.Transforms']
+    _source: 'transformseq.Transforms'
+    _index: Array
+    _coords: Array
+
     dtype = float
 
-    def __init__(self, target, source, index: Array, coords: Array):
-        if index.dtype != int or index.ndim != 0:
+    def __post_init__(self):
+        if self._index.dtype != int or self._index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
-        if coords.dtype != float:
+        if self._coords.dtype != float:
             raise ValueError('argument `coords` must be a real-valued array with at least one axis')
-        self._target = target
-        self._source = source
-        self._index = index
-        self._coords = coords
 
     @property
     def dependencies(self):
@@ -4340,15 +4500,16 @@ class TransformIndex(Array):
         The index part of the source coordinates.
     '''
 
+    _target: typing.Optional['transformseq.Transforms']
+    _source: 'transformseq.Transforms'
+    _index: Array
+
     dtype = int
     shape = ()
 
-    def __init__(self, target, source, index: Array):
-        if index.dtype != int or index.ndim != 0:
+    def __post_init__(self):
+        if self._index.dtype != int or self._index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
-        self._target = target
-        self._source = source
-        self._index = index
 
     @property
     def dependencies(self):
@@ -4386,14 +4547,15 @@ class TransformLinear(Array):
         The index part of the source coordinates.
     '''
 
+    _target: typing.Optional['transformseq.Transforms']
+    _source: 'transformseq.Transforms'
+    index: Array
+
     dtype = float
 
-    def __init__(self, target, source, index: Array):
-        if index.dtype != int or index.ndim != 0:
+    def __post_init__(self):
+        if self.index.dtype != int or self.index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
-        self._target = target
-        self._source = source
-        self.index = index
 
     @property
     def dependencies(self):
@@ -4440,13 +4602,14 @@ class TransformBasis(Array):
         The index part of the source coordinates.
     '''
 
+    _source: 'transformseq.Transforms'
+    index: Array
+
     dtype = float
 
-    def __init__(self, source, index: Array):
-        if index.dtype != int or index.ndim != 0:
+    def __post_init__(self):
+        if self.index.dtype != int or self.index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
-        self._source = source
-        self.index = index
 
     @property
     def dependencies(self):
@@ -4487,14 +4650,15 @@ class _LoopId(types.Singleton):
 
 class _LoopIndex(Array):
 
+    loop_id: _LoopId
+    length: Array
+
     dtype = int
     shape = ()
 
-    def __init__(self, loop_id: _LoopId, length: Array):
-        assert isinstance(loop_id, _LoopId), f'loop_id={loop_id!r}'
-        assert _isindex(length), f'length={length!r}'
-        self.loop_id = loop_id
-        self.length = length
+    def __post_init__(self):
+        assert isinstance(self.loop_id, _LoopId), f'loop_id={self.loop_id!r}'
+        assert _isindex(self.length), f'length={self.length!r}'
 
     @property
     def dependencies(self):
@@ -4538,18 +4702,18 @@ class Loop(Array):
     *   method ``evalf_loop_body(output, body_arg)``.
     '''
 
-    def __init__(self, loop_id: _LoopId, length: Array, init_args: typing.Tuple[Evaluable, ...], body_args: typing.Tuple[Evaluable, ...]):
-        assert isinstance(loop_id, _LoopId), f'loop_id={loop_id!r}'
-        assert isinstance(length, Array), f'length={length!r}'
-        assert isinstance(init_args, tuple) and all(isinstance(arg, Evaluable) for arg in init_args), f'init_args={init_args!r}'
-        assert isinstance(body_args, tuple) and all(isinstance(arg, Evaluable) for arg in body_args), f'body_args={body_args!r}'
-        self.loop_id = loop_id
-        self.length = length
-        self.index = _LoopIndex(loop_id, length)
-        self.init_args = init_args
-        self.body_args = body_args
-        if any(self.index in arg.arguments for arg in init_args):
+    init_args = util.abstract_property()
+    body_args = util.abstract_property()
+
+    def __post_init__(self):
+        assert isinstance(self.loop_id, _LoopId), f'loop_id={loop_id!r}'
+        assert isinstance(self.length, Array), f'length={length!r}'
+        if any(self.index in arg.arguments for arg in self.init_args):
             raise ValueError('the loop initialization arguments must not depend on the index')
+
+    @property
+    def index(self):
+        return _LoopIndex(self.loop_id, self.length)
 
     @property
     def dependencies(self):
@@ -4591,12 +4755,25 @@ class Loop(Array):
 
 class LoopSum(Loop):
 
-    def __init__(self, func: Array, shape: typing.Tuple[Array, ...], loop_id: _LoopId, length: Array):
-        assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
-        assert func.ndim == len(shape)
-        self.func = func
-        self.shape = shape
-        super().__init__(init_args=shape, body_args=(func,), loop_id=loop_id, length=length)
+    func: Array
+    shape: typing.Tuple[Array, ...]
+    loop_id: _LoopId
+    length: Array
+
+    def __post_init__(self):
+        assert isinstance(self.loop_id, _LoopId), f'loop_id={self.loop_id!r}'
+        assert isinstance(self.length, Array), f'length={self.length!r}'
+        assert isinstance(self.func, Array) and self.func.dtype != bool, f'func={self.func!r}'
+        assert self.func.ndim == len(self.shape)
+        super().__post_init__()
+
+    @property
+    def init_args(self):
+        return self.shape
+
+    @property
+    def body_args(self):
+        return self.func,
 
     @cached_property
     def dtype(self):
@@ -4689,13 +4866,14 @@ class LoopSum(Loop):
 
 class _SizesToOffsets(Array):
 
+    _sizes: Array
+
     dtype = int
 
-    def __init__(self, sizes):
-        assert sizes.ndim == 1
-        assert sizes.dtype == int
-        assert sizes._intbounds[0] >= 0
-        self._sizes = sizes
+    def __post_init__(self):
+        assert self._sizes.ndim == 1
+        assert self._sizes.dtype == int
+        assert self._sizes._intbounds[0] >= 0
 
     @property
     def dependencies(self):
@@ -4722,19 +4900,33 @@ class _SizesToOffsets(Array):
 
 class LoopConcatenate(Loop):
 
-    def __init__(self, func: Array, start: Array, stop: Array, concat_length: Array, loop_id: _LoopId, length: Array):
-        assert isinstance(func, Array), f'func={func}'
-        assert _isindex(start), f'start={start}'
-        assert _isindex(stop), f'stop={stop}'
-        assert _isindex(concat_length), f'concat_length={concat_length}'
-        self.func = func
-        self.start = start
-        self.stop = stop
-        self.concat_length = concat_length
+    func: Array
+    start: Array
+    stop: Array
+    concat_length: Array
+    loop_id: _LoopId
+    length: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array), f'func={self.func}'
+        assert _isindex(self.start), f'start={self.start}'
+        assert _isindex(self.stop), f'stop={self.stop}'
+        assert _isindex(self.concat_length), f'concat_length={self.concat_length}'
         if not self.func.ndim:
             raise ValueError('expected an array with at least one axis')
-        shape = *func.shape[:-1], concat_length
-        super().__init__(init_args=shape, body_args=(func, start, stop), loop_id=loop_id, length=length)
+        super().__post_init__()
+
+    @cached_property
+    def shape(self):
+        return *self.func.shape[:-1], self.concat_length
+
+    @property
+    def init_args(self):
+        return self.shape
+
+    @property
+    def body_args(self):
+        return self.func, self.start, self.stop
 
     @cached_property
     def dtype(self):
@@ -4835,43 +5027,44 @@ class SearchSorted(Array):
     # additional, static arguments. The following constructor makes the static
     # arguments keyword-only in anticipation of potential future support.
 
+    arg: Array
+    array: types.arraydata
+    side: str
+    sorter: typing.Optional[types.arraydata]
+
     dtype = int
 
-    def __init__(self, arg: Array, *, array: types.arraydata, side: str, sorter: typing.Optional[types.arraydata]):
-        assert isinstance(arg, Array), f'arg={arg!r}'
-        assert isinstance(array, types.arraydata) and array.ndim == 1, f'array={array!r}'
-        assert side in ('left', 'right'), f'side={side!r}'
-        assert sorter is None or isinstance(sorter, types.arraydata) and sorter.dtype == int and sorter.shape == array.shape, f'sorter={sorter!r}'
-        self._arg = arg
-        self._array = array
-        self._side = side
-        self._sorter = sorter
+    def __post_init__(self):
+        assert isinstance(self.arg, Array), f'arg={arg!r}'
+        assert isinstance(self.array, types.arraydata) and self.array.ndim == 1, f'array={array!r}'
+        assert self.side in ('left', 'right'), f'side={side!r}'
+        assert self.sorter is None or isinstance(self.sorter, types.arraydata) and self.sorter.dtype == int and self.sorter.shape == self.array.shape, f'sorter={sorter!r}'
 
     @property
     def dependencies(self):
-        return self._arg,
+        return self.arg,
 
     @cached_property
     def shape(self):
-        return self._arg.shape
+        return self.arg.shape
 
     def evalf(self, values):
-        index = numpy.searchsorted(self._array, values, side=self._side, sorter=self._sorter)
+        index = numpy.searchsorted(self.array, values, side=self.side, sorter=self.sorter)
         # on some platforms (windows) searchsorted does not return indices as
         # numpy.dtype(int), so we type cast it for consistency
         return index.astype(int, copy=False)
 
     def _intbounds_impl(self):
-        return 0, self._array.shape[0]
+        return 0, self.array.shape[0]
 
     def _takediag(self, axis1, axis2):
-        return SearchSorted(_takediag(self._arg, axis1, axis2), array=self._array, side=self._side, sorter=self._sorter)
+        return SearchSorted(_takediag(self.arg, axis1, axis2), array=self.array, side=self.side, sorter=self.sorter)
 
     def _take(self, index, axis):
-        return SearchSorted(_take(self._arg, index, axis), array=self._array, side=self._side, sorter=self._sorter)
+        return SearchSorted(_take(self.arg, index, axis), array=self.array, side=self.side, sorter=self.sorter)
 
     def _unravel(self, axis, shape):
-        return SearchSorted(unravel(self._arg, axis, shape), array=self._array, side=self._side, sorter=self._sorter)
+        return SearchSorted(unravel(self.arg, axis, shape), array=self.array, side=self.side, sorter=self.sorter)
 
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)

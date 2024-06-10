@@ -637,25 +637,24 @@ class intbounds(TestCase):
 
     class S(evaluable.Array):
         # An evaluable scalar argument with given bounds.
+        argname: str
+        lower: int
+        upper: int
+
         dtype = int
         shape = ()
 
-        def __init__(self, argname, lower, upper):
-            self._argname = argname
-            self._lower = lower
-            self._upper = upper
-
         @property
         def dependencies(self):
-            return evaluable.Argument(self._argname, shape=(), dtype=int),
+            return evaluable.Argument(self.argname, shape=(), dtype=int),
 
         def evalf(self, value):
-            assert self._lower <= value[()] <= self._upper
+            assert self.lower <= value[()] <= self.upper
             return value
 
         @property
         def _intbounds(self):
-            return self._lower, self._upper
+            return self.lower, self.upper
 
     def assertBounds(self, func, *, tight_lower=True, tight_upper=True, **evalargs):
         lower, upper = func._intbounds
@@ -967,12 +966,11 @@ class simplify(TestCase):
 
         class R(evaluable.Array):
             # An evaluable scalar argument with given bounds.
+            lower: int
+            upper: int
+
             dtype = int
             shape = ()
-
-            def __init__(self, lower, upper):
-                self._lower = lower
-                self._upper = upper
 
             @property
             def dependencies(self):
@@ -983,7 +981,7 @@ class simplify(TestCase):
 
             @property
             def _intbounds(self):
-                return self._lower, self._upper
+                return self.lower, self.upper
 
         a = R(0, 2)
         b = R(2, 4)

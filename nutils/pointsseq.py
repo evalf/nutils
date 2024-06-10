@@ -640,9 +640,8 @@ def _check_compress(length, mask):
 
 class _EvaluablePointsFromSequence(evaluable.Evaluable):
 
-    def __init__(self, seq: PointsSequence, index: evaluable.Array) -> None:
-        self._seq = seq
-        self.index = index
+    _seq: PointsSequence
+    index: evaluable.Array
 
     @property
     def dependencies(self):
