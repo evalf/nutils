@@ -3060,10 +3060,11 @@ class MultipatchTopology(TransformChainsTopology):
             transformseq.chain([topo.opposites for topo in self._topos], self._topos[0].transforms.todims, self._topos[0].ndims))
 
         sides = {}
-        for topo, verts in zip(self._topos, self._connectivity):
+        for ipatch, verts in enumerate(self._connectivity):
             for idim, iside, idx in self._iter_boundaries():
                 bverts = verts[idx]
-                sides.setdefault(frozenset(bverts.flat), []).append((bverts, (topo, idim, iside)))
+                bname = self._topos[ipatch]._bnames[idim][iside]
+                sides.setdefault(frozenset(bverts.flat), []).append((bverts, (ipatch, bname)))
 
         self._boundaries = []
         self._interfaces = []
@@ -3198,10 +3199,9 @@ class MultipatchTopology(TransformChainsTopology):
 
         subtopos = []
         subnames = []
-        for i, (topo, idim, iside) in enumerate(self._boundaries):
-            name = topo._bnames[idim][iside]
-            subtopos.append(topo.boundary[name])
-            subnames.append('patch{}-{}'.format(i, name))
+        for ipatch, bname in self._boundaries:
+            subtopos.append(self._topos[ipatch].boundary[bname])
+            subnames.append(f'patch{ipatch}-{bname}')
         return disjoint_union_topology(self.space, self.transforms.todims, self.ndims-1, subtopos, subnames)
 
     @cached_property
@@ -3219,7 +3219,7 @@ class MultipatchTopology(TransformChainsTopology):
         for patchdata in self._interfaces:
             if len(patchdata) > 2:
                 raise ValueError('Cannot create interfaces of multipatch topologies with more than two interface connections.')
-            boundaries = [topo.boundary[topo._bnames[idim][iside]] for topo, idim, iside in patchdata]
+            boundaries = [self._topos[ipatch].boundary[bname] for ipatch, bname in patchdata]
             transforms, opposites = [btopo.transforms for btopo in boundaries]
             references, opposite_references = [btopo.references for btopo in boundaries]
             assert references == opposite_references
