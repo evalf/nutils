@@ -1125,4 +1125,22 @@ def tree_walk(visit_node, /, *roots):
                 seen.add(id(dep))
 
 
+def untake(indices, items=None):
+    '''shuffle items (default: range(len(indices))) into tuple untake, such
+    that untake[indices[i]] == items[i] for all 0 <= i < len(items).'''
+
+    if items is None:
+        items_indices = enumerate(indices)
+        nil = None
+    else:
+        assert len(items) == len(indices), 'items and indices do not match'
+        items_indices = zip(items, indices)
+        nil = object()
+    untake = [nil] * len(indices)
+    for item, index in items_indices:
+        assert untake[index] is nil, f'index {index} occurs twice in indices'
+        untake[index] = item
+    return tuple(untake)
+
+
 # vim:sw=4:sts=4:et

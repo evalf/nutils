@@ -593,3 +593,12 @@ class replace(TestCase):
         newobj = util.shallow_replace(subs, obj)
         self.assertEqual(type(newobj), type(obj))
         self.assertEqual(newobj.args, (5, {7, 20}))
+
+
+class untake(TestCase):
+
+    def test_default(self):
+        self.assertEqual(util.untake([1,2,0]), (2,0,1))
+
+    def test_target(self):
+        self.assertEqual(util.untake([1,2,0], 'abc'), ('c','a','b'))
