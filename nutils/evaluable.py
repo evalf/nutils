@@ -703,28 +703,28 @@ class Array(Evaluable):
 class Orthonormal(Array):
     'make a vector orthonormal to a subspace'
 
-    _basis: Array
-    _vector: Array
+    basis: Array
+    vector: Array
 
     dtype = float
 
     def __post_init__(self):
-        assert isinstance(self._basis, Array) and self._basis.ndim >= 2 and self._basis.dtype not in (bool, complex), f'basis={self._basis!r}'
-        assert isinstance(self._vector, Array) and self._vector.ndim >= 1 and self._vector.dtype not in (bool, complex), f'vector={self._vector!r}'
-        assert equalshape(self._basis.shape[:-1], self._vector.shape)
+        assert isinstance(self.basis, Array) and self.basis.ndim >= 2 and self.basis.dtype not in (bool, complex), f'basis={self.basis!r}'
+        assert isinstance(self.vector, Array) and self.vector.ndim >= 1 and self.vector.dtype not in (bool, complex), f'vector={self.vector!r}'
+        assert equalshape(self.basis.shape[:-1], self.vector.shape)
 
     @property
     def dependencies(self):
-        return self._basis, self._vector
+        return self.basis, self.vector
 
     @cached_property
     def shape(self):
-        return self._vector.shape
+        return self.vector.shape
 
     def _simplified(self):
         if _equals_scalar_constant(self.shape[-1], 1):
-            return Sign(self._vector)
-        basis, vector, where = unalign(self._basis, self._vector, naxes=self.ndim - 1)
+            return Sign(self.vector)
+        basis, vector, where = unalign(self.basis, self.vector, naxes=self.ndim - 1)
         if len(where) < self.ndim - 1:
             return align(Orthonormal(basis, vector), (*where, self.ndim - 1), self.shape)
 
@@ -761,7 +761,7 @@ class Orthonormal(Array):
         #    = (I - N N^T) (Q n / |n| + P (Q^T v + v') / |n|)
         #    = Q N + (P - N N^T) (Q^T v + v') / |n|
 
-        G = self._basis
+        G = self.basis
         invGG = inverse(einsum('Aki,Akj->Aij', G, G))
 
         Q = -einsum('Aim,Amn,AjnB->AijB', G, invGG, derivative(G, var, seen))
@@ -773,7 +773,7 @@ class Orthonormal(Array):
             # of N' along with any reference to v', reducing it to N' = Q N.
             return QN
 
-        v = self._vector
+        v = self.vector
         P = Diagonalize(ones(self.shape)) - einsum('Aim,Amn,Ajn->Aij', G, invGG, G)
         Z = P - einsum('Ai,Aj->Aij', self, self) # P - N N^T
 
@@ -3524,12 +3524,12 @@ class Argument(DerivativeTargetBase):
         The shape of this argument.
     '''
 
-    _name: str
+    name: str
     shape: typing.Tuple[Array, ...]
     dtype: Dtype = float
 
     def __post_init__(self):
-        assert isinstance(self._name, str), f'name={self._name!r}'
+        assert isinstance(self.name, str), f'name={self.name!r}'
         assert isinstance(self.shape, tuple) and all(_isindex(n) for n in self.shape), f'shape={self.shape!r}'
 
     @property
@@ -3540,11 +3540,11 @@ class Argument(DerivativeTargetBase):
         shape = builder.compile(self.shape)
         out = builder.get_variable_for_evaluable(self)
         block = builder.get_block_for_evaluable(self)
-        block.assign_to(out, _pyast.Variable('numpy').get_attr('asarray').call(builder.get_argument(self._name), dtype=_pyast.Variable(self.dtype.__name__)))
+        block.assign_to(out, _pyast.Variable('numpy').get_attr('asarray').call(builder.get_argument(self.name), dtype=_pyast.Variable(self.dtype.__name__)))
         block.if_(_pyast.BinOp(shape, '!=', out.get_attr('shape'))).raise_(
             _pyast.Variable('ValueError').call(
                 _pyast.LiteralStr('argument {!r} has the wrong shape: expected {}, got {}').get_attr('format').call(
-                    _pyast.LiteralStr(self._name),
+                    _pyast.LiteralStr(self.name),
                     shape,
                     out.get_attr('shape'),
                 ),
@@ -3553,7 +3553,7 @@ class Argument(DerivativeTargetBase):
         return out
 
     def _derivative(self, var, seen):
-        if isinstance(var, Argument) and var._name == self._name and self.dtype in (float, complex):
+        if isinstance(var, Argument) and var.name == self.name and self.dtype in (float, complex):
             result = ones(self.shape, self.dtype)
             for i, sh in enumerate(self.shape):
                 result = diagonalize(result, i, i+self.ndim)
@@ -3562,13 +3562,13 @@ class Argument(DerivativeTargetBase):
             return zeros(self.shape+var.shape)
 
     def __str__(self):
-        return '{} {!r} <{}>'.format(self.__class__.__name__, self._name, self._shape_str(form=str))
+        return '{} {!r} <{}>'.format(self.__class__.__name__, self.name, self._shape_str(form=str))
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
         else:
-            label = '\n'.join(filter(None, (type(self).__name__, self._name, self._shape_str(form=repr))))
+            label = '\n'.join(filter(None, (type(self).__name__, self.name, self._shape_str(form=repr))))
             cache[self] = node = DuplicatedLeafNode(label, (type(self).__name__, times[self]))
             return node
 
@@ -3785,59 +3785,59 @@ class Unravel(Array):
 
 class RavelIndex(Array):
 
-    _ia: Array
-    _ib: Array
-    _na: Array
-    _nb: Array
+    ia: Array
+    ib: Array
+    na: Array
+    nb: Array
 
     dtype = int
 
     def __post_init__(self):
-        assert isinstance(self._ia, Array), f'ia={self._ia!r}'
-        assert isinstance(self._ib, Array), f'ib={self._ib!r}'
-        assert _isindex(self._na), f'na={self._na!r}'
-        assert _isindex(self._nb), f'nb={self._nb!r}'
+        assert isinstance(self.ia, Array), f'ia={self.ia!r}'
+        assert isinstance(self.ib, Array), f'ib={self.ib!r}'
+        assert _isindex(self.na), f'na={self.na!r}'
+        assert _isindex(self.nb), f'nb={self.nb!r}'
 
     @cached_property
     def _length(self):
-        return self._na * self._nb
+        return self.na * self.nb
 
     @property
     def dependencies(self):
-        return self._ia, self._ib, self._nb
+        return self.ia, self.ib, self.nb
 
     @cached_property
     def shape(self):
-        return self._ia.shape + self._ib.shape
+        return self.ia.shape + self.ib.shape
 
     @staticmethod
     def evalf(ia, ib, nb):
         return ia[(...,)+(numpy.newaxis,)*ib.ndim] * nb + ib
 
     def _take(self, index, axis):
-        if axis < self._ia.ndim:
-            return RavelIndex(_take(self._ia, index, axis), self._ib, self._na, self._nb)
+        if axis < self.ia.ndim:
+            return RavelIndex(_take(self.ia, index, axis), self.ib, self.na, self.nb)
         else:
-            return RavelIndex(self._ia, _take(self._ib, index, axis - self._ia.ndim), self._na, self._nb)
+            return RavelIndex(self.ia, _take(self.ib, index, axis - self.ia.ndim), self.na, self.nb)
 
     def _rtake(self, func, axis):
         if _equals_simplified(func.shape[axis], self._length):
-            return _take(_take(unravel(func, axis, (self._na, self._nb)), self._ib, axis+1), self._ia, axis)
+            return _take(_take(unravel(func, axis, (self.na, self.nb)), self.ib, axis+1), self.ia, axis)
 
     def _rinflate(self, func, length, axis):
         if _equals_simplified(length, self._length):
-            return Ravel(Inflate(_inflate(func, self._ia, self._na, func.ndim - self.ndim), self._ib, self._nb))
+            return Ravel(Inflate(_inflate(func, self.ia, self.na, func.ndim - self.ndim), self.ib, self.nb))
 
     def _unravel(self, axis, shape):
-        if axis < self._ia.ndim:
-            return RavelIndex(unravel(self._ia, axis, shape), self._ib, self._na, self._nb)
+        if axis < self.ia.ndim:
+            return RavelIndex(unravel(self.ia, axis, shape), self.ib, self.na, self.nb)
         else:
-            return RavelIndex(self._ia, unravel(self._ib, axis-self._ia.ndim, shape), self._na, self._nb)
+            return RavelIndex(self.ia, unravel(self.ib, axis-self.ia.ndim, shape), self.na, self.nb)
 
     def _intbounds_impl(self):
-        nbmin, nbmax = self._nb._intbounds
-        iamin, iamax = self._ia._intbounds
-        ibmin, ibmax = self._ib._intbounds
+        nbmin, nbmax = self.nb._intbounds
+        iamin, iamax = self.ia._intbounds
+        ibmin, ibmax = self.ib._intbounds
         return iamin * nbmin + ibmin, (iamax and nbmax and iamax * nbmax) + ibmax
 
 
@@ -4252,57 +4252,57 @@ class Legendre(Array):
         The degree of the last polynomial of the series.
     '''
 
-    _x: Array
-    _degree: int
+    x: Array
+    degree: int
 
     dtype = float
 
     def __post_init__(self):
-        assert isinstance(self._x, Array) and self._x.dtype == float, f'x={self._x!r}'
-        assert isinstance(self._degree, int) and self._degree >= 0, f'degree={self._degree!r}'
+        assert isinstance(self.x, Array) and self.x.dtype == float, f'x={self.x!r}'
+        assert isinstance(self.degree, int) and self.degree >= 0, f'degree={self.degree!r}'
 
     @property
     def dependencies(self):
-        return self._x,
+        return self.x,
 
     @cached_property
     def shape(self):
-        return *self._x.shape, constant(self._degree+1)
+        return *self.x.shape, constant(self.degree+1)
 
     def evalf(self, x: numpy.ndarray) -> numpy.ndarray:
-        P = numpy.empty((*x.shape, self._degree+1), dtype=float)
+        P = numpy.empty((*x.shape, self.degree+1), dtype=float)
         P[..., 0] = 1
-        if self._degree:
+        if self.degree:
             P[..., 1] = x
-        for i in range(2, self._degree+1):
+        for i in range(2, self.degree+1):
             P[..., i] = (2-1/i)*P[..., 1]*P[..., i-1] - (1-1/i)*P[..., i-2]
         return P
 
     def _derivative(self, var, seen):
         if self.dtype == complex:
             raise NotImplementedError('The complex derivative is not implemented.')
-        d = numpy.zeros((self._degree+1,)*2, dtype=int)
-        for i in range(self._degree+1):
+        d = numpy.zeros((self.degree+1,)*2, dtype=int)
+        for i in range(self.degree+1):
             d[i, i+1::2] = 2*i+1
         dself = einsum('Ai,ij->Aj', self, astype(d, self.dtype))
-        return einsum('Ai,AB->AiB', dself, derivative(self._x, var, seen))
+        return einsum('Ai,AB->AiB', dself, derivative(self.x, var, seen))
 
     def _simplified(self):
-        unaligned, where = unalign(self._x)
-        if where != tuple(range(self._x.ndim)):
-            return align(Legendre(unaligned, self._degree), (*where, self.ndim-1), self.shape)
+        unaligned, where = unalign(self.x)
+        if where != tuple(range(self.x.ndim)):
+            return align(Legendre(unaligned, self.degree), (*where, self.ndim-1), self.shape)
 
     def _takediag(self, axis1, axis2):
         if axis1 < self.ndim - 1 and axis2 < self.ndim - 1:
-            return Transpose.to_end(Legendre(_takediag(self._x, axis1, axis2), self._degree), -2)
+            return Transpose.to_end(Legendre(_takediag(self.x, axis1, axis2), self.degree), -2)
 
     def _take(self, index, axis):
         if axis < self.ndim - 1:
-            return Legendre(_take(self._x, index, axis), self._degree)
+            return Legendre(_take(self.x, index, axis), self.degree)
 
     def _unravel(self, axis, shape):
         if axis < self.ndim - 1:
-            return Legendre(unravel(self._x, axis, shape), self._degree)
+            return Legendre(unravel(self.x, axis, shape), self.degree)
 
 
 class Choose(Array):
@@ -4444,46 +4444,46 @@ class TransformCoords(Array):
         The spatial part of the source coordinates.
     '''
 
-    _target: typing.Optional['transformseq.Transforms']
-    _source: 'transformseq.Transforms'
-    _index: Array
-    _coords: Array
+    target: typing.Optional['transformseq.Transforms']
+    source: 'transformseq.Transforms'
+    index: Array
+    coords: Array
 
     dtype = float
 
     def __post_init__(self):
-        if self._index.dtype != int or self._index.ndim != 0:
+        if self.index.dtype != int or self.index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
-        if self._coords.dtype != float:
+        if self.coords.dtype != float:
             raise ValueError('argument `coords` must be a real-valued array with at least one axis')
 
     @property
     def dependencies(self):
-        return self._index, self._coords
+        return self.index, self.coords
 
     @cached_property
     def shape(self):
-        target_dim = self._source.todims if self._target is None else self._target.fromdims
-        return *self._coords.shape[:-1], constant(target_dim)
+        target_dim = self.source.todims if self.target is None else self.target.fromdims
+        return *self.coords.shape[:-1], constant(target_dim)
 
     def evalf(self, index, coords):
-        chain = self._source[index.__index__()]
-        if self._target is not None:
-            _, chain = self._target.index_with_tail(chain)
+        chain = self.source[index.__index__()]
+        if self.target is not None:
+            _, chain = self.target.index_with_tail(chain)
         return functools.reduce(lambda c, t: t.apply(c), reversed(chain), coords)
 
     def _derivative(self, var, seen):
-        linear = TransformLinear(self._target, self._source, self._index)
-        dcoords = derivative(self._coords, var, seen)
-        return einsum('ij,AjB->AiB', linear, dcoords, A=self._coords.ndim - 1, B=var.ndim)
+        linear = TransformLinear(self.target, self.source, self.index)
+        dcoords = derivative(self.coords, var, seen)
+        return einsum('ij,AjB->AiB', linear, dcoords, A=self.coords.ndim - 1, B=var.ndim)
 
     def _simplified(self):
-        if self._target == self._source:
-            return self._coords
+        if self.target == self.source:
+            return self.coords
         cax = self.ndim - 1
-        coords, where = unalign(self._coords, naxes=cax)
+        coords, where = unalign(self.coords, naxes=cax)
         if len(where) < cax:
-            return align(TransformCoords(self._target, self._source, self._index, coords), (*where, cax), self.shape)
+            return align(TransformCoords(self.target, self.source, self.index, coords), (*where, cax), self.shape)
 
 
 class TransformIndex(Array):
@@ -4500,37 +4500,37 @@ class TransformIndex(Array):
         The index part of the source coordinates.
     '''
 
-    _target: typing.Optional['transformseq.Transforms']
-    _source: 'transformseq.Transforms'
-    _index: Array
+    target: typing.Optional['transformseq.Transforms']
+    source: 'transformseq.Transforms'
+    index: Array
 
     dtype = int
     shape = ()
 
     def __post_init__(self):
-        if self._index.dtype != int or self._index.ndim != 0:
+        if self.index.dtype != int or self.index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
 
     @property
     def dependencies(self):
-        return self._index,
+        return self.index,
 
     def evalf(self, index):
-        if self._target is not None:
-            index, _ = self._target.index_with_tail(self._source[index.__index__()])
+        if self.target is not None:
+            index, _ = self.target.index_with_tail(self.source[index.__index__()])
         else:
             index = 0
         return numpy.array(index)
 
     def _intbounds_impl(self):
-        len_target = 1 if self._target is None else len(self._target)
+        len_target = 1 if self.target is None else len(self.target)
         return 0, len_target - 1
 
     def _simplified(self):
-        if self._target is None:
+        if self.target is None:
             return ones((1,), dtype=int)
-        elif self._target == self._source:
-            return self._index
+        elif self.target == self.source:
+            return self.index
 
 
 class TransformLinear(Array):
@@ -4547,8 +4547,8 @@ class TransformLinear(Array):
         The index part of the source coordinates.
     '''
 
-    _target: typing.Optional['transformseq.Transforms']
-    _source: 'transformseq.Transforms'
+    target: typing.Optional['transformseq.Transforms']
+    source: 'transformseq.Transforms'
     index: Array
 
     dtype = float
@@ -4563,21 +4563,21 @@ class TransformLinear(Array):
 
     @cached_property
     def shape(self):
-        target_dim = self._source.todims if self._target is None else self._target.fromdims
-        return constant(target_dim), constant(self._source.fromdims)
+        target_dim = self.source.todims if self.target is None else self.target.fromdims
+        return constant(target_dim), constant(self.source.fromdims)
 
     def evalf(self, index):
-        chain = self._source[index.__index__()]
-        if self._target is not None:
-            _, chain = self._target.index_with_tail(chain)
+        chain = self.source[index.__index__()]
+        if self.target is not None:
+            _, chain = self.target.index_with_tail(chain)
         if chain:
             return functools.reduce(lambda r, i: i @ r, (item.linear for item in reversed(chain)))
         else:
-            return numpy.eye(self._source.fromdims)
+            return numpy.eye(self.source.fromdims)
 
     def _simplified(self):
-        if self._target == self._source:
-            return diagonalize(ones((constant(self._source.fromdims),), dtype=float))
+        if self.target == self.source:
+            return diagonalize(ones((constant(self.source.fromdims),), dtype=float))
 
 
 class TransformBasis(Array):
@@ -4602,7 +4602,7 @@ class TransformBasis(Array):
         The index part of the source coordinates.
     '''
 
-    _source: 'transformseq.Transforms'
+    source: 'transformseq.Transforms'
     index: Array
 
     dtype = float
@@ -4617,26 +4617,26 @@ class TransformBasis(Array):
 
     @cached_property
     def shape(self):
-        return constant(self._source.todims), constant(self._source.todims)
+        return constant(self.source.todims), constant(self.source.todims)
 
     def evalf(self, index):
-        chain = self._source[index.__index__()]
-        linear = numpy.eye(self._source.fromdims)
+        chain = self.source[index.__index__()]
+        linear = numpy.eye(self.source.fromdims)
         for item in reversed(chain):
             linear = item.linear @ linear
             assert item.fromdims <= item.todims <= item.fromdims + 1
             if item.todims == item.fromdims + 1:
                 linear = numpy.concatenate([linear, item.ext[:, numpy.newaxis]], axis=1)
-        assert linear.shape == (self._source.todims, self._source.todims)
+        assert linear.shape == (self.source.todims, self.source.todims)
         return linear
 
     def _simplified(self):
-        if self._source.todims == self._source.fromdims:
+        if self.source.todims == self.source.fromdims:
             # Since we only guarantee that the basis spans the space of source
             # coordinates mapped to the root and the map is a bijection (every
             # `Transform` is assumed to be injective), we can return the unit
             # vectors here.
-            return diagonalize(ones((self._source.fromdims,), dtype=float))
+            return diagonalize(ones((self.source.fromdims,), dtype=float))
 
 
 class _LoopId(types.Singleton):
@@ -4867,35 +4867,35 @@ class LoopSum(Loop):
 
 class _SizesToOffsets(Array):
 
-    _sizes: Array
+    sizes: Array
 
     dtype = int
 
     def __post_init__(self):
-        assert self._sizes.ndim == 1
-        assert self._sizes.dtype == int
-        assert self._sizes._intbounds[0] >= 0
+        assert self.sizes.ndim == 1
+        assert self.sizes.dtype == int
+        assert self.sizes._intbounds[0] >= 0
 
     @property
     def dependencies(self):
-        return self._sizes,
+        return self.sizes,
 
     @cached_property
     def shape(self):
-        return self._sizes.shape[0]+1,
+        return self.sizes.shape[0]+1,
 
     @staticmethod
     def evalf(sizes):
         return numpy.cumsum([0, *sizes])
 
     def _simplified(self):
-        unaligned, where = unalign(self._sizes)
+        unaligned, where = unalign(self.sizes)
         if not where:
             return Range(self.shape[0]) * appendaxes(unaligned, self.shape[:1])
 
     def _intbounds_impl(self):
-        n = self._sizes.shape[0]._intbounds[1]
-        m = self._sizes._intbounds[1]
+        n = self.sizes.shape[0]._intbounds[1]
+        m = self.sizes._intbounds[1]
         return 0, (0 if n == 0 or m == 0 else n * m)
 
 
@@ -5576,8 +5576,8 @@ def replace_arguments(value, arguments):
     :class:`Array`
         The edited ``value``.
     '''
-    if isinstance(value, Argument) and value._name in arguments:
-        v = asarray(arguments[value._name])
+    if isinstance(value, Argument) and value.name in arguments:
+        v = asarray(arguments[value.name])
         assert equalshape(value.shape, v.shape), (value.shape, v.shape)
         assert value.dtype == v.dtype, (value.dtype, v.dtype)
         return v

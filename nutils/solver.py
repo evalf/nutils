@@ -878,11 +878,11 @@ def _argobjs(funcs):
     for func in filter(None, funcs):
         for arg in func.arguments:
             if isinstance(arg, evaluable.Argument):
-                if arg._name in argobjs:
-                    if argobjs[arg._name] != arg:
-                        raise ValueError('shape or dtype mismatch for argument {}: {} != {}'.format(arg._name, argobjs[arg._name], arg))
+                if arg.name in argobjs:
+                    if argobjs[arg.name] != arg:
+                        raise ValueError('shape or dtype mismatch for argument {}: {} != {}'.format(arg.name, argobjs[arg.name], arg))
                 else:
-                    argobjs[arg._name] = arg
+                    argobjs[arg.name] = arg
     return argobjs
 
 
