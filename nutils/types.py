@@ -290,6 +290,81 @@ class Singleton(Immutable, metaclass=SingletonMeta):
     __eq__ = object.__eq__
 
 
+class DataClassMeta(abc.ABCMeta):
+
+    def __init__(cls, name, bases, namespace, **kwargs):
+        super().__init__(name, bases, namespace, **kwargs)
+        params = []
+        for base in bases:
+            params.extend(base.__signature__.parameters.values())
+        params.extend(inspect.Parameter(name, inspect.Parameter.POSITIONAL_OR_KEYWORD, default=namespace.get(name, inspect.Parameter.empty), annotation=T)
+            for name, T in namespace.get('__annotations__', {}).items())
+        cls.__signature__ = inspect.Signature(params)
+        cls.__cache = weakref.WeakValueDictionary()
+
+    def __call__(cls, *args, **kwargs):
+        bound = cls.__signature__.bind(*args, **kwargs)
+        bound.apply_defaults()
+        if (self := cls.__cache.get(bound.args)) is None:
+            self = object.__new__(cls)
+            self.__dict__.update(bound.arguments)
+            self.__post_init__()
+            cls.__cache[bound.args] = self
+        return self
+
+
+class DataClass(metaclass=DataClassMeta):
+    '''
+    Base class for dataclass-like types, for which an assignment only
+    constructor is inferred from type annotations. Post processing is possible
+    via an optional :meth:`__post_init__` method. The class adds equality
+    tests, traditional hashing (:func:`hash`), nutils hashing
+    (:func:`nutils_hash`) and pickling, all based solely on the intialization
+    arguments. Variable or keyword-only arguments are not supported. All
+    arguments should be hashable by :func:`nutils_hash`.
+
+    Examples
+    --------
+
+    Consider the following class.
+
+    >>> class Plain(DataClass):
+    ...   a: int
+    ...   b: str
+
+    Calling ``Plain`` with positional or keyword arguments produces the
+    corresponding instance:
+
+    >>> Plain(1, 'test')
+    Plain(a=1, b='test')
+    '''
+
+    def __post_init__(self):
+        '''Post initialization.
+
+        Method that can be overridden by derived classes to finalize
+        construction of the object. Does nothing by default.'''
+
+    def __reduce__(self):
+        return type(self), tuple(getattr(self, name) for name in self.__signature__.parameters)
+
+    def __hash__(self):
+        return hash(id(self))
+
+    def __eq__(self, other):
+        return self is other
+
+    @cached_property
+    def __nutils_hash__(self):
+        h = hashlib.sha1(f'{type(self).__module__}.{type(self).__qualname__}\0'.encode())
+        for name in self.__signature__.parameters:
+            h.update(nutils_hash(getattr(self, name)))
+        return h.digest()
+
+    def __repr__(self):
+        return type(self).__name__ + '(' + ', '.join(f'{name}={getattr(self,name)!r}' for name in self.__signature__.parameters) + ')'
+
+
 class arraydata(Singleton):
     '''hashable array container.
 

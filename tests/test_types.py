@@ -483,6 +483,63 @@ ImmutableFamily(cls=nutils.types.Immutable)
 ImmutableFamily(cls=nutils.types.Singleton)
 
 
+class DataClass(TestCase):
+
+    class T(nutils.types.DataClass):
+        x: int
+        y: int
+
+    class Talt(nutils.types.DataClass):
+        x: int
+        y: int
+
+    class U(T):
+        z: int
+
+    def test_positional_args(self):
+        t = self.T(1, 2)
+        self.assertEqual(t.x, 1)
+        self.assertEqual(t.y, 2)
+
+    def test_keyword_args(self):
+        t = self.T(y=2, x=1)
+        self.assertEqual(t.x, 1)
+        self.assertEqual(t.y, 2)
+
+    def test_derived(self):
+        u = self.U(1, 2, 3)
+        self.assertEqual(u.x, 1)
+        self.assertEqual(u.y, 2)
+        self.assertEqual(u.z, 3)
+
+    def test_pickle(self):
+        a = self.T(1, 2)
+        b = pickle.loads(pickle.dumps(a))
+        self.assertEqual(a, b)
+
+    def test_eq(self):
+        self.assertEqual(self.T(1, 2), self.T(1, 2))
+        self.assertNotEqual(self.T(1, 2), self.T(2, 1))
+        self.assertNotEqual(self.T(1, 2), self.Talt(1, 2))
+
+    def test_nutils_hash(self):
+        self.assertEqual(nutils.types.nutils_hash(self.T(1, 2)).hex(), nutils.types.nutils_hash(self.T(1, 2)).hex())
+        self.assertNotEqual(nutils.types.nutils_hash(self.T(1, 2)).hex(), nutils.types.nutils_hash(self.T(2, 1)).hex())
+        self.assertNotEqual(nutils.types.nutils_hash(self.T(1, 2)).hex(), nutils.types.nutils_hash(self.Talt(1, 2)).hex())
+
+    def test_deduplication(self):
+        a = self.T(1, 2)
+        b = self.T(1, 2)
+        c = self.T(2, 1)
+        d = self.Talt(1, 2)
+        self.assertIs(a, b)
+        self.assertEqual(a, b)
+        self.assertIsNot(a, c)
+        self.assertNotEqual(a, c)
+        self.assertIsNot(a, d)
+        self.assertNotEqual(a, d)
+
+
 class arraydata(TestCase):
 
     def _check(self, array, dtype):
