@@ -4702,6 +4702,9 @@ class Loop(Array):
     *   method ``evalf_loop_body(output, body_arg)``.
     '''
 
+    loop_id: _LoopId
+    length: Array
+
     init_args = util.abstract_property()
     body_args = util.abstract_property()
 
@@ -4757,8 +4760,6 @@ class LoopSum(Loop):
 
     func: Array
     shape: typing.Tuple[Array, ...]
-    loop_id: _LoopId
-    length: Array
 
     def __post_init__(self):
         assert isinstance(self.loop_id, _LoopId), f'loop_id={self.loop_id!r}'
@@ -4904,8 +4905,6 @@ class LoopConcatenate(Loop):
     start: Array
     stop: Array
     concat_length: Array
-    loop_id: _LoopId
-    length: Array
 
     def __post_init__(self):
         assert isinstance(self.func, Array), f'func={self.func}'
@@ -5538,7 +5537,7 @@ def loop_sum(func, index):
     func = asarray(func)
     if not isinstance(index, _LoopIndex):
         raise TypeError(f'expected _LoopIndex, got {index!r}')
-    return LoopSum(func, func.shape, index.loop_id, index.length)
+    return LoopSum(index.loop_id, index.length, func, func.shape)
 
 
 def loop_concatenate(func, index):
@@ -5554,7 +5553,7 @@ def loop_concatenate(func, index):
     start = Take(offsets, index)
     stop = Take(offsets, index+1)
     concat_length = Take(offsets, index.length)
-    return LoopConcatenate(func, start, stop, concat_length, index.loop_id, index.length)
+    return LoopConcatenate(index.loop_id, index.length, func, start, stop, concat_length)
 
 
 @util.shallow_replace

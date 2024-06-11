@@ -1113,7 +1113,7 @@ class make_loop_ids_unique(TestCase):
 
     @staticmethod
     def loop_sum(func, index):
-        return evaluable.LoopSum(func, (), index.loop_id, index.length)
+        return evaluable.LoopSum(index.loop_id, index.length, func, ())
 
     def test_already_unique(self):
         i, j = map(self.loop_index, 'ij')
