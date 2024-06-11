@@ -1143,4 +1143,11 @@ def untake(indices, items=None):
     return tuple(untake)
 
 
+class abstract_property:
+    def __set_name__(self, owner, name):
+        self.name = name
+    def __get__(self, obj, objtype=None):
+        raise NotImplementedError(f'class {obj.__class__.__name__} fails to implement {self.name}')
+
+
 # vim:sw=4:sts=4:et
