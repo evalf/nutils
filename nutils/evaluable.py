@@ -404,7 +404,7 @@ def align(arg, where, shape):
             arg = InsertAxis(arg, length)
             where.append(i)
     if where != list(range(len(shape))):
-        arg = Transpose.inv(arg, where)
+        arg = Transpose(arg, util.untake(where))
     assert equalshape(arg.shape, shape), f'arg.shape={arg.shape!r}, shape={shape!r}'
     return arg
 
@@ -846,7 +846,7 @@ class Constant(Array):
         assert 0 <= axis1 < axis2 < self.ndim
         axes = (*range(axis1), *range(axis1+1, axis2), *range(axis2+1, self.ndim), axis1, axis2)
         value = numpy.transpose(self.value, axes)
-        return constant(numpy.transpose(Inverse.evalf(value), numpy.argsort(axes)))
+        return constant(numpy.transpose(Inverse.evalf(value), util.untake(axes)))
 
     def _product(self):
         return constant((numpy.all if self.dtype == bool else numpy.prod)(self.value, -1))
@@ -1045,16 +1045,12 @@ class Transpose(Array):
     @classmethod
     def from_end(cls, array, *axes):
         trans = cls._mk_axes(array.ndim, axes)
-        return cls.inv(array, trans) if trans else array
+        return cls(array, util.untake(trans)) if trans else array
 
     @classmethod
     def to_end(cls, array, *axes):
         trans = cls._mk_axes(array.ndim, axes)
         return cls(array, trans) if trans else array
-
-    @classmethod
-    def inv(cls, func, axes):
-        return cls(func, tuple(n.__index__() for n in numpy.argsort(axes)))
 
     def __init__(self, func: Array, axes: typing.Tuple[int, ...]):
         assert isinstance(func, Array), f'func={func!r}'
@@ -1080,7 +1076,7 @@ class Transpose(Array):
 
     @cached_property
     def _invaxes(self):
-        return tuple(n.__index__() for n in numpy.argsort(self.axes))
+        return util.untake(self.axes)
 
     def _simplified(self):
         return self.func._transpose(self.axes)
@@ -1666,7 +1662,7 @@ class Einsum(Array):
     def _optimized_for_numpy(self):
         for i, arg in enumerate(self.args):
             if isinstance(arg, Transpose):  # absorb `Transpose`
-                idx = tuple(self.args_idx[i][j] for j in numpy.argsort(arg.axes))
+                idx = util.untake(arg.axes, self.args_idx[i])
             elif isinstance(arg, InsertAxis) and any(self.args_idx[i][-1] in arg_idx for arg_idx in self.args_idx[:i] + self.args_idx[i+1:]):
                 idx = self.args_idx[i][:-1]
             else:
@@ -4307,8 +4303,9 @@ class LoopConcatenate(Loop, Array):
             where += self.ndim-1,
         elif where[-1] != self.ndim-1:
             # bring concatenation axis to the end
-            unaligned = Transpose.inv(unaligned, where)
-            where = tuple(sorted(where))
+            axis = where.index(self.ndim-1)
+            unaligned = Transpose.to_end(unaligned, axis)
+            where = (*where[:axis], *where[axis+1:], self.ndim-1)
         f = loop_concatenate(unaligned, self.index)
         if not _equals_simplified(self.shape[-1], f.shape[-1]):
             # last axis was reinserted at unit length AND it was not unit length
