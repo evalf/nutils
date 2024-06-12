@@ -3049,6 +3049,7 @@ class MultipatchTopology(TransformChainsTopology):
         self._topos = tuple(topos)
         self._connectivity = numpy.array(connectivity)
 
+        assert all(isinstance(topo, StructuredTopology) for topo in self._topos)
         space = self._topos[0].space
         assert all(topo.space == space for topo in self._topos)
 
