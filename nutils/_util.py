@@ -9,7 +9,6 @@ import os
 import numpy
 import collections.abc
 import inspect
-import itertools
 import functools
 import operator
 import numbers
@@ -708,20 +707,19 @@ def cli(f, *, argv=None):
     return f(**kwargs)
 
 
-def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]]) -> Tuple[numpy.ndarray, int]:
+def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]], condense: bool = True) -> Tuple[numpy.ndarray, int]:
     '''Returns an index map relating ``nin`` unmerged elements to ``nout`` merged elements.
 
-    The index map, an array of length ``nin``, satisfies the following conditions:
-
-    *   For every merge set in ``merge_sets``: for every pair of indices ``i``
-        and ``j`` in a merge set, ``index_map[i] == index_map[j]`` is true.
-
-        In code, the following is true:
+    The index map is an array of length ``nin`` satisfying the condition that
+    for every pair of indices ``i`` and ``j`` in a merge set, ``index_map[i] ==
+    index_map[j]``. In code, the following is true:
 
             all(index_map[i] == index_map[j] for i, *js in merge_sets for j in js)
 
-    *   Selecting the first occurences of indices in ``index_map`` gives the
-        sequence ``range(nout)``.
+    If ``condense`` is true (the default) then the indices are remapped onto
+    the smallest range [0,nout), and ``nout`` is returned along the the index
+    map. In this case, selecting the first occurences of indices in
+    ``index_map`` gives the sequence ``range(nout)``.
 
     Args
     ----
@@ -731,6 +729,10 @@ def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]]) -> Tuple[nump
         An iterable of merge sets, where each merge set lists the indices of
         input elements that should be merged. Every merge set should have at
         least one index.
+    condense : :class:`bool`
+        If true (default), then the returned indices form a permutation of the
+        smallest possible range. Otherwise, precicely one index in every merged
+        set maps onto itself.
 
     Returns
     -------
@@ -741,19 +743,22 @@ def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]]) -> Tuple[nump
     '''
 
     index_map = numpy.arange(nin)
-    def resolve(index):
-        parent = index_map[index]
-        while index != parent:
-            index = parent
-            parent = index_map[index]
-        return index
     for merge_set in merge_sets:
-        resolved = list(map(resolve, merge_set))
+        resolved = []
+        for index in merge_set:
+            while (parent := index_map[index]) != index:
+                index = parent
+            resolved.append(parent)
         index_map[resolved] = min(resolved)
-    new_indices = itertools.count()
+    count = 0
     for iin, ptr in enumerate(index_map):
-        index_map[iin] = next(new_indices) if iin == ptr else index_map[ptr]
-    return index_map, next(new_indices)
+        if iin == ptr:
+            if condense:
+                index_map[iin] = count
+            count += 1
+        else:
+            index_map[iin] = index_map[ptr]
+    return index_map, count
 
 
 def nutils_dispatch(f):

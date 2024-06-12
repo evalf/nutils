@@ -361,10 +361,19 @@ def parsegmsh(mshdata):
     # Tags is a list of (nd, name, ndelems) tuples that define topological groups
     # per dimension. Since meshio associates group names with cells, which are
     # concatenated in nodes, element ids are offset and concatenated to match.
-    tags = [(nd, name, numpy.concatenate([selection
-                                          + sum(len(cells.data) for cells in msh.cells[:icell] if cells.type == msh.cells[icell].type)  # offset into nodes
-                                          for icell, selection in enumerate(msh.cell_sets[name]) if len(selection)]))
-            for name, (itag, nd) in msh.field_data.items()]
+    tags = []
+    for name, (itag, nd) in msh.field_data.items():
+        ielems = []
+        offset = 0
+        assert len(msh.cells) == len(msh.cell_sets[name])
+        for cell, selection in zip(msh.cells, msh.cell_sets[name]):
+            if cell.dim == nd:
+                ielems.append(selection + offset)
+                offset += len(cell.data)
+            elif len(selection):
+                raise Exception(f'physical group {name!r} contains elements from multiple dimensions')
+        if ielems:
+            tags.append((nd, name, numpy.concatenate(ielems)))
 
     # determine the dimension of the topology
     ndims = max(nodes)
@@ -380,12 +389,7 @@ def parsegmsh(mshdata):
         nodes = {nd: n[:, :nd+1] for nd, n in nodes.items()}  # remove high order info
 
     if len(identities):
-        slaves, masters = identities.T
-        keep = numpy.ones(len(coords), dtype=bool)
-        keep[slaves] = False
-        assert keep[masters].all()
-        renumber = keep.cumsum()-1
-        renumber[slaves] = renumber[masters]
+        renumber, _count = util.merge_index_map(len(coords), identities, condense=False)
         nodes = {nd: renumber[n] for nd, n in nodes.items()}
 
     vnodes = nodes[ndims]
