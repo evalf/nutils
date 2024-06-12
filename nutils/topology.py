@@ -3073,7 +3073,7 @@ class MultipatchTopology(TransformChainsTopology):
             else:
                 if not all((bverts == bverts0).all() for bverts in other_bverts):
                     raise NotImplementedError('patch interfaces must have the same order of axes and the same orientation per axis')
-                self._interfaces.append((bverts0, data))
+                self._interfaces.append(data)
 
     def _iter_boundaries(self):
         return ((idim, iside, (slice(None),)*idim + (iside,)) for idim in range(self.ndims) for iside in (-1, 0))
@@ -3215,8 +3215,7 @@ class MultipatchTopology(TransformChainsTopology):
         intrapatchtopo = disjoint_union_topology(self.space, self.transforms.todims, self.ndims-1, [topo.interfaces for topo in self._topos])
 
         btopos = []
-        bconnectivity = []
-        for bverts, patchdata in self._interfaces:
+        for patchdata in self._interfaces:
             if len(patchdata) > 2:
                 raise ValueError('Cannot create interfaces of multipatch topologies with more than two interface connections.')
             boundaries = [topo.boundary[topo._bnames[idim][iside]] for topo, idim, iside in patchdata]
@@ -3225,9 +3224,9 @@ class MultipatchTopology(TransformChainsTopology):
             assert references == opposite_references
             # create structured topology of joined element pairs
             btopos.append(TransformChainsTopology(self.space, references, transforms, opposites))
-            bconnectivity.append(bverts)
         # create multipatch topology of interpatch boundaries
-        interpatchtopo = MultipatchTopology(btopos, bconnectivity)
+
+        interpatchtopo = disjoint_union_topology(self.space, self.transforms.todims, self.ndims-1, btopos)
 
         return DisjointUnionTopology((intrapatchtopo, interpatchtopo), ('intrapatch', 'interpatch'))
 
