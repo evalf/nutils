@@ -730,6 +730,8 @@ def unitcircle(nelems: int, variant: str) -> Tuple[Topology, function.Array]:
             the same topological structure as :func:`unitsquare` with
             ``etype='multipatch'``.
 
+        * ``"triangle"``: unstructured mesh of triangles.
+
     Returns
     -------
     :class:`nutils.topology.TransformChainsTopology`:
@@ -776,6 +778,20 @@ def unitcircle(nelems: int, variant: str) -> Tuple[Topology, function.Array]:
         log.debug(f'NURBS projection errors: x={ex:.0e}, y={ey:.0e}, w={ew:.0e}')
 
         return topo, (basis @ numpy.stack([cx, cy], 1)) / (basis @ cw)
+
+    elif variant == 'triangle':
+        transforms = transformseq.IndexTransforms(ndims=2, length=6)
+        nodes = numpy.zeros((6, 3), dtype=int)
+        nodes[:,1] = 1, 2, 3, 4, 5, 1
+        nodes[:,2] = 2, 3, 4, 5, 6, 6
+        topo = topology.SimplexTopology('X', nodes, transforms, transforms)
+        x = .5
+        y = .5 * numpy.sqrt(3)
+        coords = numpy.array([[0, 0], [1, 0], [x, y], [-x, y], [-1, 0], [-x, -y], [x, -y]])
+        geom = topo.basis('std', 1) @ coords
+        scale = (1 - numpy.product(function.rootcoords('X', 2)))**-.5
+        nrefine = round(numpy.log2(nelems))
+        return topo.refine(nrefine), geom * scale
 
     else:
         raise Exception('invalid variant {!r}'.format(variant))
