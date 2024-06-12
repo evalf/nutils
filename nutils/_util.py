@@ -741,14 +741,12 @@ def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]]) -> Tuple[nump
     '''
 
     index_map = numpy.arange(nin)
-    def resolve(index):
-        parent = index_map[index]
-        while index != parent:
-            index = parent
-            parent = index_map[index]
-        return index
     for merge_set in merge_sets:
-        resolved = list(map(resolve, merge_set))
+        resolved = []
+        for index in merge_set:
+            while (parent := index_map[index]) != index:
+                index = parent
+            resolved.append(parent)
         index_map[resolved] = min(resolved)
     new_indices = itertools.count()
     for iin, ptr in enumerate(index_map):
