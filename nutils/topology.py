@@ -1997,10 +1997,8 @@ class StructuredTopology(TransformChainsTopology):
         btopos = [StructuredTopology(self.space, root=self.root, axes=self.axes[:idim] + (bndaxis,) + self.axes[idim+1:], nrefine=self.nrefine, bnames=self._bnames)
                   for idim, axis in enumerate(self.axes)
                   for bndaxis in axis.boundaries(nbounds)]
-        if not btopos:
-            return EmptyTopology(self.space, self.transforms.todims, self.ndims-1)
         bnames = [bname for bnames, axis in zip(self._bnames, self.axes) if axis.isdim and not axis.isperiodic for bname in bnames]
-        return DisjointUnionTopology(btopos, bnames)
+        return disjoint_union_topology(self.space, self.transforms.todims, self.ndims-1, btopos, bnames)
 
     @cached_property
     def interfaces(self):
@@ -2533,6 +2531,16 @@ class UnionTopology(TransformChainsTopology):
         return UnionTopology([topo.refined for topo in self._topos], self._names)
 
 
+def disjoint_union_topology(space: str, todims: int, fromdims: int, topos: Sequence[Topology], names: Sequence[str] = ()):
+    assert all(topo.space == space and topo.ndims == fromdims for topo in topos)
+    if not topos:
+        return EmptyTopology(space, todims, fromdims)
+    elif len(topos) == 1 and not names:
+        return topos[0]
+    else:
+        return DisjointUnionTopology(topos, names)
+
+
 class DisjointUnionTopology(TransformChainsTopology):
     'grouped topology'
 
@@ -2554,13 +2562,7 @@ class DisjointUnionTopology(TransformChainsTopology):
 
     def get_groups(self, *groups: str) -> TransformChainsTopology:
         topos = (topo if name in groups else topo.get_groups(*groups) for topo, name in itertools.zip_longest(self._topos, self._names))
-        topos = tuple(filter(None, topos))
-        if len(topos) == 0:
-            return self.empty_like()
-        elif len(topos) == 1:
-            return topos[0]
-        else:
-            return DisjointUnionTopology(topos)
+        return disjoint_union_topology(self.space, self.transforms.todims, self.ndims, tuple(filter(None, topos)))
 
     @cached_property
     def refined(self):
@@ -3086,13 +3088,7 @@ class MultipatchTopology(TransformChainsTopology):
 
     def get_groups(self, *groups: str) -> TransformChainsTopology:
         topos = (topo if 'patch{}'.format(i) in groups else topo.get_groups(*groups) for i, topo in enumerate(self._topos))
-        topos = tuple(filter(None, topos))
-        if len(topos) == 0:
-            return self.empty_like()
-        elif len(topos) == 1:
-            return topos[0]
-        else:
-            return DisjointUnionTopology(topos)
+        return disjoint_union_topology(self.space, self.transforms.todims, self.ndims, tuple(filter(None, topos)))
 
     def basis_std(self, degree, patchcontinuous=True):
         return self.basis_spline(degree, patchcontinuous, continuity=0)
@@ -3207,16 +3203,13 @@ class MultipatchTopology(TransformChainsTopology):
     def boundary(self):
         'boundary'
 
-        if not self._boundaries:
-            return EmptyTopology(self.space, self.transforms.todims, self.ndims-1)
-
         subtopos = []
         subnames = []
         for i, (topo, idim, iside) in enumerate(self._boundaries):
             name = topo._bnames[idim][iside]
             subtopos.append(topo.boundary[name])
             subnames.append('patch{}-{}'.format(i, name))
-        return DisjointUnionTopology(subtopos, subnames)
+        return disjoint_union_topology(self.space, self.transforms.todims, self.ndims-1, subtopos, subnames)
 
     @cached_property
     def interfaces(self):
@@ -3227,8 +3220,7 @@ class MultipatchTopology(TransformChainsTopology):
         patch via ``'intrapatch'``.
         '''
 
-        intrapatchtopo = EmptyTopology(self.space, self.transforms.todims, self.ndims-1) if not self._topos else \
-            DisjointUnionTopology([topo.interfaces for topo in self._topos])
+        intrapatchtopo = disjoint_union_topology(self.space, self.transforms.todims, self.ndims-1, [topo.interfaces for topo in self._topos])
 
         btopos = []
         bconnectivity = []
