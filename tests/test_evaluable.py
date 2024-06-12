@@ -80,10 +80,6 @@ class check(TestCase):
                 numpy.add.at(dense, indices, values)
             self.assertArrayAlmostEqual(dense, desired, decimal)
 
-    def test_str(self):
-        a = evaluable.Array((), shape=(evaluable.constant(2), evaluable.constant(3)), dtype=float)
-        self.assertEqual(str(a), 'nutils.evaluable.Array<f:2,3>')
-
     def test_evalconst(self):
         self.assertFunctionAlmostEqual(decimal=14,
                                        desired=self.n_op(*self.arg_values),
@@ -566,7 +562,7 @@ _check('inflate-one', lambda f: evaluable.Inflate(f, evaluable.constant(0), eval
 _check('inflate-range', lambda f: evaluable.Inflate(f, evaluable.Range(evaluable.constant(3)), evaluable.constant(3)), lambda a: a, ANY(3))
 _check('take', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 2])), lambda a: a[:, [0, 3, 2]], ANY(2, 4))
 _check('take-duplicate', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 0])), lambda a: a[:, [0, 3, 0]], ANY(2, 4))
-_check('choose', lambda a, b, c: evaluable.Choose(a % 2, b, c), lambda a, b, c: numpy.choose(a % 2, [b, c]), INT(3, 3), ANY(3, 3), ANY(3, 3))
+_check('choose', lambda a, b, c: evaluable.Choose(a % 2, evaluable.stack([b, c], -1)), lambda a, b, c: numpy.choose(a % 2, [b, c]), INT(3, 3), ANY(3, 3), ANY(3, 3))
 _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], ANY(5, 3))
 _check('normal1d', evaluable.Orthonormal, lambda G, a: numpy.sign(a), numpy.zeros([3,1,0]), NZ(3, 1))
 _check('normal2d', evaluable.Orthonormal, lambda G, a: numeric.normalize(a - numeric.normalize(G[...,0]) * ((a * numeric.normalize(G[...,0])).sum(-1))[...,numpy.newaxis]), POS(3, 2, 1), ANY(3, 2))
@@ -641,19 +637,24 @@ class intbounds(TestCase):
 
     class S(evaluable.Array):
         # An evaluable scalar argument with given bounds.
-        def __init__(self, argname, lower, upper):
-            self._argname = argname
-            self._lower = lower
-            self._upper = upper
-            super().__init__(args=(evaluable.Argument(argname, shape=(), dtype=int),), shape=(), dtype=int)
+        argname: str
+        lower: int
+        upper: int
+
+        dtype = int
+        shape = ()
+
+        @property
+        def dependencies(self):
+            return evaluable.Argument(self.argname, shape=(), dtype=int),
 
         def evalf(self, value):
-            assert self._lower <= value[()] <= self._upper
+            assert self.lower <= value[()] <= self.upper
             return value
 
         @property
         def _intbounds(self):
-            return self._lower, self._upper
+            return self.lower, self.upper
 
     def assertBounds(self, func, *, tight_lower=True, tight_upper=True, **evalargs):
         lower, upper = func._intbounds
@@ -663,8 +664,12 @@ class intbounds(TestCase):
 
     def test_default(self):
         class Test(evaluable.Array):
-            def __init__(self):
-                super().__init__(args=(evaluable.Argument('dummy', (), int),), shape=(), dtype=int)
+            dtype = int
+            shape = ()
+
+            @property
+            def dependencies(self):
+                return evaluable.Argument('dummy', (), int),
 
             def evalf(self):
                 raise NotImplementedError
@@ -882,11 +887,13 @@ class derivative(TestCase):
         # Tests whether `evaluable.Array._derivative` correctly raises an
         # exception when taking a derivative to one of the arguments present in
         # its `.arguments`.
-        class DefaultDeriv(evaluable.Array): pass
         has_arg = evaluable.Argument('has_arg', (), float)
         has_not_arg = evaluable.Argument('has_not_arg', (), float)
-        func = evaluable.WithDerivative(evaluable.Zeros((), float), has_arg, evaluable.Zeros((), float))
-        func = DefaultDeriv((func,), (), float)
+        class DefaultDeriv(evaluable.Array):
+            dtype = float
+            shape = ()
+            dependencies = evaluable.WithDerivative(evaluable.Zeros((), float), has_arg, evaluable.Zeros((), float)),
+        func = DefaultDeriv()
         with self.assertRaises(NotImplementedError):
             evaluable.derivative(func, has_arg)
         self.assertTrue(evaluable.iszero(evaluable.derivative(func, has_not_arg)))
@@ -959,17 +966,22 @@ class simplify(TestCase):
 
         class R(evaluable.Array):
             # An evaluable scalar argument with given bounds.
-            def __init__(self, lower, upper):
-                self._lower = lower
-                self._upper = upper
-                super().__init__(args=(evaluable.Argument('R', shape=(), dtype=int),), shape=(), dtype=int)
+            lower: int
+            upper: int
+
+            dtype = int
+            shape = ()
+
+            @property
+            def dependencies(self):
+                return evaluable.Argument('R', shape=(), dtype=int),
 
             def evalf(self, evalargs):
                 raise NotImplementedError
 
             @property
             def _intbounds(self):
-                return self._lower, self._upper
+                return self.lower, self.upper
 
         a = R(0, 2)
         b = R(2, 4)
@@ -1081,8 +1093,8 @@ class memory(TestCase):
             pass
 
         class A(evaluable.Array):
-            def __init__(self):
-                super().__init__(args=(), shape=(), dtype=float)
+            dtype = float
+            shape = ()
 
             def _simplified(self):
                 raise MyException
@@ -1101,7 +1113,7 @@ class make_loop_ids_unique(TestCase):
 
     @staticmethod
     def loop_sum(func, index):
-        return evaluable.LoopSum(func, (), index.loop_id, index.length)
+        return evaluable.LoopSum(index.loop_id, index.length, func, ())
 
     def test_already_unique(self):
         i, j = map(self.loop_index, 'ij')

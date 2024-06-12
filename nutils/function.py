@@ -758,16 +758,27 @@ class Custom(Array):
 
 class _CustomEvaluable(evaluable.Array):
 
-    def __init__(self, name, evalf, partial_derivative, args, shape: Tuple[int, ...], dtype: DType, spaces: FrozenSet[str], arguments: types.frozendict, lower_args: LowerArgs) -> None:
-        self.name = name
-        self.custom_evalf = evalf
-        self.custom_partial_derivative = partial_derivative
-        self.args = args
-        self.points_dim = len(lower_args.points_shape)
-        self.lower_args = lower_args
-        self.spaces = spaces
-        self.function_arguments = arguments
-        super().__init__((evaluable.Tuple(lower_args.points_shape), *(arg for arg in args if isinstance(arg, evaluable.Array))), shape=(*lower_args.points_shape, *map(evaluable.constant, shape)), dtype=dtype)
+    name: str
+    custom_evalf: callable
+    custom_partial_derivative: callable
+    args: Tuple[evaluable.Array, ...]
+    argshape: Tuple[int, ...]
+    dtype: DType
+    spaces: FrozenSet[str]
+    function_arguments: types.frozendict
+    lower_args: LowerArgs
+
+    @property
+    def points_dim(self):
+        return len(self.lower_args.points_shape)
+
+    @property
+    def dependencies(self):
+        return evaluable.Tuple(self.lower_args.points_shape), *(arg for arg in self.args if isinstance(arg, evaluable.Array))
+
+    @cached_property
+    def shape(self):
+        return *self.lower_args.points_shape, *map(evaluable.constant, self.argshape)
 
     @property
     def _node_details(self) -> str:
@@ -3322,7 +3333,7 @@ class __implementations__:
     @implements(numpy.choose)
     def choose(a, choices):
         a, *choices = broadcast_arrays(a, *typecast_arrays(*choices))
-        return _Wrapper(evaluable.Choose, a, *choices, shape=a.shape, dtype=choices[0].dtype)
+        return _Wrapper(evaluable.Choose, a, numpy.stack(choices, -1), shape=a.shape, dtype=choices[0].dtype)
 
     @implements(numpy.linalg.norm)
     def norm(x, ord=None, axis=None):

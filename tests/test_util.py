@@ -602,3 +602,13 @@ class untake(TestCase):
 
     def test_target(self):
         self.assertEqual(util.untake([1,2,0], 'abc'), ('c','a','b'))
+
+
+class abstract_property(TestCase):
+
+    def test(self):
+        class A:
+            x = util.abstract_property()
+        a = A()
+        with self.assertRaisesRegex(NotImplementedError, 'class A fails to implement x'):
+            a.x
