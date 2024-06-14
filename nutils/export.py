@@ -26,17 +26,13 @@ def mplfigure(name, /, **kwargs):
         :class:`matplotlib.figure.Figure` object.
     '''
 
-    import matplotlib.figure
-    import matplotlib.backends.backend_agg
-    fig = matplotlib.figure.Figure(**kwargs)
+    with warnings.ignore(DeprecationWarning):
+        from matplotlib.figure import Figure
+    fig = Figure(**kwargs)
     with log.userfile(name, 'wb') as f:
         yield fig
-        if f:
-            matplotlib.backends.backend_agg.FigureCanvas(fig)  # sets reference via fig.set_canvas
-            try:
-                fig.savefig(f, format=os.path.splitext(name)[1][1:])
-            finally:
-                fig.set_canvas(None)  # break circular reference
+        fig.savefig(f, format=os.path.splitext(name)[1][1:])
+        fig.clear()
 
 
 def plotlines_(ax, xy, lines, **kwargs):
