@@ -174,6 +174,14 @@ class CommonTests(CommonAssertions):
             self.assertVertices(self.topo.select(((self.geom - center) * direction).sum()), desired_vertices)
             direction = numpy.roll(direction, shift=1)
 
+    def test_newargs(self):
+        args = self.topo.__getnewargs__()
+        topo = type(self.topo)(*args)
+        self.assertEqual(topo.spaces, self.topo.spaces)
+        self.assertEqual(topo.space_dims, self.topo.space_dims)
+        self.assertEqual(topo.references, self.topo.references)
+        self.assertEqual(topo.ndims, self.topo.ndims)
+
 
 class ConformingTests:
 

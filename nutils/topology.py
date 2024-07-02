@@ -1082,6 +1082,9 @@ class _Empty(_TensorialTopology):
     def __init__(self, spaces: Sequence[str], space_dims: Sequence[int], ndims: int) -> None:
         super().__init__(spaces, space_dims, References.empty(ndims))
 
+    def __getnewargs__(self):
+        return self.spaces, self.space_dims, self.references.ndims
+
     def __invert__(self) -> Topology:
         return self
 
@@ -1126,6 +1129,9 @@ class _DisjointUnion(_TensorialTopology):
         self.topo1 = topo1
         self.topo2 = topo2
         super().__init__(topo1.spaces, topo1.space_dims, topo1.references + topo2.references)
+
+    def __getnewargs__(self):
+        return self.topo1, self.topo2
 
     def __invert__(self) -> Topology:
         return Topology.disjoint_union(~self.topo1, ~self.topo2)
@@ -1193,6 +1199,9 @@ class _Mul(_TensorialTopology):
         self.topo1 = topo1
         self.topo2 = topo2
         super().__init__(topo1.spaces + topo2.spaces, topo1.space_dims + topo2.space_dims, topo1.references * topo2.references)
+
+    def __getnewargs__(self):
+        return self.topo1, self.topo2
 
     def __invert__(self) -> Topology:
         return ~self.topo1 * ~self.topo2
@@ -1350,6 +1359,9 @@ class _Take(_TensorialTopology):
         assert 0 <= indices[0] and indices[-1] < len(self.parent)
         super().__init__(parent.spaces, parent.space_dims, parent.references.take(self.indices))
 
+    def __getnewargs__(self):
+        return self.parent, self.indices
+
     def sample(self, ischeme: str, degree: int) -> Sample:
         return self.parent.sample(ischeme, degree).take_elements(self.indices)
 
@@ -1362,6 +1374,9 @@ class _WithGroupAliases(_TensorialTopology):
         self.bgroups = bgroups
         self.igroups = igroups
         super().__init__(parent.spaces, parent.space_dims, parent.references)
+
+    def __getnewargs__(self):
+        return self.parent, self.vgroups, self.bgroups, self.igroups
 
     def _rewrite_groups(self, groups: Iterable[str]) -> Iterator[str]:
         for group in groups:
@@ -1433,6 +1448,10 @@ class TransformChainsTopology(Topology):
         self.transforms = transforms
         self.opposites = opposites
         super().__init__((space,), (transforms.todims,), references)
+
+    def __getnewargs__(self):
+        space, = self.spaces
+        return space, self.references, self.transforms, self.opposites
 
     def empty_like(self) -> 'TransformChainsTopology':
         return EmptyTopology(self.space, self.transforms.todims, self.ndims)
@@ -1767,6 +1786,9 @@ class WithGroupsTopology(TransformChainsTopology):
         super().__init__(basetopo.space, basetopo.references, basetopo.transforms, basetopo.opposites)
         assert all(topo is Ellipsis or isinstance(topo, str) or isinstance(topo, TransformChainsTopology) and topo.ndims == basetopo.ndims for topo in self.vgroups.values())
 
+    def __getnewargs__(self):
+        return self.basetopo, self.vgroups, self.bgroups, self.igroups, self.pgroups
+
     def __len__(self):
         return len(self.basetopo)
 
@@ -1858,6 +1880,9 @@ class OppositeTopology(TransformChainsTopology):
         self.basetopo = basetopo
         super().__init__(basetopo.space, basetopo.references, basetopo.opposites, basetopo.transforms)
 
+    def __getnewargs__(self):
+        return self.basetopo,
+
     def get_groups(self, *groups: str) -> TransformChainsTopology:
         return ~(self.basetopo.get_groups(*groups))
 
@@ -1882,6 +1907,10 @@ class EmptyTopology(TransformChainsTopology):
         assert isinstance(todims, int), f'todims={todims!r}'
         assert isinstance(fromdims, int), f'fromdims={fromdims!r}'
         super().__init__(space, References.empty(fromdims), transformseq.EmptyTransforms(todims, fromdims), transformseq.EmptyTransforms(todims, fromdims))
+
+    def __getnewargs__(self):
+        space, = self.spaces
+        return space, self.transforms.todims, self.transforms.fromdims
 
     def __or__(self, other):
         if self.space != other.space or self.ndims != other.ndims:
@@ -1941,6 +1970,10 @@ class StructuredTopology(TransformChainsTopology):
             opposites = transformseq.StructuredTransforms(self.root, axes, self.nrefine)
 
         super().__init__(space, references, transforms, opposites)
+
+    def __getnewargs__(self):
+        space, = self.spaces
+        return space, self.root, self.axes, self.nrefine, self._bnames
 
     def __repr__(self):
         return '{}<{}>'.format(type(self).__qualname__, 'x'.join(str(axis.j-axis.i)+('p' if axis.isperiodic else '') for axis in self.axes if axis.isdim))
@@ -2384,6 +2417,10 @@ class ConnectedTopology(TransformChainsTopology):
         self.connectivity = types.frozenarray(connectivity) if isinstance(connectivity, numpy.ndarray) else tuple(map(types.frozenarray, connectivity))
         super().__init__(space, references, transforms, opposites)
 
+    def __getnewargs__(self):
+        space, = self.spaces
+        return space, self.references, self.transforms, self.opposites, self.connectivity
+
 
 class SimplexTopology(TransformChainsTopology):
     'simpex topology'
@@ -2398,6 +2435,10 @@ class SimplexTopology(TransformChainsTopology):
         assert not numpy.equal(self.simplices[:, 1:], self.simplices[:, :-1]).all(), 'duplicate nodes'
         references = References.uniform(element.getsimplex(transforms.fromdims), len(transforms))
         super().__init__(space, references, transforms, opposites)
+
+    def __getnewargs__(self):
+        space, = self.spaces
+        return space, self.simplices, self.transforms, self.opposites
 
     @cached_property
     def contiguous_simplices(self):
@@ -2509,6 +2550,9 @@ class UnionTopology(TransformChainsTopology):
             transformseq.chain((topo.transforms[selection] for topo, selection in zip(topos, selections)), topos[0].transforms.todims, ndims),
             transformseq.chain((topo.opposites[selection] for topo, selection in zip(topos, selections)), topos[0].transforms.todims, ndims))
 
+    def __getnewargs__(self):
+        return self._topos, self._names
+
     def get_groups(self, *groups: str) -> TransformChainsTopology:
         topos = (topo if name in groups else topo.get_groups(*groups) for topo, name in itertools.zip_longest(self._topos, self._names))
         return reduce(operator.or_, filter(None, topos), self.empty_like())
@@ -2544,6 +2588,9 @@ class DisjointUnionTopology(TransformChainsTopology):
             transformseq.chain((topo.transforms for topo in self._topos), topos[0].transforms.todims, ndims),
             transformseq.chain((topo.opposites for topo in self._topos), topos[0].transforms.todims, ndims))
 
+    def __getnewargs__(self):
+        return self._topos, self._names
+
     def get_groups(self, *groups: str) -> TransformChainsTopology:
         topos = (topo if name in groups else topo.get_groups(*groups) for topo, name in itertools.zip_longest(self._topos, self._names))
         topos = tuple(filter(None, topos))
@@ -2576,6 +2623,9 @@ class SubsetTopology(TransformChainsTopology):
         transforms = self.basetopo.transforms[self._indices]
         opposites = self.basetopo.opposites[self._indices]
         super().__init__(basetopo.space, references, transforms, opposites)
+
+    def __getnewargs__(self):
+        return self.basetopo, self.refs, self.newboundary
 
     def get_groups(self, *groups: str) -> TransformChainsTopology:
         return self.basetopo.get_groups(*groups).subset(self, strict=False)
@@ -2723,6 +2773,9 @@ class RefinedTopology(TransformChainsTopology):
             self.basetopo.transforms.refined(self.basetopo.references),
             self.basetopo.opposites.refined(self.basetopo.references))
 
+    def __getnewargs__(self):
+        return self.basetopo,
+
     def get_groups(self, *groups: str) -> TransformChainsTopology:
         return self.basetopo.get_groups(*groups).refined
 
@@ -2772,6 +2825,9 @@ class HierarchicalTopology(TransformChainsTopology):
         self.levels = tuple(levels)
 
         super().__init__(basetopo.space, references, transformseq.chain(transforms, basetopo.transforms.todims, basetopo.ndims), transformseq.chain(opposites, basetopo.transforms.todims, basetopo.ndims))
+
+    def __getnewargs__(self):
+        return self.basetopo, self._indices_per_level
 
     def __and__(self, other):
         if not isinstance(other, HierarchicalTopology) or self.basetopo != other.basetopo:
@@ -3072,6 +3128,9 @@ class MultipatchTopology(TransformChainsTopology):
                 if not all((bverts == bverts0).all() for bverts in other_bverts):
                     raise NotImplementedError('patch interfaces must have the same order of axes and the same orientation per axis')
                 self._interfaces.append((bverts0, data))
+
+    def __getnewargs__(self):
+        return self._topos, self._connectivity
 
     def _iter_boundaries(self):
         return ((idim, iside, (slice(None),)*idim + (iside,)) for idim in range(self.ndims) for iside in (-1, 0))
