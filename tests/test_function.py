@@ -178,6 +178,12 @@ class check(TestCase):
         f_ = pickle.loads(s)
         self.assertEqual(f.as_evaluable_array, f_.as_evaluable_array)
 
+    def test_newargs(self):
+        f = self.op(*self.args)
+        args = f.__getnewargs__()
+        f_ = type(f)(*args)
+        self.assertEqual(f.as_evaluable_array, f_.as_evaluable_array)
+
 
 def generate(*shape, real, imag, zero, negative):
     'generate array values that cover certain numerical classes'
@@ -732,7 +738,7 @@ class elemwise(TestCase):
 
     def setUp(self):
         super().setUp()
-        self.index = function._Wrapper(lambda: evaluable.InRange(evaluable.Argument('index', (), int), evaluable.constant(5)), shape=(), dtype=int)
+        self.index = function._Wrapper(lambda: evaluable.InRange(evaluable.Argument('index', (), int), evaluable.constant(5)), (), shape=(), dtype=int)
         self.data = tuple(map(types.frozenarray, (
             numpy.arange(1, 7, dtype=float).reshape(2, 3),
             numpy.arange(2, 8, dtype=float).reshape(2, 3),

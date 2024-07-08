@@ -226,6 +226,9 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         self.spaces = frozenset(spaces)
         self.arguments = dict(arguments)
 
+    def __getnewargs__(self):
+        return self.shape, self.dtype, self.spaces, self.arguments
+
     def lower(self, args: LowerArgs) -> evaluable.Array:
         raise NotImplementedError
 
@@ -306,7 +309,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         if dtype == self.dtype:
             return self
         else:
-            return _Wrapper(functools.partial(evaluable.astype, dtype=dtype), self, shape=self.shape, dtype=dtype)
+            return _Wrapper(functools.partial(evaluable.astype, dtype=dtype), (self,), shape=self.shape, dtype=dtype)
 
     def sum(self, axis: Optional[Union[int, Sequence[int]]] = None) -> 'Array':
         '''Return the sum of array elements over the given axes.
@@ -537,6 +540,9 @@ class _Unlower(Array):
         shape = tuple(n.__index__() for n in array.shape[len(lower_args.points_shape):])
         super().__init__(shape=shape, dtype=array.dtype, spaces=spaces, arguments=arguments)
 
+    def __getnewargs__(self):
+        return self._array, self.spaces, self.arguments, self._lower_args
+
     def lower(self, args: LowerArgs) -> evaluable.Array:
         if args != self._lower_args:
             raise ValueError('_Unlower must be lowered with the same arguments as those with which it is instantiated.')
@@ -692,6 +698,9 @@ class Custom(Array):
         arguments = _join_arguments(arg.arguments for arg in args if isinstance(arg, Array))
         super().__init__(shape=(*points_shape, *shape), dtype=dtype, spaces=spaces, arguments=arguments)
 
+    def __getnewargs__(self):
+        return self._args, self.shape, self.dtype, self._npointwise
+
     def lower(self, args: LowerArgs) -> evaluable.Array:
         evalargs = tuple(arg.lower(args) if isinstance(arg, Array) else evaluable.EvaluableConstant(arg) for arg in self._args)  # type: Tuple[Union[evaluable.Array, evaluable.EvaluableConstant], ...]
         add_points_shape = tuple(map(evaluable.asarray, self.shape[:self._npointwise]))
@@ -823,6 +832,9 @@ class _WithoutPoints:
         self.spaces = __arg.spaces
         self.arguments = __arg.arguments
 
+    def __getnewargs__(self):
+        return self._arg,
+
     def lower(self, args: LowerArgs) -> evaluable.Array:
         return self._arg.lower(LowerArgs((), args.transform_chains, {}))
 
@@ -832,15 +844,18 @@ class _Wrapper(Array):
     @classmethod
     def broadcasted_arrays(cls, lower: Callable[..., evaluable.Array], *args: IntoArray, min_dtype: DType = bool, force_dtype: Optional[DType] = None) -> '_Wrapper':
         broadcasted = broadcast_arrays(*typecast_arrays(*args, min_dtype=min_dtype))
-        return cls(lower, *broadcasted, shape=broadcasted[0].shape, dtype=force_dtype or broadcasted[0].dtype)
+        return cls(lower, broadcasted, shape=broadcasted[0].shape, dtype=force_dtype or broadcasted[0].dtype)
 
-    def __init__(self, lower: Callable[..., evaluable.Array], *args: Lowerable, shape: Shape, dtype: DType) -> None:
+    def __init__(self, lower: Callable[..., evaluable.Array], args: Tuple[Lowerable, ...], shape: Shape, dtype: DType) -> None:
         self._lower = lower
-        self._args = args
+        self._args = tuple(args)
         assert all(hasattr(arg, 'lower') for arg in self._args)
         spaces = frozenset(space for arg in args for space in arg.spaces)
         arguments = _join_arguments(arg.arguments for arg in self._args)
         super().__init__(shape, dtype, spaces, arguments)
+
+    def __getnewargs__(self):
+        return self._lower, self._args, self.shape, self.dtype
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         return self._lower(*(arg.lower(args) for arg in self._args))
@@ -863,6 +878,9 @@ class _Constant(Array):
     def __init__(self, value: Any) -> None:
         self._value = types.arraydata(value)
         super().__init__(self._value.shape, self._value.dtype, frozenset(()), {})
+
+    def __getnewargs__(self):
+        return self._value,
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         return evaluable.prependaxes(evaluable.Constant(self._value), args.points_shape)
@@ -889,6 +907,9 @@ class Argument(Array):
     def __init__(self, name: str, shape: Shape, dtype: DType = float) -> None:
         self.name = name
         super().__init__(shape, dtype, frozenset(()), {name: (tuple(shape), dtype)})
+
+    def __getnewargs__(self):
+        return self.name, self.shape, self.dtype
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         return evaluable.prependaxes(evaluable.Argument(self.name, tuple(evaluable.constant(n) for n in self.shape), self.dtype), args.points_shape)
@@ -919,6 +940,9 @@ class _Replace(Array):
                 unreplaced[name] = shape, dtype
         arguments = _join_arguments([unreplaced] + [replacement.arguments for replacement in self._replacements.values()])
         super().__init__(arg.shape, arg.dtype, arg.spaces, arguments)
+
+    def __getnewargs__(self):
+        return self._arg, self._replacements
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         arg = self._arg.lower(args)
@@ -952,6 +976,9 @@ class _Transpose(Array):
         self._axes = tuple(n.__index__() for n in axes)
         super().__init__(tuple(arg.shape[axis] for axis in axes), arg.dtype, arg.spaces, arg.arguments)
 
+    def __getnewargs__(self):
+        return self._arg, self._axes
+
     def lower(self, args: LowerArgs) -> evaluable.Array:
         arg = self._arg.lower(args)
         offset = len(args.points_shape)
@@ -966,6 +993,9 @@ class _Opposite(Array):
         self._space = space
         super().__init__(arg.shape, arg.dtype, arg.spaces, arg.arguments)
 
+    def __getnewargs__(self):
+        return self._arg, self._space
+
     def lower(self, args: LowerArgs) -> evaluable.Array:
         oppargs = LowerArgs(args.points_shape, dict(args.transform_chains), args.coordinates)
         transforms, index = args.transform_chains[self._space]
@@ -978,6 +1008,9 @@ class _RootCoords(Array):
     def __init__(self, space: str, ndims: int) -> None:
         self._space = space
         super().__init__((ndims,), float, frozenset({space}), {})
+
+    def __getnewargs__(self):
+        return self._space, self.ndims
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         inv_linear = evaluable.diagonalize(evaluable.ones(tuple(evaluable.constant(n) for n in self.shape)))
@@ -996,6 +1029,9 @@ class _TransformsIndex(Array):
         self._transforms = transforms
         super().__init__((), int, frozenset({space}), {})
 
+    def __getnewargs__(self):
+        return self._space, self._transforms
+
     def lower(self, args: LowerArgs) -> evaluable.Array:
         transforms, index = args.transform_chains[self._space]
         return evaluable.prependaxes(evaluable.TransformIndex(self._transforms, transforms[0], index), args.points_shape)
@@ -1007,6 +1043,9 @@ class _TransformsCoords(Array):
         self._space = space
         self._transforms = transforms
         super().__init__((transforms.fromdims,), float, frozenset({space}), {})
+
+    def __getnewargs__(self):
+        return self._space, self._transforms
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         transforms, tip_index = args.transform_chains[self._space]
@@ -1034,6 +1073,9 @@ class _Derivative(Array):
         arguments = _join_arguments((arg.arguments, var.arguments))
         super().__init__(arg.shape+var.shape, complex if var.dtype == complex else arg.dtype, arg.spaces | var.spaces, arguments)
 
+    def __getnewargs__(self):
+        return self._arg, self._var
+
     def lower(self, args: LowerArgs) -> evaluable.Array:
         arg = self._arg.lower(args)
         return evaluable.derivative(arg, self._eval_var)
@@ -1058,6 +1100,9 @@ class _Gradient(Array):
         self._geom = numpy.broadcast_to(geom, (*common_shape, geom.shape[-1]))
         arguments = _join_arguments((func.arguments, geom.arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
+
+    def __getnewargs__(self):
+        return self._func, self._geom
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         func = self._func.lower(args)
@@ -1084,6 +1129,9 @@ class _SurfaceGradient(Array):
         self._geom = numpy.broadcast_to(geom, (*common_shape, geom.shape[-1]))
         arguments = _join_arguments((func.arguments, geom.arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
+
+    def __getnewargs__(self):
+        return self._func, self._geom
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         func = self._func.lower(args)
@@ -1114,6 +1162,9 @@ class _Jacobian(Array):
         self._geom = geom
         super().__init__((), float, geom.spaces, geom.arguments)
 
+    def __getnewargs__(self):
+        return self._geom, self._tip_dim
+
     def lower(self, args: LowerArgs) -> evaluable.Array:
         geom = self._geom.lower(args)
         tip_dim = builtins.sum(args.transform_chains[space][0][0].fromdims for space in self._geom.spaces)
@@ -1134,6 +1185,9 @@ class _Normal(Array):
         self._geom = geom
         assert geom.dtype == float
         super().__init__(geom.shape, float, geom.spaces, geom.arguments)
+
+    def __getnewargs__(self):
+        return self._geom,
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         geom = self._geom.lower(args)
@@ -1170,6 +1224,9 @@ class _ExteriorNormal(Array):
         self._rgrad = rgrad
         super().__init__(rgrad.shape[:-1], float, rgrad.spaces, rgrad.arguments)
 
+    def __getnewargs__(self):
+        return self._rgrad,
+
     def lower(self, args: LowerArgs) -> evaluable.Array:
         rgrad = self._rgrad.lower(args)
         if self._rgrad.shape[-2] == 2:
@@ -1196,6 +1253,9 @@ class _Concatenate(Array):
             dtype=self.arrays[0].dtype,
             spaces=functools.reduce(operator.or_, (array.spaces for array in self.arrays)),
             arguments=_join_arguments(array.arguments for array in self.arrays))
+
+    def __getnewargs__(self):
+        return self.arrays, self.axis
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         return util.sum(evaluable._inflate(array.lower(args), evaluable.Range(evaluable.constant(array.shape[self.axis])) + offset, evaluable.constant(self.shape[self.axis]), self.axis-self.ndim)
@@ -1519,7 +1579,7 @@ def abs(__arg: IntoArray) -> Array:
     '''
 
     arg = Array.cast(__arg)
-    return _Wrapper(evaluable.abs, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+    return _Wrapper(evaluable.abs, (arg,), shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 
 @_use_instead('numpy.matmul or the @ operator')
@@ -1718,7 +1778,7 @@ def arctan2(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     dividend, divisor = broadcast_arrays(*typecast_arrays(__dividend, __divisor, min_dtype=float))
     if dividend.dtype == complex:
         raise ValueError('arctan2 is not defined for complex numbers')
-    return _Wrapper(evaluable.ArcTan2, dividend, divisor, shape=dividend.shape, dtype=float)
+    return _Wrapper(evaluable.ArcTan2, (dividend, divisor), shape=dividend.shape, dtype=float)
 
 
 @_use_instead('numpy.cosh')
@@ -2095,11 +2155,11 @@ def sum(__arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> A
     if axis is None:
         if arg.ndim == 0:
             raise ValueError('Cannot sum last axis of 0-D array.')
-        return _Wrapper(evaluable.Sum, arg, shape=arg.shape[:-1], dtype=arg.dtype)
+        return _Wrapper(evaluable.Sum, (arg,), shape=arg.shape[:-1], dtype=arg.dtype)
     axes = typing.cast(Sequence[int], (axis,) if isinstance(axis, numbers.Integral) else axis)
     summed = _Transpose.to_end(arg, *axes)
     for i in range(len(axes)):
-        summed = _Wrapper(evaluable.Sum, summed, shape=summed.shape[:-1], dtype=summed.dtype)
+        summed = _Wrapper(evaluable.Sum, (summed,), shape=summed.shape[:-1], dtype=summed.dtype)
     return summed
 
 
@@ -2123,7 +2183,7 @@ def product(__arg: IntoArray, axis: int) -> Array:
     if arg.dtype == bool:
         arg = arg.astype(int)
     transposed = _Transpose.to_end(arg, axis)
-    return _Wrapper(evaluable.Product, transposed, shape=transposed.shape[:-1], dtype=arg.dtype)
+    return _Wrapper(evaluable.Product, (transposed,), shape=transposed.shape[:-1], dtype=arg.dtype)
 
 # LINEAR ALGEBRA
 
@@ -2143,7 +2203,7 @@ def conjugate(__arg: IntoArray) -> Array:
     '''
 
     arg = Array.cast(__arg)
-    return _Wrapper(evaluable.conjugate, arg, shape=arg.shape, dtype=arg.dtype)
+    return _Wrapper(evaluable.conjugate, (arg,), shape=arg.shape, dtype=arg.dtype)
 
 
 conj = conjugate
@@ -2164,7 +2224,7 @@ def real(__arg: IntoArray) -> Array:
     '''
 
     arg = Array.cast(__arg)
-    return _Wrapper(evaluable.real, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+    return _Wrapper(evaluable.real, (arg,), shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 
 @_use_instead('numpy.imag')
@@ -2182,7 +2242,7 @@ def imag(__arg: IntoArray) -> Array:
     '''
 
     arg = Array.cast(__arg)
-    return _Wrapper(evaluable.imag, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+    return _Wrapper(evaluable.imag, (arg,), shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 
 @_use_instead('numpy.dot, matmul or a combination of multiply and sum')
@@ -2324,7 +2384,7 @@ def inverse(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1)) -> Array:
     transposed = _Transpose.to_end(arg, *__axes)
     if transposed.shape[-2] != transposed.shape[-1]:
         raise ValueError('cannot compute the inverse along two axes with different lengths')
-    inverted = _Wrapper(evaluable.Inverse, transposed, shape=transposed.shape, dtype=arg.dtype)
+    inverted = _Wrapper(evaluable.Inverse, (transposed,), shape=transposed.shape, dtype=arg.dtype)
     return _Transpose.from_end(inverted, *__axes)
 
 
@@ -2345,7 +2405,7 @@ def determinant(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1)) -> Array:
     '''
 
     transposed = _Transpose.to_end(Array.cast(__arg), *__axes)
-    return _Wrapper(evaluable.Determinant, transposed, shape=transposed.shape[:-2], dtype=float)
+    return _Wrapper(evaluable.Determinant, (transposed,), shape=transposed.shape[:-2], dtype=float)
 
 
 def _eval_eigval(arg: evaluable.Array, symmetric: bool) -> evaluable.Array:
@@ -2381,8 +2441,8 @@ def eig(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1), symmetric: bool = 
 
     arg = Array.cast(__arg)
     transposed = _Transpose.to_end(arg, *__axes)
-    eigval = _Wrapper(functools.partial(_eval_eigval, symmetric=symmetric), arg, shape=arg.shape[:-1], dtype=float if symmetric else complex)
-    eigvec = _Wrapper(functools.partial(_eval_eigvec, symmetric=symmetric), arg, shape=arg.shape, dtype=float if symmetric and arg.dtype != complex else complex)
+    eigval = _Wrapper(functools.partial(_eval_eigval, symmetric=symmetric), (arg,), shape=arg.shape[:-1], dtype=float if symmetric else complex)
+    eigvec = _Wrapper(functools.partial(_eval_eigvec, symmetric=symmetric), (arg,), shape=arg.shape, dtype=float if symmetric and arg.dtype != complex else complex)
     return diagonalize(eigval), eigvec
 
 
@@ -2391,7 +2451,7 @@ def _takediag(__arg: IntoArray, _axis1: int = -2, _axis2: int = -1) -> Array:
     transposed = _Transpose.to_end(arg, _axis1, _axis2)
     if transposed.shape[-2] != transposed.shape[-1]:
         raise ValueError('cannot take the diagonal along two axes with different lengths')
-    return _Wrapper(evaluable.TakeDiag, transposed, shape=transposed.shape[:-1], dtype=transposed.dtype)
+    return _Wrapper(evaluable.TakeDiag, (transposed,), shape=transposed.shape[:-1], dtype=transposed.dtype)
 
 
 @_use_instead('numpy.diagonal')
@@ -2446,7 +2506,7 @@ def diagonalize(__arg: IntoArray, __axis: int = -1, __newaxis: int = -1) -> Arra
     newaxis = numeric.normdim(arg.ndim+1, __newaxis)
     assert axis < newaxis
     transposed = _Transpose.to_end(arg, axis)
-    diagonalized = _Wrapper(evaluable.Diagonalize, transposed, shape=(*transposed.shape, transposed.shape[-1]), dtype=transposed.dtype)
+    diagonalized = _Wrapper(evaluable.Diagonalize, (transposed,), shape=(*transposed.shape, transposed.shape[-1]), dtype=transposed.dtype)
     return _Transpose.from_end(diagonalized, axis, newaxis)
 
 
@@ -2516,7 +2576,7 @@ def transpose(__array: IntoArray, __axes: Optional[Sequence[int]] = None) -> Arr
 def _append_axes(__array: IntoArray, __shape: Shape) -> Array:
     array = Array.cast(__array)
     for n in __shape:
-        array = _Wrapper(evaluable.InsertAxis, array, _WithoutPoints(Array.cast(n)), shape=(*array.shape, n), dtype=array.dtype)
+        array = _Wrapper(evaluable.InsertAxis, (array, _WithoutPoints(Array.cast(n))), shape=(*array.shape, n), dtype=array.dtype)
     return array
 
 
@@ -2633,7 +2693,7 @@ def ravel(__array: IntoArray, axis: int) -> Array:
     array = Array.cast(__array)
     axis = numeric.normdim(array.ndim-1, axis)
     transposed = _Transpose.to_end(array, axis, axis+1)
-    raveled = _Wrapper(evaluable.Ravel, transposed, shape=(*transposed.shape[:-2], transposed.shape[-2]*transposed.shape[-1]), dtype=transposed.dtype)
+    raveled = _Wrapper(evaluable.Ravel, (transposed,), shape=(*transposed.shape[:-2], transposed.shape[-2]*transposed.shape[-1]), dtype=transposed.dtype)
     return _Transpose.from_end(raveled, axis)
 
 
@@ -2661,9 +2721,7 @@ def unravel(__array: IntoArray, axis: int, shape: Tuple[int, int]) -> Array:
     assert len(shape) == 2 and all(isinstance(sh, int) for sh in shape), 'function.unravel: invalid shape: expected two integers, received {}'.format(shape)
     transposed = _Transpose.to_end(Array.cast(__array), axis)
     unraveled = _Wrapper(evaluable.Unravel,
-                         transposed,
-                         _WithoutPoints(Array.cast(shape[0])),
-                         _WithoutPoints(Array.cast(shape[1])),
+                         (transposed, _WithoutPoints(Array.cast(shape[0])), _WithoutPoints(Array.cast(shape[1]))),
                          shape=(*transposed.shape[:-1], *shape),
                          dtype=transposed.dtype)
     return _Transpose.from_end(unraveled, axis, axis+1)
@@ -2705,7 +2763,7 @@ def take(__array: IntoArray, __indices: IntoArray, axis: int) -> Array:
     else:
         indices = _Wrapper.broadcasted_arrays(evaluable.NormDim, array.shape[axis], Array.cast(__indices, dtype=int))
     transposed = _Transpose.to_end(array, axis)
-    taken = _Wrapper(evaluable.Take, transposed, _WithoutPoints(indices), shape=(*transposed.shape[:-1], *indices.shape), dtype=array.dtype)
+    taken = _Wrapper(evaluable.Take, (transposed, _WithoutPoints(indices)), shape=(*transposed.shape[:-1], *indices.shape), dtype=array.dtype)
     return _Transpose.from_end(taken, *range(axis, axis+indices.ndim))
 
 
@@ -2744,7 +2802,7 @@ def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
         if start == 0 and stop == n:
             return array
         length = stop - start
-        index = _Wrapper(evaluable.Range, _WithoutPoints(_Constant(length)), shape=(length,), dtype=int) + start
+        index = _Wrapper(evaluable.Range, (_WithoutPoints(_Constant(length)),), shape=(length,), dtype=int) + start
     elif isinstance(n, numbers.Integral):
         index = Array.cast(numpy.arange(*s.indices(int(n))))
     else:
@@ -2782,9 +2840,7 @@ def scatter(__array: IntoArray, length: int, indices: IntoArray) -> Array:
     array = Array.cast(__array)
     indices = Array.cast(indices)
     return _Wrapper(evaluable.Inflate,
-                    array,
-                    _WithoutPoints(indices),
-                    _WithoutPoints(Array.cast(length)),
+                    (array, _WithoutPoints(indices), _WithoutPoints(Array.cast(length))),
                     shape=array.shape[:array.ndim-indices.ndim] + (length,),
                     dtype=array.dtype)
 
@@ -3524,7 +3580,7 @@ def choose(__index: IntoArray, __choices: Sequence[IntoArray]) -> Array:
     dtype = choices[0].dtype
     index = _append_axes(index, shape)
     spaces = functools.reduce(operator.or_, (arg.spaces for arg in choices), index.spaces)
-    return _Wrapper(evaluable.Choose, index, *choices, shape=shape, dtype=dtype)
+    return _Wrapper(evaluable.Choose, (index, *choices), shape=shape, dtype=dtype)
 
 
 def chain(_funcs: Sequence[IntoArray]) -> Sequence[Array]:
@@ -3811,6 +3867,9 @@ class PlainBasis(Basis):
         assert all(c.shape[0] == d.shape[0] for c, d in zip(self._coeffs, self._dofs))
         super().__init__(ndofs, len(coefficients), index, coords)
 
+    def __getnewargs__(self):
+        return self._coeffs, self._dofs, self.ndofs, self.index, self.coords
+
     def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array, evaluable.Array]:
         dofs = evaluable.Elemwise(self._dofs, index, dtype=int)
         coeffs = evaluable.Elemwise(self._coeffs, index, dtype=float)
@@ -3836,6 +3895,9 @@ class DiscontBasis(Basis):
         assert all(c.ndim == 2 for c in self._coeffs)
         self._offsets = numpy.cumsum([0] + [c.shape[0] for c in self._coeffs])
         super().__init__(self._offsets[-1], len(coefficients), index, coords)
+
+    def __getnewargs__(self):
+        return self._coeffs, self.index, self.coords
 
     @_int_or_vec_dof
     def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
@@ -3868,6 +3930,9 @@ class LegendreBasis(Basis):
             raise NotImplementedError('The Legendre basis is only implemented for dimension 1.')
         self._degree = degree
         super().__init__(nelems * (degree+1), nelems, index, coords)
+
+    def __getnewargs__(self):
+        return self._degree, self.nelems, self.index, self.coords
 
     @_int_or_vec_dof
     def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
@@ -3916,6 +3981,9 @@ class MaskedBasis(Basis):
         self._renumber = evaluable.constant(numeric.invmap(indices, length=parent.ndofs, missing=len(indices)))
         super().__init__(len(indices), parent.nelems, parent.index, parent.coords)
 
+    def __getnewargs__(self):
+        return self._parent, self._indices
+
     def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
         if numeric.isintarray(dof) and dof.ndim == 1 and numpy.any(numpy.less(dof, 0)):
             raise IndexError('dof out of bounds')
@@ -3960,6 +4028,9 @@ class StructuredBasis(Basis):
         self._dofs_shape = tuple(map(int, dofs_shape))
         self._transforms_shape = tuple(map(int, transforms_shape))
         super().__init__(util.product(dofs_shape), util.product(transforms_shape), index, coords)
+
+    def __getnewargs__(self):
+        return self._coeffs, self._start_dofs, self._stop_dofs, self._dofs_shape, self._transforms_shape, self.index, self.coords
 
     @_int_or_vec_dof
     def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
@@ -4025,6 +4096,9 @@ class PrunedBasis(Basis):
         self._dofmap = parent.get_dofs(self._transmap)
         self._renumber = types.frozenarray(numeric.invmap(self._dofmap, length=parent.ndofs, missing=len(self._dofmap)), copy=False)
         super().__init__(len(self._dofmap), len(transmap), index, coords)
+
+    def __getnewargs__(self):
+        return self._parent, self._transmap, self.index, self.coords
 
     def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
         if numeric.isintarray(dof) and dof.ndim == 1 and numpy.any(numpy.less(dof, 0)):
@@ -4124,7 +4198,7 @@ class __implementations__:
     @implements(numpy.absolute)
     def abs(arg: IntoArray) -> Array:
         arg = Array.cast(arg)
-        return _Wrapper(evaluable.abs, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+        return _Wrapper(evaluable.abs, (arg,), shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
     @implements(numpy.sign)
     def sign(arg: IntoArray) -> Array:
@@ -4175,7 +4249,7 @@ class __implementations__:
         dividend, divisor = broadcast_arrays(*typecast_arrays(dividend, divisor, min_dtype=float))
         if dividend.dtype == complex:
             raise ValueError('arctan2 is not defined for complex numbers')
-        return _Wrapper(evaluable.ArcTan2, dividend, divisor, shape=dividend.shape, dtype=float)
+        return _Wrapper(evaluable.ArcTan2, (dividend, divisor), shape=dividend.shape, dtype=float)
 
     @implements(numpy.sinc)
     def sinc(arg: Array) -> Array:
@@ -4253,7 +4327,7 @@ class __implementations__:
         axes = range(arg.ndim) if axis is None else [axis] if isinstance(axis, numbers.Integral) else axis
         summed = _Transpose.to_end(arg, *axes)
         for i in range(len(axes)):
-            summed = _Wrapper(evaluable.Sum, summed, shape=summed.shape[:-1], dtype=summed.dtype)
+            summed = _Wrapper(evaluable.Sum, (summed,), shape=summed.shape[:-1], dtype=summed.dtype)
         return summed
 
     @implements(numpy.prod)
@@ -4265,7 +4339,7 @@ class __implementations__:
         axes = range(arg.ndim) if axis is None else [axis] if isinstance(axis, numbers.Integral) else axis
         multiplied = _Transpose.to_end(arg, *axes)
         for i in range(len(axes)):
-            multiplied = _Wrapper(evaluable.Product, multiplied, shape=multiplied.shape[:-1], dtype=multiplied.dtype)
+            multiplied = _Wrapper(evaluable.Product, (multiplied,), shape=multiplied.shape[:-1], dtype=multiplied.dtype)
         return multiplied
 
     @implements(numpy.conjugate)
@@ -4275,12 +4349,12 @@ class __implementations__:
     @implements(numpy.real)
     def real(arg: IntoArray) -> Array:
         arg = Array.cast(arg)
-        return _Wrapper(evaluable.real, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+        return _Wrapper(evaluable.real, (arg,), shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
     @implements(numpy.imag)
     def imag(arg: IntoArray) -> Array:
         arg = Array.cast(arg)
-        return _Wrapper(evaluable.imag, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+        return _Wrapper(evaluable.imag, (arg,), shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
     @implements(numpy.vdot)
     def vdot(a: IntoArray, b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
@@ -4326,20 +4400,20 @@ class __implementations__:
         for i, s in enumerate(reversed(newshape[ncommon:])):
             if arg.ndim == ncommon + i: # the first i axes are finished so we need to append a new singleton axis to continue
                 assert s == 1
-                arg = _Wrapper(evaluable.InsertAxis, arg, _WithoutPoints(Array.cast(1)), shape=(*arg.shape, 1), dtype=arg.dtype)
+                arg = _Wrapper(evaluable.InsertAxis, (arg, _WithoutPoints(Array.cast(1))), shape=(*arg.shape, 1), dtype=arg.dtype)
             else:
                 while arg.shape[-1] % s:
                     assert arg.ndim > ncommon + i + 1
-                    arg = _Wrapper(evaluable.Ravel, arg, shape=(*arg.shape[:-2], arg.shape[-2]*arg.shape[-1]), dtype=arg.dtype)
+                    arg = _Wrapper(evaluable.Ravel, (arg,), shape=(*arg.shape[:-2], arg.shape[-2]*arg.shape[-1]), dtype=arg.dtype)
                 if arg.shape[-1] != s:
                     n = arg.shape[-1] // s
-                    arg = _Wrapper(evaluable.Unravel, arg, _WithoutPoints(Array.cast(n)), _WithoutPoints(Array.cast(s)), shape=(*arg.shape[:-1], n, s), dtype=arg.dtype)
+                    arg = _Wrapper(evaluable.Unravel, (arg, _WithoutPoints(Array.cast(n)), _WithoutPoints(Array.cast(s))), shape=(*arg.shape[:-1], n, s), dtype=arg.dtype)
             arg = _Transpose.from_end(arg, ncommon) # move axis to front so that we can continue to operate on the end
         # If the original array had a surplus of singleton axes, these may
         # still be present in the tail. We take them away one by one.
         while arg.ndim > len(newshape):
             assert arg.shape[-1] == 1
-            arg = _Wrapper(evaluable.Take, arg, _WithoutPoints(Array.cast(0)), shape=arg.shape[:-1], dtype=arg.dtype)
+            arg = _Wrapper(evaluable.Take, (arg, _WithoutPoints(Array.cast(0))), shape=arg.shape[:-1], dtype=arg.dtype)
         assert arg.shape == newshape
         return arg
 
@@ -4389,7 +4463,7 @@ class __implementations__:
                 raise ValueError('indices out of bounds')
             indices = _Constant(indices)
         transposed = _Transpose.to_end(array, axis)
-        taken = _Wrapper(evaluable.Take, transposed, _WithoutPoints(indices), shape=(*transposed.shape[:-1], *indices.shape), dtype=array.dtype)
+        taken = _Wrapper(evaluable.Take, (transposed, _WithoutPoints(indices)), shape=(*transposed.shape[:-1], *indices.shape), dtype=array.dtype)
         return _Transpose.from_end(taken, *range(axis, axis+indices.ndim))
 
     @implements(numpy.compress)
@@ -4440,7 +4514,7 @@ class __implementations__:
             if sorter.shape != array.shape or sorter.dtype != int:
                 raise ValueError('invalid sorter array')
         lower = functools.partial(evaluable.SearchSorted, array=array, side=side, sorter=sorter)
-        return _Wrapper(lower, values, shape=values.shape, dtype=int)
+        return _Wrapper(lower, (values,), shape=values.shape, dtype=int)
 
     @implements(numpy.interp)
     def interp(x, xp, fp, left=None, right=None):
@@ -4457,7 +4531,7 @@ class __implementations__:
     @implements(numpy.choose)
     def choose(a, choices):
         a, *choices = broadcast_arrays(a, *typecast_arrays(*choices))
-        return _Wrapper(evaluable.Choose, a, *choices, shape=a.shape, dtype=choices[0].dtype)
+        return _Wrapper(evaluable.Choose, (a, *choices), shape=a.shape, dtype=choices[0].dtype)
 
     @implements(numpy.linalg.norm)
     def norm(x, ord=None, axis=None):
@@ -4472,25 +4546,25 @@ class __implementations__:
 
     @implements(numpy.linalg.eig)
     def eig(a):
-        return _Wrapper(functools.partial(__implementations__._eig, False, 0), a, shape=a.shape[:-1], dtype=complex), \
-               _Wrapper(functools.partial(__implementations__._eig, False, 1), a, shape=a.shape, dtype=complex)
+        return _Wrapper(functools.partial(__implementations__._eig, False, 0), (a,), shape=a.shape[:-1], dtype=complex), \
+               _Wrapper(functools.partial(__implementations__._eig, False, 1), (a,), shape=a.shape, dtype=complex)
 
     @implements(numpy.linalg.eigh)
     def eigh(a):
-        return _Wrapper(functools.partial(__implementations__._eig, True, 0), a, shape=a.shape[:-1], dtype=float), \
-               _Wrapper(functools.partial(__implementations__._eig, True, 1), a, shape=a.shape, dtype=float if a.dtype != complex else complex)
+        return _Wrapper(functools.partial(__implementations__._eig, True, 0), (a,), shape=a.shape[:-1], dtype=float), \
+               _Wrapper(functools.partial(__implementations__._eig, True, 1), (a,), shape=a.shape, dtype=float if a.dtype != complex else complex)
 
     @implements(numpy.linalg.det)
     def det(a):
         if a.ndim < 2 or a.shape[-2] != a.shape[-1]:
             raise ValueError('Last 2 dimensions of the array must be square')
-        return _Wrapper(evaluable.Determinant, a, shape=a.shape[:-2], dtype=complex if a.dtype == complex else float)
+        return _Wrapper(evaluable.Determinant, (a,), shape=a.shape[:-2], dtype=complex if a.dtype == complex else float)
 
     @implements(numpy.linalg.inv)
     def inv(a):
         if a.ndim < 2 or a.shape[-2] != a.shape[-1]:
             raise ValueError('Last 2 dimensions of the array must be square')
-        return _Wrapper(evaluable.Inverse, a, shape=a.shape, dtype=complex if a.dtype == complex else float)
+        return _Wrapper(evaluable.Inverse, (a,), shape=a.shape, dtype=complex if a.dtype == complex else float)
 
     @implements(numpy.ndim)
     def ndim(a):
@@ -4513,7 +4587,7 @@ class __implementations__:
             arg = arg[...,:-offset,offset:]
         elif offset < 0:
             arg = arg[...,-offset:,:offset]
-        return _Wrapper(evaluable.TakeDiag, arg, shape=arg.shape[:-1], dtype=a.dtype)
+        return _Wrapper(evaluable.TakeDiag, (arg,), shape=arg.shape[:-1], dtype=a.dtype)
 
     @implements(numpy.einsum)
     def einsum(subscripts, *operands):
