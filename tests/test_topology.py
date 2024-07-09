@@ -1098,10 +1098,10 @@ class multipatch_L(TestCase):
 
     def setUp(self):
         # 2---5
-        # |   |
-        # 1---4------7
-        # |   |      |
-        # 0---3------6
+        # | 1 |
+        # 1---4-------7
+        # | 0 |   2   |
+        # 0---3-------6
 
         super().setUp()
         self.domain, self.geom = mesh.multipatch(
@@ -1157,6 +1157,26 @@ class multipatch_L(TestCase):
                 trans1, opp1 = opp1, trans1
             self.assertEqual(trans1, interfaces2.transforms[i2])
             self.assertEqual(opp1, interfaces2.opposites[i2])
+
+    def assertCentroid(self, topo, x, y):
+        J = function.J(self.geom)
+        CA, A = topo.integrate([self.geom * J, J], degree=1)
+        cx, cy = CA / A
+        self.assertAlmostEqual(x, cx)
+        self.assertAlmostEqual(y, cy)
+
+    def test_groups(self):
+        self.assertCentroid(self.domain['patch0'], 0.5, 0.5)
+        self.assertCentroid(self.domain['patch1'], 0.5, 1.5)
+        self.assertCentroid(self.domain['patch2'], 2, 0.5)
+        self.assertCentroid(self.domain.boundary['patch0-bottom'], 0.5, 0)
+        self.assertCentroid(self.domain.boundary['patch0-left'], 0, 0.5)
+        self.assertCentroid(self.domain.boundary['patch1-left'], 0, 1.5)
+        self.assertCentroid(self.domain.boundary['patch1-top'], .5, 2)
+        self.assertCentroid(self.domain.boundary['patch1-right'], 1, 1.5)
+        self.assertCentroid(self.domain.boundary['patch2-top'], 2, 1)
+        self.assertCentroid(self.domain.boundary['patch2-right'], 3, .5)
+        self.assertCentroid(self.domain.boundary['patch2-bottom'], 2, 0)
 
 
 class multipatch_misc(TestCase):

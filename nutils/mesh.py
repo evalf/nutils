@@ -87,7 +87,7 @@ if os.environ.get('NUTILS_TENSORIAL'):
 
 
 @log.withcontext
-def multipatch(patches, nelems, patchverts=None, name: Optional[str] = None):
+def multipatch(patches, nelems, patchverts=None, name: Optional[str] = None, space: str = 'X'):
     '''multipatch rectilinear mesh generator
 
     Generator for a :class:`~nutils.topology.MultipatchTopology` and geometry.
@@ -267,7 +267,10 @@ def multipatch(patches, nelems, patchverts=None, name: Optional[str] = None):
                 raise ValueError('duplicate number of elements specified for patch {} in dimension {}'.format(i, dim))
             shape.append(nelems_sides[0])
         # create patch topology
-        topos.append(rectilinear(shape, root=transform.Index(ndims, i))[0])
+        topos.append(topology.StructuredTopology(space,
+            root=transform.Index(ndims, i),
+            axes=[transformseq.DimAxis(i=0, j=n, mod=0, isperiodic=False) for n in shape]))
+
         # compute patch geometry
         patchcoords = [numpy.linspace(0, 1, n+1) for n in shape]
         patchcoords = numeric.meshgrid(*patchcoords).reshape(ndims, -1)

@@ -1,6 +1,6 @@
 'Numerical Utilities for Finite Element Analysis'
 
-__version__ = version = '8.7'
+__version__ = version = '8.8'
 version_name = 'idiyappam'
 long_version = ('{} "{}"' if version_name else '{}').format(version, version_name)
 

@@ -1989,10 +1989,8 @@ class StructuredTopology(TransformChainsTopology):
         btopos = [StructuredTopology(self.space, root=self.root, axes=self.axes[:idim] + (bndaxis,) + self.axes[idim+1:], nrefine=self.nrefine, bnames=self._bnames)
                   for idim, axis in enumerate(self.axes)
                   for bndaxis in axis.boundaries(nbounds)]
-        if not btopos:
-            return EmptyTopology(self.space, self.transforms.todims, self.ndims-1)
         bnames = [bname for bnames, axis in zip(self._bnames, self.axes) if axis.isdim and not axis.isperiodic for bname in bnames]
-        return DisjointUnionTopology(btopos, bnames)
+        return disjoint_union_topology(self.space, self.transforms.todims, self.ndims-1, btopos, bnames)
 
     @cached_property
     def interfaces(self):
@@ -2525,6 +2523,16 @@ class UnionTopology(TransformChainsTopology):
         return UnionTopology([topo.refined for topo in self._topos], self._names)
 
 
+def disjoint_union_topology(space: str, todims: int, fromdims: int, topos: Sequence[Topology], names: Sequence[str] = ()):
+    assert all(topo.space == space and topo.ndims == fromdims for topo in topos)
+    if not topos:
+        return EmptyTopology(space, todims, fromdims)
+    elif len(topos) == 1 and not names:
+        return topos[0]
+    else:
+        return DisjointUnionTopology(topos, names)
+
+
 class DisjointUnionTopology(TransformChainsTopology):
     'grouped topology'
 
@@ -2546,13 +2554,7 @@ class DisjointUnionTopology(TransformChainsTopology):
 
     def get_groups(self, *groups: str) -> TransformChainsTopology:
         topos = (topo if name in groups else topo.get_groups(*groups) for topo, name in itertools.zip_longest(self._topos, self._names))
-        topos = tuple(filter(None, topos))
-        if len(topos) == 0:
-            return self.empty_like()
-        elif len(topos) == 1:
-            return topos[0]
-        else:
-            return DisjointUnionTopology(topos)
+        return disjoint_union_topology(self.space, self.transforms.todims, self.ndims, tuple(filter(None, topos)))
 
     @cached_property
     def refined(self):
@@ -3047,6 +3049,7 @@ class MultipatchTopology(TransformChainsTopology):
         self._topos = tuple(topos)
         self._connectivity = numpy.array(connectivity)
 
+        assert all(isinstance(topo, StructuredTopology) for topo in self._topos)
         space = self._topos[0].space
         assert all(topo.space == space for topo in self._topos)
 
@@ -3057,10 +3060,11 @@ class MultipatchTopology(TransformChainsTopology):
             transformseq.chain([topo.opposites for topo in self._topos], self._topos[0].transforms.todims, self._topos[0].ndims))
 
         sides = {}
-        for topo, verts in zip(self._topos, self._connectivity):
+        for ipatch, verts in enumerate(self._connectivity):
             for idim, iside, idx in self._iter_boundaries():
                 bverts = verts[idx]
-                sides.setdefault(frozenset(bverts.flat), []).append((bverts, (topo, idim, iside)))
+                bname = self._topos[ipatch]._bnames[idim][iside]
+                sides.setdefault(frozenset(bverts.flat), []).append((bverts, (ipatch, bname)))
 
         self._boundaries = []
         self._interfaces = []
@@ -3071,20 +3075,14 @@ class MultipatchTopology(TransformChainsTopology):
             else:
                 if not all((bverts == bverts0).all() for bverts in other_bverts):
                     raise NotImplementedError('patch interfaces must have the same order of axes and the same orientation per axis')
-                self._interfaces.append((bverts0, data))
+                self._interfaces.append(data)
 
     def _iter_boundaries(self):
         return ((idim, iside, (slice(None),)*idim + (iside,)) for idim in range(self.ndims) for iside in (-1, 0))
 
     def get_groups(self, *groups: str) -> TransformChainsTopology:
         topos = (topo if 'patch{}'.format(i) in groups else topo.get_groups(*groups) for i, topo in enumerate(self._topos))
-        topos = tuple(filter(None, topos))
-        if len(topos) == 0:
-            return self.empty_like()
-        elif len(topos) == 1:
-            return topos[0]
-        else:
-            return DisjointUnionTopology(topos)
+        return disjoint_union_topology(self.space, self.transforms.todims, self.ndims, tuple(filter(None, topos)))
 
     def basis_std(self, degree, patchcontinuous=True):
         return self.basis_spline(degree, patchcontinuous, continuity=0)
@@ -3199,16 +3197,12 @@ class MultipatchTopology(TransformChainsTopology):
     def boundary(self):
         'boundary'
 
-        if not self._boundaries:
-            return EmptyTopology(self.space, self.transforms.todims, self.ndims-1)
-
         subtopos = []
         subnames = []
-        for i, (topo, idim, iside) in enumerate(self._boundaries):
-            name = topo._bnames[idim][iside]
-            subtopos.append(topo.boundary[name])
-            subnames.append('patch{}-{}'.format(i, name))
-        return DisjointUnionTopology(subtopos, subnames)
+        for ipatch, bname in self._boundaries:
+            subtopos.append(self._topos[ipatch].boundary[bname])
+            subnames.append(f'patch{ipatch}-{bname}')
+        return disjoint_union_topology(self.space, self.transforms.todims, self.ndims-1, subtopos, subnames)
 
     @cached_property
     def interfaces(self):
@@ -3219,23 +3213,21 @@ class MultipatchTopology(TransformChainsTopology):
         patch via ``'intrapatch'``.
         '''
 
-        intrapatchtopo = EmptyTopology(self.space, self.transforms.todims, self.ndims-1) if not self._topos else \
-            DisjointUnionTopology([topo.interfaces for topo in self._topos])
+        intrapatchtopo = disjoint_union_topology(self.space, self.transforms.todims, self.ndims-1, [topo.interfaces for topo in self._topos])
 
         btopos = []
-        bconnectivity = []
-        for bverts, patchdata in self._interfaces:
+        for patchdata in self._interfaces:
             if len(patchdata) > 2:
                 raise ValueError('Cannot create interfaces of multipatch topologies with more than two interface connections.')
-            boundaries = [topo.boundary[topo._bnames[idim][iside]] for topo, idim, iside in patchdata]
+            boundaries = [self._topos[ipatch].boundary[bname] for ipatch, bname in patchdata]
             transforms, opposites = [btopo.transforms for btopo in boundaries]
             references, opposite_references = [btopo.references for btopo in boundaries]
             assert references == opposite_references
             # create structured topology of joined element pairs
             btopos.append(TransformChainsTopology(self.space, references, transforms, opposites))
-            bconnectivity.append(bverts)
         # create multipatch topology of interpatch boundaries
-        interpatchtopo = MultipatchTopology(btopos, bconnectivity)
+
+        interpatchtopo = disjoint_union_topology(self.space, self.transforms.todims, self.ndims-1, btopos)
 
         return DisjointUnionTopology((intrapatchtopo, interpatchtopo), ('intrapatch', 'interpatch'))
 
