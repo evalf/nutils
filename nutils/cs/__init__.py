@@ -22,6 +22,8 @@ from ._field import (
     AsField,
     Ball,
     LocalRefinement,
+    Distance,
+    Threshold,
     Max,
     Min,
     set_background,
@@ -47,8 +49,8 @@ def write(fname: str, entities: Entities, elemsize: AsField, order: int = 1) -> 
 
         gmsh.logger.start()
         try:
-            set_background(gmsh.model.mesh.field, elemsize)
-            generate_mesh(gmsh.model, entities)
+            #set_background(gmsh.model.mesh.field, elemsize)
+            generate_mesh(gmsh.model, entities, elemsize)
             gmsh.write(fname)
         finally:
             with treelog.context('gmsh'):

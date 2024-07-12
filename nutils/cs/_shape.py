@@ -1,6 +1,7 @@
 from ._gmsh_stub import OCC, Mesh, Model, Tag, DimTags, Affine
 from ._axes import Orientation
 from ._util import overdimensioned
+from ._field import set_background
 from typing import Tuple, Dict, Optional, Iterable, Sequence, List, Mapping, Set
 from abc import ABC, abstractmethod
 import numpy, re
@@ -427,7 +428,7 @@ class Skeleton(Entity):
         return set.union(*[items for vtags, btags in fragments.values() for items in btags.values()])
 
 
-def generate_mesh(model: Model, mapping: Entities) -> None:
+def generate_mesh(model: Model, mapping: Entities, elemsize) -> None:
 
     shapes = tuple(dict.fromkeys(shape for entity in mapping.values() for shape in entity.get_shapes())) # stable unique via dict
     shape_tags = [shape.add_to(model.occ) for shape in shapes] # create all shapes before sync
@@ -470,9 +471,11 @@ def generate_mesh(model: Model, mapping: Entities) -> None:
 
         fragments[shape] = vtags, btags
 
-    for name, shape in mapping.items():
-        tag = model.addPhysicalGroup(shape.ndims, sorted(shape.select(fragments)))
-        model.setPhysicalName(dim=shape.ndims, tag=tag, name=name)
+    for name, entity in mapping.items():
+        tag = model.addPhysicalGroup(entity.ndims, sorted(entity.select(fragments)))
+        model.setPhysicalName(dim=entity.ndims, tag=tag, name=name)
+
+    set_background(model.mesh.field, elemsize, fragments)
 
     model.mesh.generate(max(shape.ndims for shape in shapes))
 
