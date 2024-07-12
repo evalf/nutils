@@ -184,6 +184,10 @@ class check(TestCase):
         f_ = type(f)(*args)
         self.assertEqual(f.as_evaluable_array, f_.as_evaluable_array)
 
+    def test_nutils_hash(self):
+        f = self.op(*self.args)
+        types.nutils_hash(f)
+
 
 def generate(*shape, real, imag, zero, negative):
     'generate array values that cover certain numerical classes'

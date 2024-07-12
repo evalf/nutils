@@ -90,11 +90,6 @@ def nutils_hash(data):
         The hash of ``data``.
     '''
 
-    try:
-        return data.__nutils_hash__
-    except AttributeError:
-        pass
-
     if isinstance(data, numpy.generic):
         # normalize Numpy's scalar types so that their nutils_hash are equal to
         # that of Python's counterparts, similar to Python's builtin hash
@@ -142,9 +137,17 @@ def nutils_hash(data):
         # makes nested dataclass instances indistinguishable from dictionaries.
         for item in sorted(nutils_hash((field.name, getattr(data, field.name))) for field in dataclasses.fields(t)):
             h.update(item)
+    elif t is functools.partial:
+        h.update(nutils_hash(data.func))
+        h.update(nutils_hash(data.args))
+        h.update(nutils_hash(data.keywords))
+    elif inspect.isfunction(data) or inspect.isclass(data):
+        h.update(data.__qualname__.encode())
     elif hasattr(data, '__getnewargs__'):
         for arg in data.__getnewargs__():
             h.update(nutils_hash(arg))
+    elif hasattr(data, '__nutils_hash__'):
+        return data.__nutils_hash__
     else:
         raise TypeError('unhashable type: {!r} {!r}'.format(data, t))
     return h.digest()
