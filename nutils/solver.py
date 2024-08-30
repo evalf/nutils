@@ -982,4 +982,219 @@ class _with_solve(types.Immutable):
         return lhs, info
 
 
+class SparsePoly:
+
+    @classmethod
+    def factor(cls, res, maxdegree):
+        '''Convert functional to a sparse polynomial.
+
+        Evaluates all derivatives of the functional to form polynomial
+        coefficients. An upper limit for the polynomial degree must be
+        specified to guard against infinite loops in case a non-polynomial
+        functional is provided.'''
+
+        res = res.as_evaluable_array.simplified
+        argdims = {arg.name: arg.ndim for arg in res.arguments}
+        queue = [((), res)]
+        factors = []
+        coeffs = []
+        for argnames, func in queue:
+            if len(argnames) > maxdegree:
+                raise Exception(f'residual is not polynomial up to degree {maxdegree}')
+            func = func.simplified
+            factors.append(argnames)
+            coeffs.append(evaluable.zero_all_arguments(func).simplified)
+            queue.extend(((*argnames, arg.name), evaluable.derivative(func, arg) / (1.+argnames.count(arg.name)))
+                for arg in func.arguments if not argnames or arg.name >= argnames[-1])
+        coeffs = evaluable.eval_sparse(coeffs)
+        shape = sparse.shape(coeffs[0])
+        ndim = len(shape)
+        assert ndim == res.ndim
+        monomials = []
+        argshapes = {}
+        for argnames, coeff in zip(factors, coeffs):
+            cindices, cvalues, cshape = sparse.extract(sparse.prune(sparse.dedup(coeff)))
+            assert cshape[:ndim] == shape
+            if not len(cvalues):
+                continue
+            cindex = numpy.ravel_multi_index(cindices[:ndim], shape) if ndim else numpy.zeros(len(cvalues), dtype=int)
+            argindices = {}
+            i = ndim
+            for argname in argnames:
+                j = i + argdims[argname]
+                argshape = argshapes.setdefault(argname, cshape[i:j])
+                argindices.setdefault(argname, []).append(numpy.ravel_multi_index(cindices[i:j], argshape) if j > i else numpy.zeros(len(cvalues), dtype=int))
+                i = j
+            assert i == len(cindices)
+            monomials.append((cvalues, cindex, argindices))
+        return cls(shape, argshapes, monomials, res.dtype)
+
+    def __init__(self, shape, argshapes, monomials, dtype):
+        self.shape = tuple(shape)
+        self.ndim = len(self.shape)
+        self.size = numpy.prod(self.shape, dtype=int)
+        self.argshapes = dict(argshapes)
+        self.argsizes = {name: numpy.prod(shape, dtype=int) for name, shape in self.argshapes.items()}
+        self.monomials = tuple(monomials)
+        self.dtype = dtype
+        self.derivative_cache = {}
+        self.matrix_cache = {}
+        for values, index, argindices in self.monomials:
+            assert values.ndim == 1
+            assert index.shape == values.shape
+            for indices in argindices.values():
+                assert indices and all(index.shape == values.shape for index in indices)
+
+    def __getnewargs__(self):
+        return self.shape, self.argshapes, self.monomials, self.dtype
+
+    @property
+    def isconstant(self):
+        return not any(argindices for _, _, argindices in self.monomials)
+
+    def derivative(self, darg):
+        if (P := self.derivative_cache.get(darg)) is not None:
+            return P
+        monomials = []
+        for coeff, index, argindices in self.monomials:
+            if darg in argindices:
+                dargindices = argindices.copy()
+                dindex, *indices = dargindices.pop(darg)
+                flatindex = numpy.ravel_multi_index((index, dindex), (self.size, self.argsizes[darg]))
+                if indices:
+                    dargindices[darg] = indices
+                    coeff = coeff * (len(indices)+1)
+                monomials.append((coeff, flatindex, dargindices))
+        P = SparsePoly(self.shape + self.argshapes[darg], self.argshapes, monomials, self.dtype)
+        self.derivative_cache[darg] = P
+        return P
+
+    def eval_sparse(self, arguments, dedup=False):
+        if not self.monomials:
+            return numpy.zeros([0], int), numpy.zeros([0], self.dtype)
+        index_parts = []
+        coeff_parts = []
+        for coeff, index, argindices in self.monomials:
+            assert index.shape == coeff.shape
+            if argindices:
+                coeff = coeff.copy()
+                for argname, argindexs in argindices.items():
+                    arg = arguments[argname]
+                    assert arg.shape == self.argshapes[argname], f'argument {argname!r} has shape {arg.shape}, expected {self.argshapes[argname]}'
+                    for argindex in argindexs:
+                        coeff *= arg.flat[argindex]
+            index_parts.append(index)
+            coeff_parts.append(coeff)
+        if not dedup:
+            return numpy.concatenate(index_parts), numpy.concatenate(coeff_parts)
+        try:
+            dedup_index, where = self.dedup_cache
+        except AttributeError:
+            dedup_index, where = self.dedup_cache = numpy.unique(numpy.concatenate(index_parts), return_inverse=True)
+        dedup_coeffs = numpy.zeros(len(dedup_index), dtype=self.dtype)
+        numpy.add.at(dedup_coeffs, where, numpy.concatenate(coeff_parts))
+        return dedup_index, dedup_coeffs
+
+    def eval(self, arguments):
+        array = numpy.zeros(self.size)
+        index, coeff = self.eval_sparse(arguments)
+        numpy.add.at(array, index, coeff)
+        return array.reshape(self.shape)
+
+    def eval_vector(self, tests, arguments):
+        return numpy.concatenate([self.derivative(test).eval(arguments).ravel() for test in tests])
+
+    def eval_matrix(self, tests, trials, arguments):
+        key = tests, trials
+        if (M := self.matrix_cache.get(key)) is not None:
+            return M
+        coloffsets = numpy.cumsum([0] + [self.argsizes[trial] for trial in trials])
+        stacked = []
+        colindices = []
+        rowpointers = [0]
+        ptr = 0
+        isconstant = True # until proven otherwise
+        for test in tests:
+            nrows = self.argsizes[test]
+            D = self.derivative(test)
+            coldata = []
+            for trial, coloffset in zip(trials, coloffsets):
+                DD = D.derivative(trial)
+                isconstant &= DD.isconstant
+                idx, val = DD.eval_sparse(arguments, dedup=True)
+                if len(idx):
+                    rowidx, colidx = numpy.unravel_index(idx, (nrows, self.argsizes[trial]))
+                    rowptr = rowidx.searchsorted(numpy.arange(nrows+1))
+                    coldata.append((val, rowptr, colidx + coloffset))
+            for irow in range(nrows):
+                for val, rowptr, colidx in coldata:
+                    i, j = rowptr[irow:irow+2]
+                    stacked.append(val[i:j])
+                    colindices.append(colidx[i:j])
+                    ptr += j - i
+                rowpointers.append(ptr)
+        M = matrix.assemble_csr(numpy.concatenate(stacked), numpy.array(rowpointers), numpy.concatenate(colindices), coloffsets[-1])
+        if isconstant:
+            self.matrix_cache[key] = M
+        return M
+
+    def solve(self, target, arguments={}, constrain={}, tol=0, maxiter=None):
+        assert self.ndim == 0
+
+        if isinstance(target, str):
+            target = [t.split(':') for t in target.split(',')]
+        trials, tests = zip(*target)
+        sqr = tests == trials
+
+        nonlin = []
+        for _, _, argindices in self.monomials:
+            if not sqr and sum(len(argindices.get(test, ())) for test in tests) > 1:
+                raise Exception('problem is nonlinear in test arguments')
+            if sum(len(argindices.get(trial, ())) for trial in trials) > 1 + sqr:
+                nonlin.append('*'.join(trial for trial in trials for _ in range(len(argindices.get(trial, ())))))
+
+        arguments = arguments.copy()
+        trial_offsets = numpy.cumsum([0] + [self.argsizes[trial] for trial in trials])
+        x = numpy.empty(trial_offsets[-1])
+        cons = numpy.empty(trial_offsets[-1])
+        for trial, i, j in zip(trials, trial_offsets, trial_offsets[1:]):
+            trialshape = self.argshapes[trial]
+            trialcons = cons[i:j].reshape(trialshape)
+            trialcons[...] = constrain.get(trial, numpy.nan)
+            trialarg = x[i:j].reshape(trialshape)
+            trialarg[...] = arguments.get(trial, 0)
+            arguments[trial] = trialarg # IMPORTANT: CHANGE ARGUMENTS IN PLACE DURING NEWTON LOOP
+        isdof = numpy.isnan(cons)
+        x[~isdof] = cons[~isdof]
+        cons[~isdof] = 0
+
+        if not nonlin:
+            b = -self.eval_vector(tests, arguments)
+            A = self.eval_matrix(tests, trials, {})
+            x += A.solve(b, constrain=cons)
+        else:
+            log.debug(f'problem is nonlinear in trial arguments {", ".join(nonlin)}')
+            if tol <= 0:
+                raise Exception('a strictly positive tolerance is required for nonlinear problems')
+            with log.context('newton {}', 0) as recontext:
+                for iiter in range(maxiter) if maxiter is not None else itertools.count():
+                    b = -self.eval_vector(tests, arguments)
+                    resnorm = numpy.linalg.norm(b[isdof])
+                    log.info(f'residual: {resnorm:.0e}')
+                    if resnorm <= tol:
+                        break
+                    recontext(iiter + 1)
+                    A = self.eval_matrix(tests, trials, arguments)
+                    x += A.solve(b, constrain=cons)
+                else:
+                    raise Exception(f'failed to converge in {maxiter} iterations')
+
+        return arguments
+
+    def optimize(self, target, arguments={}, constrain={}, tol=0, maxiter=None):
+        if isinstance(target, str):
+            target = target.split(',')
+        return self.solve([(t, t) for t in target], arguments, constrain, tol, maxiter)
+
+
 # vim:sw=4:sts=4:et

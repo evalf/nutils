@@ -5583,6 +5583,14 @@ def replace_arguments(value, arguments):
         return v
 
 
+@util.shallow_replace
+def zero_all_arguments(value):
+    '''Replace all function arguments by zeros.'''
+
+    if isinstance(value, Argument):
+        return zeros_like(value)
+
+
 def einsum(fmt, *args, **dims):
     '''Multiply and/or contract arrays via format string.
 

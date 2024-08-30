@@ -343,3 +343,107 @@ class theta_time(TestCase):
 
     def test_cranknicolson(self):
         self.check(solver.cranknicolson, theta=0.5)
+
+
+class SparsePoly(TestCase):
+    '''
+    f = A + B x + C y + D x2 + E x y + F y2 + G x3 + H x2 y + I x y2 + J y3
+    dfdx = B + 2 D x + E y + 3 G x2 + 2 H x y + I y2
+    d2fdxy = E + 2 H x + 2 I y
+
+    poly = 1: A, x: B, y: C, x2: D, xy: E, y2: F, x3: G, x2y: H, xy2: I, y3: J
+    '''
+
+    def test_eval_x(self):
+        x = function.dotarg('x')
+        poly = solver.SparsePoly.factor(10 + 2 * x - x**2 + 5 * x**3, maxdegree=3)
+        for x in numpy.array([0, 1, 2, -3]):
+            self.assertEqual(poly.eval(dict(x=x)),
+                10 + 2 * x - x**2 + 5 * x**3)
+
+    def test_eval_xy(self):
+        x = function.dotarg('x')
+        y = function.dotarg('y')
+        poly = solver.SparsePoly.factor(10 + 2 * x * y**2 - x**2 * y**3 + 5 * x**3 * y, maxdegree=5)
+        for x in numpy.array([0, 1, 2, -3]):
+            for y in numpy.array([0, 1, 2, -3]):
+                self.assertEqual(poly.eval(dict(x=x, y=y)),
+                    10 + 2 * x * y**2 - x**2 * y**3 + 5 * x**3 * y)
+
+    def test_deriv_x(self):
+        x = function.dotarg('x')
+        poly = solver.SparsePoly.factor(10 + 2 * x - x**2 + 5 * x**3, maxdegree=3)
+        for x in numpy.array([0, 1, 2, -3]):
+            self.assertEqual(poly.derivative('x').eval(dict(x=x)),
+                2 - 2 * x + 15 * x**2)
+
+    def test_deriv_xx(self):
+        x = function.dotarg('x')
+        poly = solver.SparsePoly.factor(10 + 2 * x - x**2 + 5 * x**3, maxdegree=3)
+        for x in numpy.array([0, 1, 2, -3]):
+            self.assertEqual(poly.derivative('x').derivative('x').eval(dict(x=x)),
+                -2 + 30 * x)
+
+    def test_deriv_xy(self):
+        x = function.dotarg('x')
+        y = function.dotarg('y')
+        poly = solver.SparsePoly.factor(x * y**2, maxdegree=5)
+        for x in numpy.array([0, 1, 2, -3]):
+            for y in numpy.array([0, 1, 2, -3]):
+                self.assertEqual(poly.derivative('x').derivative('y').eval(dict(x=x, y=y)),
+                    2 * y)
+
+    def test_simple(self):
+        x = function.dotarg('x')
+        testx = function.dotarg('testx')
+        poly = solver.SparsePoly.factor(testx * (10 + 2 * x), maxdegree=2)
+        args = poly.solve('x:testx') # 2 * x == -10
+        self.assertEqual(args['x'], -5)
+
+    def test_coupled(self):
+        basis = numpy.array([1.])
+        x = function.dotarg('x', basis)
+        testx = function.dotarg('testx', basis)
+        y = function.dotarg('y', basis)
+        testy = function.dotarg('testy', basis)
+        poly = solver.SparsePoly.factor(testx * (10 + 2 * x + y) + testy * (x + y), maxdegree=2)
+        args = poly.solve('x:testx,y:testy') # 2 * x + y == -10, x + y = 0
+        self.assertEqual(args['x'].tolist(), [-10])
+        self.assertEqual(args['y'].tolist(), [10])
+
+    def test_args(self):
+        x = function.dotarg('x')
+        testx = function.dotarg('testx')
+        y = function.dotarg('y')
+        z = function.dotarg('z')
+        poly = solver.SparsePoly.factor(testx * (10 + 2 * x - y - z), maxdegree=2)
+        args = poly.solve('x:testx', dict(y=numpy.array(2), z=numpy.array(4))) # 2 * x == y + z - 10
+        self.assertEqual(args['x'], -2)
+
+    def test_higher_order(self):
+        x = function.dotarg('x')
+        testx = function.dotarg('testx')
+        y = function.dotarg('y')
+        z = function.dotarg('z')
+        poly = solver.SparsePoly.factor(testx * (10 + 2 * x - 2 * y**2 + z**3 + y * z - y**2 * z**2), maxdegree=5)
+        args = poly.solve('x:testx', dict(y=numpy.array(3), z=numpy.array(2))) # 2 * x == 2 y**2 - z**3 - y * z + y**2 * z**2 - 10
+        self.assertEqual(args['x'], 15)
+
+    def test_nonlinear(self):
+        x = function.dotarg('x')
+        testx = function.dotarg('testx')
+        poly = solver.SparsePoly.factor(testx * (2 * x + x**2 - 8), maxdegree=3)
+        args = poly.solve('x:testx', tol=1e-5) # 2 * x + x**2 == 8
+        self.assertLess(abs(args['x'] - 2), 1e-5)
+
+    def test_system(self):
+        topo, x = mesh.rectilinear([3, 3])
+        basis = topo.basis('std', 1)
+        u = function.dotarg('u', basis)
+        v = function.dotarg('v', basis)
+        res = topo.integral((function.grad(v, x) @ function.grad(u, x) + v) * function.J(x), degree=2)
+        cons = solver.optimize('u,', topo.boundary['right'].integral(u**2, degree=2), droptol=1e-10)
+        lhs_solver = solver.solve_linear('u:v', res, constrain=cons)
+        poly = solver.SparsePoly.factor(res, maxdegree=2)
+        lhs_poly = poly.solve('u:v', constrain=cons)
+        self.assertLess(numpy.linalg.norm(lhs_poly['u'] - lhs_solver['u']), 1e-14)
