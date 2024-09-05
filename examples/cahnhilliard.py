@@ -195,22 +195,27 @@ def main(size: Length = parse('10cm'),
     nrg_wall = domain.boundary.integral('σwall dS' @ ns, degree=degree*2)
     nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(δψ σ / ε - η dφ + .5 dt J_k ∇_k(η)) dV' @ ns, degree=degree*4)
 
+    poly = solver.SparsePoly.factor(nrg / tol, maxdegree=4)
+    energies_J = solver.SparsePoly.factor(numpy.stack([nrg_mix, nrg_iface, nrg_wall])/'J/m', maxdegree=4)
+
     numpy.random.seed(seed)
     args = dict(φ=numpy.random.normal(0, .5, basis.shape)) # initial condition
+
+    xbz = bezier.eval(ns.x)
+    φbz = solver.SparsePoly.factor(bezier(ns.φ), maxdegree=2)
 
     with log.iter.fraction('timestep', range(round(endtime / timestep))) as steps:
         for istep in steps:
 
-            E = numpy.stack(function.eval([nrg_mix, nrg_iface, nrg_wall], **args))
-            log.user('energy: {0:,.0μJ/m} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(numpy.sum(E), 100*E/numpy.sum(E)))
+            E = energies_J.eval(args)
+            log.user('energy: {0:,.0f} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(numpy.sum(E), 100*E/numpy.sum(E)))
 
             args['φ0'] = args['φ']
-            args = solver.optimize(['φ', 'η'], nrg / tol, arguments=args, tol=1)
+            args = poly.optimize('φ,η', arguments=args, tol=1)
 
             with export.mplfigure('phase.png') as fig:
                 ax = fig.add_subplot(aspect='equal', xlabel='[mm]', ylabel='[mm]')
-                x, φ = bezier.eval(['x_i', 'φ'] @ ns, **args)
-                im = ax.tripcolor(*(x/'mm').T, bezier.tri, φ, shading='gouraud', cmap='coolwarm')
+                im = ax.tripcolor(*(xbz/'mm').T, bezier.tri, φbz.eval(args), shading='gouraud', cmap='coolwarm')
                 im.set_clim(-1, 1)
                 fig.colorbar(im)
                 if showflux:

@@ -142,10 +142,12 @@ def main(nelems: int = 99,
     steps = treelog.iter.fraction('timestep', range(round(endtime / timestep))) if endtime < float('inf') \
        else treelog.iter.plain('timestep', itertools.count())
 
+    poly = solver.SparsePoly.factor(res, maxdegree=3)
+
     for _ in steps:
         treelog.info(f'velocity divergence: {div.eval(**args):.0e}')
         args['u0'] = args['u']
-        args = solver.newton('u:v,p:q', residual=res, arguments=args, constrain=cons).solve(1e-10)
+        args = poly.solve('u:v,p:q', arguments=args, constrain=cons, tol=1e-10)
         postprocess(args)
 
     return args, numpy.sqrt(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2))
