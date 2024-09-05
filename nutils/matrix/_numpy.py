@@ -11,6 +11,11 @@ def assemble(data, index, shape):
     return NumpyMatrix(array)
 
 
+def assemble_csr(data, rowptr, colidx, ncols):
+    rowidx = numpy.concatenate([numpy.full(n, i) for i, n in enumerate(numpy.diff(rowptr))])
+    return assemble(data, (rowidx, colidx), (len(rowptr)-1, ncols))
+
+
 class NumpyMatrix(Matrix):
     '''matrix based on numpy array'''
 

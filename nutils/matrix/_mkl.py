@@ -19,12 +19,15 @@ else:
 
 
 def assemble(data, index, shape):
+    nrows, ncols = shape
+    return assemble_csr(data, index[0].searchsorted(numpy.arange(nrows+1)), index[1], ncols)
+
+
+def assemble_csr(data, rowptr, colidx, ncols):
     # In the increments below the output dtype is set to int32 not only to avoid
     # an additional allocation, but crucially also to avoid truncation in case
     # the incremented index overflows the original type.
-    return MKLMatrix(data, ncols=shape[1],
-                     rowptr=numpy.add(index[0].searchsorted(numpy.arange(shape[0]+1)), 1, dtype=numpy.int32),
-                     colidx=numpy.add(index[1], 1, dtype=numpy.int32))
+    return MKLMatrix(data, ncols=ncols, rowptr=numpy.add(rowptr, 1, dtype=numpy.int32), colidx=numpy.add(colidx, 1, dtype=numpy.int32))
 
 
 class Pardiso:

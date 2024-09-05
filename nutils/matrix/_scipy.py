@@ -12,6 +12,10 @@ def assemble(data, index, shape):
     return ScipyMatrix(scipy.sparse.csr_matrix((data, index), shape))
 
 
+def assemble_csr(data, rowptr, colidx, ncols):
+    return ScipyMatrix(scipy.sparse.csr_matrix((data, colidx, rowptr), (len(rowptr)-1, ncols)))
+
+
 class ScipyMatrix(Matrix):
     '''matrix based on any of scipy's sparse matrices'''
 

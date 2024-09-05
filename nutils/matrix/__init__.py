@@ -32,6 +32,10 @@ def assemble(data, index, shape):
     return backend.current.assemble(data, index, shape)
 
 
+def assemble_csr(values, rowptr, colidx, ncols):
+    return backend.current.assemble_csr(values, rowptr, colidx, ncols)
+
+
 def fromsparse(data, inplace=False):
     indices, values, shape = sparse.extract(sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True))
     return backend.current.assemble(values, indices, shape)
