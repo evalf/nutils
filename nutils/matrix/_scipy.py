@@ -8,8 +8,8 @@ except ImportError:
     raise BackendNotAvailable('the Scipy matrix backend requires scipy to be installed (try: pip install scipy)')
 
 
-def assemble(data, index, shape):
-    return ScipyMatrix(scipy.sparse.csr_matrix((data, index), shape))
+def assemble(data, rowptr, colidx, ncols):
+    return ScipyMatrix(scipy.sparse.csr_matrix((data, colidx, rowptr), (len(rowptr)-1, ncols)))
 
 
 class ScipyMatrix(Matrix):

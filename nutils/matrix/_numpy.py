@@ -4,10 +4,12 @@ import numpy
 import functools
 
 
-def assemble(data, index, shape):
+def assemble(data, rowptr, colidx, ncols):
+    rowidx = numpy.concatenate([numpy.full(n, i) for i, n in enumerate(numpy.diff(rowptr))])
+    shape = len(rowptr)-1, ncols
     array = numpy.zeros(shape, dtype=data.dtype)
     if len(data):
-        array[tuple(index)] = data
+        array[rowidx, colidx] = data
     return NumpyMatrix(array)
 
 
