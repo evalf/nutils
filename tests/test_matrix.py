@@ -72,6 +72,17 @@ class construction(testing.TestCase):
         self.assertEqual(colidx.tolist(), [0, 1, 2])
         self.assertEqual(ncols, 3)
 
+    def test_assemble_block_csr(self):
+        A00 = [10., 20., 30.], [0, 2, 3], [0, 1, 0], 2 # 2x2
+        A01 = [], [0, 0, 0], [], 2 # 2x2
+        A10 = [40., 60.], [0, 1, 2], [0, 0], 1 # 2x1
+        A11 = [50.], [0, 1, 1], [2], 3 # 2x3
+        values, rowptr, colidx, ncols = matrix.assemble_block_csr([[A00, A01], [A10, A11]])
+        self.assertEqual(values.tolist(), [10., 20., 30., 40., 50., 60.])
+        self.assertEqual(rowptr.tolist(), [0, 2, 3, 5, 6])
+        self.assertEqual(colidx.tolist(), [0, 1, 0, 0, 3, 0])
+        self.assertEqual(ncols, 4)
+
 
 @testing.parametrize
 class backend(testing.TestCase):
