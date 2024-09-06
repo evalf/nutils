@@ -96,6 +96,52 @@ def assemble(data, index, shape):
     return assemble_coo(data, rowidx, nrows, colidx, ncols)
 
 
+def assemble_block_csr(blocks):
+    '''Create sparse block matrix from stacked CSR sparse data.
+
+    Block columns may differ per row, but must add up the the same number of
+    matrix columns. The matrix type is derived from the block values; in case
+    of varying types Numpy's casting rules apply.
+
+    Parameters
+    ----------
+    blocks
+        Nested sequence of CSR data. The outer sequence represents the matrix
+        rows, the middle sequences the matrix columns, and the inner sequences
+        the arguments to the assemble_csr function.
+    '''
+
+    ncols = sum(n for *_, n in blocks[0])
+    values = []
+    rowptr = [0]
+    colidx = []
+    for row in blocks:
+        nrows = len(row[0][1]) - 1
+        block_data = []
+        col_offset = 0
+        for block_values, block_rowptr, block_colidx, block_ncols in row:
+            assert len(block_rowptr) - 1 == nrows, 'sparse blocks have inconsistent row sizes'
+            if len(block_values):
+                block_data.append((numpy.asarray(block_values), numpy.asarray(block_rowptr), numpy.add(block_colidx, col_offset)))
+            col_offset += block_ncols
+        assert col_offset == ncols, 'sparse blocks have inconsistent column sizes'
+        ptr = rowptr[-1]
+        if len(block_data) == 1:
+            (block_values, block_rowptr, block_colidx), = block_data
+            values.append(block_values)
+            rowptr.extend(block_rowptr[1:] + ptr)
+            colidx.append(block_colidx)
+        else:
+            for irow in range(nrows):
+                for block_values, block_rowptr, block_colidx in block_data:
+                    i, j = block_rowptr[irow:irow+2]
+                    values.append(block_values[i:j])
+                    colidx.append(block_colidx[i:j])
+                    ptr += j - i
+                rowptr.append(ptr)
+    return assemble_csr(numpy.concatenate(values), numpy.array(rowptr), numpy.concatenate(colidx), ncols)
+
+
 def fromsparse(data, inplace=False):
     (rowidx, colidx), values, (nrows, ncols) = sparse.extract(sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True))
     return assemble_coo(values, rowidx, nrows, colidx, ncols)
