@@ -32,6 +32,7 @@ time dependent problems.
 
 from . import function, evaluable, cache, numeric, types, _util as util, matrix, warnings, sparse
 from dataclasses import dataclass
+from typing import Optional
 import abc
 import numpy
 import itertools
@@ -180,6 +181,214 @@ class MedianBased:
         return min(max(scale, self.minscale), self.maxscale), scale >= self.acceptscale
 
 
+# SYSTEM
+
+class BaseSystem:
+
+    def __init__(self, trials, block_vector, block_matrix):
+        self.trials = tuple(trials)
+        self.dtype = block_vector[0].dtype
+        if not all(v.dtype == self.dtype for v in block_vector) or not all(m.dtype == self.dtype for row in block_matrix for m in row):
+            raise ValueError('inconsistent data types in block matrix, vector')
+        _shapes = _dict((arg.name, arg.shape) for vec in block_vector for arg in vec.arguments if isinstance(arg, evaluable.Argument))
+        self.argshapes = dict(zip(trials, evaluable.compile(tuple(_shapes[t] for t in trials))()))
+        self.argsizes = {t: numpy.prod(shape, dtype=int) for t, shape in self.argshapes.items()}
+        self.eval = evaluable.compile((tuple(block_vector), tuple(tuple(map(evaluable.as_csr, row)) for row in block_matrix)))
+        self.is_constant = not any(col.arguments for row in block_matrix for col in row)
+        self.matrix_cache = None
+
+    @functools.cached_property
+    def __nutils_hash__(self):
+        from linecache import cache # we abuse the line cache to hash self.eval
+        return types.nutils_hash((self.trials, ''.join(cache[self.eval.__code__.co_filename][2])))
+
+    def assemble(self, arguments):
+        vec_blocks, mat_blocks = self.eval(**arguments)
+        vec = numpy.concatenate(vec_blocks)
+        if self.matrix_cache is not None:
+            mat = self.matrix_cache
+        else:
+            mat = matrix.assemble_block_csr(mat_blocks)
+            if self.is_constant:
+                self.matrix_cache = mat
+        return vec, mat
+
+    def prepare_solution_vector(self, arguments: dict, constrain: dict):
+        arguments = arguments.copy()
+        trial_offsets = numpy.cumsum([0] + [self.argsizes[trial] for trial in self.trials])
+        x = numpy.empty(trial_offsets[-1], self.dtype)
+        iscons = numpy.empty(trial_offsets[-1], dtype=bool)
+        for trial, i, j in zip(self.trials, trial_offsets, trial_offsets[1:]):
+            trialshape = self.argshapes[trial]
+            trialarg = x[i:j].reshape(trialshape)
+            trialarg[...] = arguments.get(trial, 0)
+            c = constrain.get(trial, False)
+            if c is not False:
+                assert c.shape == trialshape
+                if c.dtype != bool:
+                    c, v = ~numpy.isnan(c), c
+                    trialarg[c] = v[c]
+            trialcons = iscons[i:j].reshape(trialshape)
+            trialcons[...] = c
+            arguments[trial] = trialarg # IMPORTANT: arguments share memory with x
+        return x, iscons, arguments
+
+
+class System(BaseSystem):
+
+    def __init__(self, trials: tuple, residuals: tuple):
+        if isinstance(trials, str):
+            trials = trials.rstrip(',').split(',')
+        if isinstance(residuals, (tuple, list)):
+            residuals = [res.as_evaluable_array for res in residuals]
+            argobjects = _dict((arg.name, arg) for res in residuals for arg in res.arguments if isinstance(arg, evaluable.Argument))
+            is_symmetric = False
+        else:
+            functional = residuals.as_evaluable_array
+            argobjects = {arg.name: arg for arg in functional.arguments if isinstance(arg, evaluable.Argument)}
+            trials, tests = zip(*[s if isinstance(s, (tuple, list)) else s.split(':') if ':' in s else (s, s) for s in trials])
+            residuals = [evaluable.derivative(functional, argobjects[t]) for t in tests]
+            is_symmetric = trials == tests
+
+        residuals = [evaluable._flat(res) for res in residuals]
+        jacobians = [[evaluable._flat(evaluable.derivative(res, argobjects[t]).simplified, 2) for t in trials] for res in residuals]
+
+        self.is_linear = not any(arg.name in trials for row in jacobians for col in row for arg in col.arguments)
+        self.is_symmetric = is_symmetric
+
+        super().__init__(trials, residuals, jacobians)
+
+    def solve_linear(self, *, arguments: dict = {}, constrain = None, linargs = None):
+        if not self.is_linear:
+            raise SolverError('problem is not linear')
+        x, iscons, arguments = self.prepare_solution_vector(arguments, constrain or {})
+        res, jac = self.assemble(arguments)
+        x -= jac.solve(res, constrain=iscons, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
+        return arguments, numpy.linalg.norm((res - jac @ x)[~iscons])
+
+    def iter_newton(self, *, arguments: dict = {}, constrain = None, linargs = None, linesearch = None, failrelax: float = 1e-6, relax: float = 1.):
+        x, iscons, arguments = self.prepare_solution_vector(arguments, constrain or {})
+        linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=self.is_symmetric)
+        res, jac = self.assemble(arguments)
+        while True: # newton iterations
+            yield arguments, numpy.linalg.norm(res[~iscons])
+            dx = -jac.solve_leniently(res, constrain=iscons, **linargs)
+            x += dx * relax
+            if linesearch is None:
+                res, jac = self.assemble(arguments)
+            else:
+                res0 = res
+                jac0dx = jac@dx # == res0 if dx was solved to infinite precision
+                while True: # line search
+                    res, jac = self.assemble(arguments)
+                    relax, adjust = _linesearch_helper(linesearch, res0, jac0dx, res, jac@dx, iscons, relax)
+                    if not adjust:
+                        break
+                    if relax <= failrelax:
+                        raise SolverError('stuck in local minimum')
+                    x += dx * adjust
+
+    def iter_minimize(self, *, arguments: dict = {}, constrain = None, linargs = None, rampup: float = .5, rampdown: float = -1., failrelax: float = -10.):
+        if not self.is_symmetric:
+            raise SolverError('problem is not symmetric')
+        x, iscons, arguments = self.prepare_solution_vector(arguments, constrain or {})
+        res, jac = self.assemble(arguments)
+        linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=self.is_symmetric)
+        relax = 0.
+        while True:
+            yield arguments, numpy.linalg.norm(res[~iscons])
+            dx = -jac.solve_leniently(res, constrain=iscons, **linargs) # baseline: vanilla Newton
+            # compute first two ritz values to determine approximate path of steepest descent
+            zres = res * ~iscons
+            dxnorm = numpy.linalg.norm(dx)
+            k0 = dx / dxnorm
+            k1 = -zres / dxnorm # == jac @ k0
+            a = k1 @ k0
+            k1 -= k0 * a # orthogonalize
+            c = numpy.linalg.norm(k1)
+            k1 /= c # normalize
+            b = k1 @ (jac @ k1)
+            # at this point k0 and k1 are orthonormal, and [k0 k1]^T jac [k0 k1] = [a c; c b]
+            D = numpy.hypot(b-a, 2*c)
+            L = numpy.array([a+b-D, a+b+D]) / 2 # 2nd order ritz values: eigenvalues of [a c; c b]
+            v0, v1 = zres + dx * L[:, numpy.newaxis]
+            V = numpy.stack([v1, -v0], axis=1) / D # ritz vectors times dx -- note: V @ L == -zres, V.sum() == dx
+            log.info('spectrum: {:.1e}..{:.1e} ({}definite)'.format(*L, 'positive ' if L[0] > 0 else 'negative ' if L[-1] < 0 else 'in'))
+            while True: # line search along steepest descent curve
+                r = numpy.exp(relax - numpy.log(D)) # == exp(relax) / D
+                eL = numpy.exp(-r*L)
+                dx -= V @ eL
+                x += dx
+                res, jac = self.assemble(arguments)
+                slope = res @ (V @ (eL*L))
+                log.info(f'slope is {slope:+.1e} at relaxation {r:.1e}')
+                if slope < 0:
+                    relax += rampup
+                    break
+                relax += rampdown
+                if relax <= failrelax:
+                    raise SolverError('stuck in local minimum')
+                dx = V @ eL # return to baseline
+
+    def iter_pseudotime(self, *, inertia, timestep: float, arguments: dict = {}, constrain = None, linargs = None):
+        x, iscons, arguments = self.prepare_solution_vector(arguments, constrain or {})
+        linargs = _copy_with_defaults(linargs, rtol=1-3) #, symmetric=self.is_symmetric)
+
+        argobjs = {t: evaluable.Argument(t, tuple(map(evaluable.constant, self.argshapes[t])), float) for t in self.trials}
+        djacobians = [[evaluable._flat(evaluable.derivative(evaluable._flat(res), argobjs[t]).simplified, 2) for t in self.trials] for res in inertia]
+        djac_blocks = evaluable.compile(tuple(tuple(map(evaluable.as_csr, row)) for row in djacobians))
+        djac = matrix.assemble_block_csr(djac_blocks(**arguments))
+
+        timestep0 = timestep
+        first = _First()
+        while True:
+            res, jac = self.assemble(arguments)
+            resnorm = numpy.linalg.norm(res[~iscons])
+            yield arguments, resnorm
+            x -= (jac + djac / timestep).solve_leniently(res, constrain=iscons, **linargs)
+            timestep = timestep0 * (first(resnorm) / resnorm)
+            log.info(f'timestep: {timestep:.0e}')
+
+    @cache.function
+    def solve_withnorm(self, *, arguments: dict = {}, constrain = None, linargs = None, tol: float = 0., miniter: int = 0, maxiter: Optional[int] = None, method = 'newton', **methodargs):
+        if self.is_linear:
+            return self.solve_linear(arguments=arguments, constrain=constrain, linargs=linargs)
+        if tol <= 0:
+            raise SolverError('nonlinear problem requires a strictly positive tolerance')
+        iter_method = getattr(self, 'iter_' + method)
+        first = _First()
+        with log.iter.plain(method, itertools.count()) as steps:
+            for arguments, resnorm in iter_method(arguments=arguments, constrain=constrain, linargs=linargs, **methodargs):
+                progress = numpy.log(first(resnorm)/resnorm) / numpy.log(first(resnorm)/tol) if resnorm > tol else 1
+                log.info(f'residual: {resnorm:.0e} ({100*progress:.0f}%)')
+                iiter = next(steps) # opens new log context
+                if iiter >= miniter and resnorm <= tol:
+                    return arguments, resnorm
+                if maxiter is not None and iiter >= maxiter:
+                    raise SolverError(f'failed to converge in {maxiter} iterations')
+
+    def solve(self, **kwargs):
+        arguments, resnorm = self.solve_withnorm(**kwargs)
+        return arguments
+
+    def step(self, *, timestep, timetarget, historysuffix, arguments, **solveargs):
+        arguments = arguments.copy()
+        for trial in self.trials:
+            if trial in arguments:
+                arguments[trial + historysuffix] = arguments[trial]
+        time = arguments.get(timetarget, 0.)
+        arguments[timetarget + historysuffix] = time
+        arguments[timetarget] = time + timestep
+        try:
+            return self.solve(arguments=arguments, **solveargs)
+        except (SolverError, matrix.MatrixError) as e:
+            log.error(f'error: {e}; retrying with timestep {timestep/2}')
+            with log.context('tic'):
+                halfway_arguments = self.step(timestep=timestep/2, timetarget=timetarget, historysuffix=historysuffix, arguments=arguments, **solveargs)
+            with log.context('toc'):
+                return self.step(timestep=timestep/2, timetarget=timetarget, historysuffix=historysuffix, arguments=halfway_arguments, **solveargs)
+
+
 # SOLVERS
 
 def solve_linear(target, residual, *, constrain = None, lhs0: types.arraydata = None, arguments = {}, **kwargs):
@@ -208,28 +417,10 @@ def solve_linear(target, residual, *, constrain = None, lhs0: types.arraydata = 
             lhs0=lhs0, arguments=arguments if lhs0 is None else {**arguments, target: lhs0}, **kwargs)[target]
     if lhs0 is not None:
         raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
-    target, residual = _target_helper(target, residual)
-    solveargs = _strip(kwargs, 'lin')
+    linargs = _strip(kwargs, 'lin')
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-    return _solve_linear(target, residual,
-        types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
-        types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
-        types.frozendict(solveargs))
-
-
-@cache.function
-def _solve_linear(target, residual: tuple, constraints: dict, arguments: dict, solveargs: dict):
-    arguments, constraints = _parse_lhs_cons(constraints, target, _argobjs(residual), arguments)
-    jacobians = _derivative(residual, target)
-    if not set(target).isdisjoint(_argobjs(jacobians)):
-        raise SolverError('problem is not linear')
-    dtype = _determine_dtype(target, residual, arguments, constraints)
-    lhs, vlhs = _redict(arguments, target, dtype)
-    mask, vmask = _invert(constraints, target)
-    res, jac = _integrate_blocks(residual, jacobians, arguments=lhs, mask=mask)
-    vlhs[vmask] -= jac.solve(res, **solveargs)
-    return lhs
+    return System(target, residual).solve(arguments=arguments, constrain=constrain, linargs=linargs)
 
 
 def newton(target, residual, *, jacobian = None, lhs0 = None, relax0: float = 1., constrain = None, linesearch=NormBased(), failrelax: float = 1e-6, arguments = {}, **kwargs):
@@ -283,66 +474,13 @@ def newton(target, residual, *, jacobian = None, lhs0 = None, relax0: float = 1.
             failrelax=failrelax, arguments=arguments if lhs0 is None else {**arguments, target: lhs0}, **kwargs)[target]
     if lhs0 is not None:
         raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
-    target, residual = _target_helper(target, residual)
-    solveargs = _strip(kwargs, 'lin')
-    solveargs.setdefault('rtol', 1e-3)
+    if jacobian is not None:
+        warnings.warn('jac argument is no longer in use')
+    linargs = _strip(kwargs, 'lin')
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-    return _with_solve(_newton(target, residual, None if jacobian is None else tuple(jacobian),
-        types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
-        types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
-        linesearch, relax0, failrelax, types.frozendict(solveargs)))
-
-
-class _newton(cache.Recursion, length=1):
-
-    def __init__(self, target, residual, jacobian, constrain, arguments, linesearch, relax0: float, failrelax: float, solveargs):
-        super().__init__()
-        self.target = target
-        self.residual = residual
-        self.jacobian = _derivative(residual, target, jacobian)
-        self.lhs0, self.constrain = _parse_lhs_cons(constrain, target, _argobjs(residual), arguments)
-        self.dtype = _determine_dtype(target, residual, self.lhs0, self.constrain)
-        self.relax0 = relax0
-        self.linesearch = linesearch
-        self.failrelax = failrelax
-        self.solveargs = solveargs
-
-    def _eval(self, lhs, mask):
-        return _integrate_blocks(self.residual, self.jacobian, arguments=lhs, mask=mask)
-
-    def resume(self, history):
-        mask, vmask = _invert(self.constrain, self.target)
-        if history:
-            lhs, info = history[-1]
-            lhs, vlhs = _redict(lhs, self.target, self.dtype)
-            res, jac = self._eval(lhs, mask)
-            relax = info.relax
-        else:
-            lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
-            res, jac = self._eval(lhs, mask)
-            relax = self.relax0
-            yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
-        while True:
-            dlhs = -jac.solve_leniently(res, **self.solveargs)  # compute new search vector
-            res0 = res
-            dres = jac@dlhs  # == -res if dlhs was solved to infinite precision
-            vlhs[vmask] += relax * dlhs
-            res, jac = self._eval(lhs, mask)
-            if self.linesearch:
-                scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
-                while not accept:  # line search
-                    assert scale < 1
-                    oldrelax = relax
-                    relax *= scale
-                    if relax <= self.failrelax:
-                        raise SolverError('stuck in local minimum')
-                    vlhs[vmask] += (relax - oldrelax) * dlhs
-                    res, jac = self._eval(lhs, mask)
-                    scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
-                log.info('update accepted at relaxation', round(relax, 5))
-                relax = min(relax * scale, 1)
-            yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
+    return _with_solve('newton', System(target, residual),
+        arguments=arguments, constrain=constrain, linesearch=linesearch, relax=relax0, failrelax=failrelax, linargs=linargs)
 
 
 def minimize(target, energy: evaluable.asarray, *, lhs0: types.arraydata = None, constrain = None, rampup: float = .5, rampdown: float = -1., failrelax: float = -10., arguments = {}, **kwargs):
@@ -390,89 +528,15 @@ def minimize(target, energy: evaluable.asarray, *, lhs0: types.arraydata = None,
             failrelax=failrelax, arguments=arguments if lhs0 is None else {**arguments, target: lhs0}, **kwargs)[target]
     if lhs0 is not None:
         raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
-    if isinstance(target, str):
-        target = target.rstrip(',').split(',')
-    solveargs = _strip(kwargs, 'lin')
-    solveargs['symmetric'] = True
+    linargs = _strip(kwargs, 'lin')
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-    return _with_solve(_minimize(tuple(target), energy.as_evaluable_array,
-        types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
-        types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
-        rampup, rampdown, failrelax, types.frozendict(solveargs)))
+    return _with_solve('minimize', System(target, energy),
+        arguments=arguments, constrain=constrain, rampup=rampup, rampdown=rampdown, failrelax=failrelax, linargs=linargs)
 
-
-class _minimize(cache.Recursion, length=1, version=3):
-
-    def __init__(self, target, energy: evaluable.asarray, constrain, arguments, rampup: float, rampdown: float, failrelax: float, solveargs):
-        super().__init__()
-        if energy.shape != ():
-            raise ValueError('`energy` should be scalar')
-        self.target = target
-        self.energy = energy
-        self.residual = _derivative((energy,), target)
-        self.jacobian = _derivative(self.residual, target)
-        self.lhs0, self.constrain = _parse_lhs_cons(constrain, target, _argobjs((energy,)), arguments)
-        self.dtype = _determine_dtype(target, (energy,), self.lhs0, self.constrain)
-        self.rampup = rampup
-        self.rampdown = rampdown
-        self.failrelax = failrelax
-        self.solveargs = solveargs
-
-    def _eval(self, lhs, mask):
-        return _integrate_blocks(self.energy, self.residual, self.jacobian, arguments=lhs, mask=mask)
-
-    def resume(self, history):
-        mask, vmask = _invert(self.constrain, self.target)
-        if history:
-            lhs, info = history[-1]
-            lhs, vlhs = _redict(lhs, self.target, self.dtype)
-            nrg, res, jac = self._eval(lhs, mask)
-            relax = info.relax
-        else:
-            lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
-            nrg, res, jac = self._eval(lhs, mask)
-            relax = 0
-            yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
-
-        while True:
-            nrg0 = nrg
-            dlhs = -jac.solve_leniently(res, **self.solveargs)
-            vlhs[vmask] += dlhs  # baseline: vanilla Newton
-
-            # compute first two ritz values to determine approximate path of steepest descent
-            dlhsnorm = numpy.linalg.norm(dlhs)
-            k0 = dlhs / dlhsnorm
-            k1 = -res / dlhsnorm  # = jac @ k0
-            a = k1 @ k0
-            k1 -= k0 * a  # orthogonalize
-            c = numpy.linalg.norm(k1)
-            k1 /= c  # normalize
-            b = k1 @ (jac @ k1)
-            # at this point k0 and k1 are orthonormal, and [k0 k1]^T jac [k0 k1] = [a c; c b]
-            D = numpy.hypot(b-a, 2*c)
-            L = numpy.array([a+b-D, a+b+D]) / 2  # 2nd order ritz values: eigenvalues of [a c; c b]
-            v0, v1 = res + dlhs * L[:, numpy.newaxis]
-            V = numpy.array([v1, -v0]).T / D  # ritz vectors times dlhs -- note: V.dot(L) = -res, V.sum() = dlhs
-            log.info('spectrum: {:.1e}..{:.1e} ({}definite)'.format(*L, 'positive ' if L[0] > 0 else 'negative ' if L[-1] < 0 else 'in'))
-
-            eL = 0
-            for irelax in itertools.count():  # line search along steepest descent curve
-                r = numpy.exp(relax - numpy.log(D))  # = exp(relax) / D
-                eL0 = eL
-                eL = numpy.exp(-r*L)
-                vlhs[vmask] -= V.dot(eL - eL0)
-                nrg, res, jac = self._eval(lhs, mask)
-                slope = res.dot(V.dot(eL*L))
-                log.info('energy {:+.2e} / e{:+.1f} and {}creasing'.format(nrg - nrg0, relax, 'in' if slope > 0 else 'de'))
-                if numpy.isfinite(nrg) and numpy.isfinite(res).all() and nrg <= nrg0 and slope <= 0:
-                    relax += self.rampup
-                    break
-                relax += self.rampdown
-                if relax <= self.failrelax:
-                    raise SolverError('stuck in local minimum')
-
-            yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
+    #iterations = system.iter_minimize(arguments=arguments, constrain=constrain, rampup=rampup, rampdown=rampdown, failrelax=failrelax, linargs=linargs)
+    #eval_energy = evaluable.compile(energy.as_evaluable_array)
+    #return _with_solve(((arguments, types.attributes(resnorm=resnorm, energy=eval_energy(**arguments))) for arguments, resnorm in iterations), name='minimize')
 
 
 def pseudotime(target, residual, inertia, timestep: float, *, lhs0: types.arraydata = None, constrain = None, arguments = {}, **kwargs):
@@ -511,63 +575,11 @@ def pseudotime(target, residual, inertia, timestep: float, *, lhs0: types.arrayd
     if lhs0 is not None:
         raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
     target, residual, inertia = _target_helper(target, residual, inertia)
-    solveargs = _strip(kwargs, 'lin')
-    solveargs.setdefault('rtol', 1e-3)
+    linargs = _strip(kwargs, 'lin', rtol=1e-3)
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-    return _with_solve(_pseudotime(target, residual, inertia, timestep,
-        types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
-        types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
-        types.frozendict(solveargs)))
-
-
-class _pseudotime(cache.Recursion, length=1):
-
-    def __init__(self, target, residual, inertia, timestep: float, constrain, arguments, solveargs: dict):
-        super().__init__()
-        if target in arguments:
-            raise ValueError('`target` should not be defined in `arguments`')
-        if len(residual) != len(inertia):
-            raise Exception('length of residual and inertia do no match')
-        for inert, res in zip(inertia, residual):
-            if inert and not evaluable.equalshape(inert.shape, res.shape):
-                raise ValueError('expected `inertia` with shape {} but got {}'.format(res.shape, inert.shape))
-        self.target = target
-        self.timesteptarget = '_pseudotime_timestep'
-        dt = evaluable.Argument(self.timesteptarget, ())
-        self.residuals = residual
-        self.jacobians = _derivative(tuple(res + (inert/dt if inert else 0) for res, inert in zip(residual, inertia)), target)
-        self.lhs0, self.constrain = _parse_lhs_cons(constrain, target, _argobjs(residual+inertia), arguments)
-        self.dtype = _determine_dtype(target, residual+inertia, self.lhs0, self.constrain)
-        self.timestep = timestep
-        self.solveargs = solveargs
-
-    def _eval(self, lhs, mask, timestep):
-        return _integrate_blocks(self.residuals, self.jacobians, arguments=dict({self.timesteptarget: timestep}, **lhs), mask=mask)
-
-    def resume(self, history):
-        mask, vmask = _invert(self.constrain, self.target)
-        if history:
-            lhs, info = history[-1]
-            lhs, vlhs = _redict(lhs, self.target, self.dtype)
-            resnorm0 = info.resnorm0
-            timestep = info.timestep
-            res, jac = self._eval(lhs, mask, timestep)
-            resnorm = numpy.linalg.norm(res)
-        else:
-            lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
-            timestep = self.timestep
-            res, jac = self._eval(lhs, mask, timestep)
-            resnorm = resnorm0 = numpy.linalg.norm(res)
-            yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
-
-        while True:
-            vlhs[vmask] -= jac.solve_leniently(res, **self.solveargs)
-            timestep = self.timestep * (resnorm0/resnorm)
-            log.info('timestep: {:.0e}'.format(timestep))
-            res, jac = self._eval(lhs, mask, timestep)
-            resnorm = numpy.linalg.norm(res)
-            yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
+    return _with_solve('pseudotime', System(target, residual),
+        arguments=arguments, constrain=constrain, inertia=inertia, timestep=timestep)
 
 
 def thetamethod(target, residual, inertia, timestep: float, theta: float, *, lhs0: types.arraydata = None, constrain = None, newtontol: float = 1e-10, arguments = {}, newtonargs: types.frozendict = {}, timetarget: str = '_thetamethod_time', time0: float = 0., historysuffix: str = '0'):
@@ -614,54 +626,33 @@ def thetamethod(target, residual, inertia, timestep: float, theta: float, *, lhs
     if lhs0 is not None:
         raise ValueError('lhs0 argument is invalid for a non-string target; define the initial condition via arguments instead')
     target, residual, inertia = _target_helper(target, residual, inertia)
-    return _thetamethod(target, residual, inertia, timestep,
-        types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
-        types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
-        theta, newtontol, types.frozendict(newtonargs), timetarget, time0, historysuffix)
+
+    argobjs = _dict((arg.name, arg) for func in residual + inertia if func is not None for arg in func.arguments if isinstance(arg, evaluable.Argument))
+    argobjs.setdefault(timetarget, evaluable.Argument(timetarget, ()))
+
+    old_new = [(t+historysuffix, t) for t in target]
+    old_new.append((timetarget+historysuffix, timetarget))
+
+    subs0 = {new: evaluable.Argument(old, argobjs[new].shape) for old, new in old_new}
+    dt = evaluable.Argument(timetarget, ()) - subs0[timetarget]
+    theta = evaluable.constant(float(theta))
+    residuals = tuple(res * theta + evaluable.replace_arguments(res, subs0) * (1.-theta)
+        + (inert - evaluable.replace_arguments(inert, subs0)) / dt for res, inert in zip(residual, inertia))
+
+    arguments = arguments.copy()
+    arguments.setdefault(timetarget, time0)
+    return _thetamethod(System(target, residuals), arguments,
+        timestep=timestep, timetarget=timetarget, historysuffix=historysuffix,
+        constrain=constrain, tol=newtontol, **_copy_with_defaults(newtonargs,
+        linesearch=NormBased()))
 
 
-class _thetamethod(cache.Recursion, length=1, version=1):
-
-    def __init__(self, target, residual, inertia, timestep: float, constrain, arguments, theta: float, newtontol: float, newtonargs: types.frozendict, timetarget: str, time0: float, historysuffix: str):
-        super().__init__()
-        if len(residual) != len(inertia):
-            raise Exception('length of residual and inertia do no match')
-        for inert, res in zip(inertia, residual):
-            if not evaluable.equalshape(inert.shape, res.shape):
-                raise ValueError('expected `inertia` with shape {} but got {}'.format(res.shape, inert.shape))
-        self.target = target
-        self.newtonargs = newtonargs
-        self.newtontol = newtontol
-        self.timestep = timestep
-        self.timetarget = timetarget
-        self.lhs0, self.constrain = _parse_lhs_cons(constrain, target, _argobjs(residual+inertia), arguments)
-        self.lhs0[timetarget] = numpy.array(time0)
-        self.old_new = [(t+historysuffix, t) for t in target]
-        self.old_new.append((timetarget+historysuffix, timetarget))
-        subs0 = {new: evaluable.Argument(old, tuple(map(evaluable.constant, self.lhs0[new].shape))) for old, new in self.old_new}
-        dt = evaluable.Argument(timetarget, ()) - subs0[timetarget]
-        self.residuals = tuple(res * evaluable.astype(theta, res.dtype) + evaluable.replace_arguments(res, subs0) * evaluable.astype(1-theta, res.dtype) + (inert - evaluable.replace_arguments(inert, subs0)) / evaluable.astype(dt, res.dtype) for res, inert in zip(residual, inertia))
-        self.jacobians = _derivative(self.residuals, target)
-
-    def _step(self, lhs0, dt):
-        arguments = lhs0.copy()
-        arguments.update((old, lhs0[new]) for old, new in self.old_new)
-        arguments[self.timetarget] = lhs0[self.timetarget] + dt
-        try:
-            return newton(self.target, residual=self.residuals, jacobian=self.jacobians, constrain=self.constrain, arguments=arguments, **self.newtonargs).solve(tol=self.newtontol)
-        except (SolverError, matrix.MatrixError) as e:
-            log.error('error: {}; retrying with timestep {}'.format(e, dt/2))
-            return self._step(self._step(lhs0, dt/2), dt/2)
-
-    def resume(self, history):
-        if history:
-            lhs, = history
-        else:
-            lhs = self.lhs0
-            yield lhs
-        while True:
-            lhs = self._step(lhs, self.timestep)
-            yield lhs
+def _thetamethod(system, arguments, **stepargs):
+    with log.iter.plain('timestep', itertools.count()) as steps:
+        yield arguments
+        for _ in steps:
+            arguments = system.step(arguments=arguments, **stepargs)
+            yield arguments
 
 
 impliciteuler = functools.partial(thetamethod, theta=1)
@@ -710,193 +701,53 @@ def optimize(target, functional: evaluable.asarray, *, tol: float = 0., argument
             constrain={} if constrain is None else {target: constrain}, relax0=relax0, linesearch=linesearch, failrelax=failrelax, **kwargs)[target]
     if lhs0 is not None:
         raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
-    if isinstance(target, str):
-        target = target.rstrip(',').split(',')
-    solveargs = _strip(kwargs, 'lin')
-    solveargs['symmetric'] = True
+    linargs = _strip(kwargs, 'lin')
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
     with log.context('optimize'):
-        return _optimize(tuple(target), functional.as_evaluable_array,
-            types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
-            types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
-            tol, droptol, relax0, linesearch, failrelax, types.frozendict(solveargs))
-
-
-@cache.function(version=1)
-def _optimize(target, functional: evaluable.asarray, constrain, arguments, tol: float, droptol: float, relax0: float, linesearch, failrelax: float, solveargs):
-    argobjs = _argobjs((functional,))
-    if any(t not in argobjs for t in target):
-        if not droptol:
-            raise ValueError('target {} does not occur in integrand; consider setting droptol>0'.format(', '.join(t for t in target if t not in argobjs)))
-        target = [t for t in target if t in argobjs]
-        if not target:
-            return {}
-    residual = _derivative((functional,), target)
-    jacobian = _derivative(residual, target)
-    lhs0, constrain = _parse_lhs_cons(constrain, target, argobjs, arguments)
-    dtype = _determine_dtype(target, (functional,), lhs0, constrain)
-    mask, vmask = _invert(constrain, target)
-    lhs, vlhs = _redict(lhs0, target, dtype)
-    val, res, jac = _integrate_blocks(functional, residual, jacobian, arguments=lhs, mask=mask)
-    if droptol is not None:
-        supp = jac.rowsupp(droptol)
-        res = res[supp]
-        jac = jac.submatrix(supp, supp)
-        nan = numpy.zeros_like(vmask)
-        nan[vmask] = ~supp  # return value is set to nan if dof is not supported and not constrained
-        vmask[vmask] = supp  # dof is computed if it is supported and not constrained
-        assert vmask.sum() == len(res)
-    resnorm = numpy.linalg.norm(res)
-    solveargs = dict(solveargs)
-    if not set(target).isdisjoint(_argobjs(jacobian)):
-        if tol <= 0:
-            raise ValueError('nonlinear optimization problem requires a nonzero "tol" argument')
-        solveargs.setdefault('rtol', 1e-3)
-        firstresnorm = resnorm
-        relax = relax0
-        accept = True
-        with log.context('newton {:.0f}%', 0) as reformat:
-            while not numpy.isfinite(resnorm) or resnorm > tol:
-                if accept:
-                    reformat(100 * numpy.log(firstresnorm/resnorm) / numpy.log(firstresnorm/tol))
-                    dlhs = -jac.solve_leniently(res, **solveargs)
-                    res0 = res
-                    dres = jac@dlhs  # == -res0 if dlhs was solved to infinite precision
-                    relax0 = 0
-                vlhs[vmask] += (relax - relax0) * dlhs
-                relax0 = relax  # currently applied relaxation
-                val, res, jac = _integrate_blocks(functional, residual, jacobian, arguments=lhs, mask=mask)
-                resnorm = numpy.linalg.norm(res)
-                scale, accept = linesearch(res0, relax*dres, res, relax*(jac@dlhs))
-                relax = min(relax * scale, 1)
-                if relax <= failrelax:
-                    raise SolverError('stuck in local minimum')
-            log.info('converged with residual {:.1e}'.format(resnorm))
-    elif resnorm > tol:
-        solveargs.setdefault('atol', tol)
-        dlhs = -jac.solve(res, **solveargs)
-        vlhs[vmask] += dlhs
-        val += (res + jac@dlhs/2).dot(dlhs)
-    if droptol is not None:
-        vlhs[nan] = numpy.nan
-        log.info('constrained {}/{} dofs'.format(len(vlhs)-nan.sum(), len(vlhs)))
-    log.info('optimum value {:.2e}'.format(val))
-    return lhs
+        system = System(target, functional)
+        eval_functional = evaluable.compile(functional.as_evaluable_array)
+        if droptol is None:
+            arguments = system.solve(arguments=arguments, constrain=constrain, tol=tol, relax=relax0, failrelax=failrelax, linesearch=linesearch)
+            value = eval_functional(**arguments)
+        elif system.is_linear:
+            x, iscons, arguments = system.prepare_solution_vector(arguments, constrain or {})
+            res, jac = system.assemble(arguments)
+            nosupp = ~jac.rowsupp(droptol)
+            x -= jac.solve(res, constrain=iscons|nosupp, **dict(symmetric=True, **linargs))
+            value = eval_functional(**arguments)
+            x[nosupp & ~iscons] = numpy.nan
+        else:
+            raise ValueError('drop tolerance is only accepted for linear systems')
+        log.info(f'optimum value: {value:.1e}')
+        return arguments
 
 
 # HELPER FUNCTIONS
 
-def _strip(kwargs, prefix):
-    return {key[len(prefix):]: kwargs.pop(key) for key in list(kwargs) if key.startswith(prefix)}
+def _strip(kwargs, prefix, **return_args):
+    for key in list(kwargs):
+        if key.startswith(prefix):
+            return_args[key[len(prefix):]] = kwargs.pop(key)
+    return return_args
 
 
-def _parse_lhs_cons(constrain, targets, argobjs, arguments):
-    arguments = {t: numpy.asarray(a) for t, a in arguments.items()}
-    constrain = {t: numpy.asarray(c) for t, c in constrain.items()}
-    for target in targets:
-        if target not in argobjs:
-            raise SolverError('target does not occur in functional: {!r}'.format(target))
-        shape = tuple(map(int, argobjs[target].shape))
-        if target not in arguments:
-            arguments[target] = numpy.zeros(shape)
-        elif arguments[target].shape != shape:
-            raise SolverError('invalid argument shape for {}: {} != {}'.format(target, arguments[target].shape, shape))
-        if target not in constrain:
-            constrain[target] = numpy.zeros(shape, dtype=bool)
-        elif constrain[target].shape != shape:
-            raise SolverError('invalid constrain shape for {}: {} != {}'.format(target, constrain[target].shape, shape))
-        if constrain[target].dtype != bool:
-            isnan = numpy.isnan(constrain[target])
-            arguments[target] = numpy.choose(isnan, [constrain[target], arguments[target]])
-            constrain[target] = ~isnan
-    return arguments, constrain
+def _dict(items):
+    '''construct dictionary from items while checking that duplicate keys have matching values'''
+
+    d = {}
+    for k, v in items:
+        v_ = d.setdefault(k, v)
+        if v_ is not v and v_ != v: # cheap test first to avoid equality checks
+            raise ValueError('incompatible items')
+    return d
 
 
-def _derivative(residual, target, jacobian=None):
-    argobjs = _argobjs(residual)
-    if jacobian is None:
-        jacobian = tuple(evaluable.derivative(res, argobjs[t]).simplified for res in residual for t in target)
-    elif len(jacobian) != len(residual) * len(target):
-        raise ValueError('jacobian has incorrect length')
-    elif not all(evaluable.equalshape(jacobian[i*len(target)+j].shape, res.shape + argobjs[t].shape) for i, res in enumerate(residual) for j, t in enumerate(target)):
-        raise ValueError('jacobian has incorrect shape')
-    return jacobian
-
-
-def _redict(lhs, targets, dtype=float):
-    '''copy argument dictionary referencing a newly allocated contiguous array'''
-
-    vlhs = numpy.empty(sum(lhs[target].size for target in targets), dtype)
-    lhs = lhs.copy()
-    offset = 0
-    for target in targets:
-        old = lhs[target]
-        nextoffset = offset + old.size
-        new = vlhs[offset:nextoffset].reshape(old.shape)
-        new[...] = old
-        new.flags.writeable = False
-        lhs[target] = new
-        offset = nextoffset
-    assert offset == len(vlhs)
-    return lhs, vlhs
-
-
-def _invert(cons, targets):
-    '''invert constraints dictionary to tuple referencing a contiguous array'''
-
-    mask = []
-    vmask = numpy.empty(sum(cons[target].size for target in targets), dtype=bool)
-    offset = 0
-    for target in targets:
-        c = cons[target]
-        nextoffset = offset + c.size
-        mask.append(numpy.invert(c, out=vmask[offset:nextoffset].reshape(c.shape)))
-        offset = nextoffset
-    assert offset == len(vmask)
-    return tuple(mask), vmask
-
-
-def _integrate_blocks(*blocks, arguments, mask):
-    '''helper function for blockwise integration'''
-
-    *scalars, residuals, jacobians = blocks
-    assert len(residuals) == len(mask)
-    assert len(jacobians) == len(mask)**2
-    data = iter(evaluable.eval_sparse((*scalars, *residuals, *jacobians), **arguments))
-    nrg = [sparse.toarray(next(data)) for _ in range(len(scalars))]
-    res = [sparse.take(next(data), [m]) for m in mask]
-    jac = [[sparse.take(next(data), [mi, mj]) for mj in mask] for mi in mask]
-    assert not list(data)
-    return nrg + [sparse.toarray(sparse.block(res)), matrix.fromsparse(sparse.block(jac), inplace=True)]
-
-
-def _argobjs(funcs):
-    '''get :class:`evaluable.Argument` dependencies of multiple functions'''
-
-    argobjs = {}
-    for func in filter(None, funcs):
-        for arg in func.arguments:
-            if isinstance(arg, evaluable.Argument):
-                if arg.name in argobjs:
-                    if argobjs[arg.name] != arg:
-                        raise ValueError('shape or dtype mismatch for argument {}: {} != {}'.format(arg.name, argobjs[arg.name], arg))
-                else:
-                    argobjs[arg.name] = arg
-    return argobjs
-
-
-def _determine_dtype(targets, residuals, lhs0, constrain):
-    argobjs = _argobjs(residuals)
-    dtype = complex if (
-        any(argobjs[target].dtype == complex for target in targets)
-        or any(residual.dtype == complex for residual in residuals if residual is not None)
-        or any(vec.dtype.kind == 'c' for vec in lhs0.values())
-        or any(vec.dtype.kind == 'c' for vec in constrain.values())
-    ) else float
-    if not all(argobjs[target].dtype == dtype for target in targets):
-        raise ValueError('All targets must have dtype {}.'.format(dtype.__name__))
-    return dtype
+def _copy_with_defaults(d, **kwargs):
+    d = d.copy() if d else {}
+    for k, v in kwargs.items():
+        d.setdefault(k, v)
+    return d
 
 
 def _target_helper(target, *args):
@@ -917,19 +768,44 @@ def _target_helper(target, *args):
     return (tuple(targets), *[tuple(f.as_evaluable_array for f in arg) for arg in args])
 
 
-class _with_solve(types.Immutable):
-    '''add a .solve method to iterables'''
+def _linesearch_helper(linesearch, res0, dres0, res1, dres1, iscons, relax):
+    isdof = ~iscons
+    scale, accept = linesearch(res0[isdof], dres0[isdof] * relax, res1[isdof], dres1[isdof] * relax)
+    if accept:
+        log.info('update accepted at relaxation', round(relax, 5))
+        return min(relax * scale, 1), 0
+    assert scale < 1
+    return relax * scale, relax * (scale-1)
 
-    def __init__(self, wrapped, item = None):
-        self._wrapped = wrapped
+
+class _First:
+    def __call__(self, value):
+        try:
+            return self.value
+        except AttributeError:
+            self.value = value
+            return value
+
+
+class _with_solve:
+
+    def __init__(self, method, system, item=None, **kwargs):
+        self.system = system
+        self.method = method
+        self.kwargs = kwargs
         self._item = item
-
-    def __iter__(self):
-        return iter(self._wrapped) if self._item is None else ((res[self._item], info) for (res, info) in self._wrapped)
 
     def __getitem__(self, item):
         assert self._item is None
-        return _with_solve(self._wrapped, item)
+        return _with_solve(self.method, self.system, item, **self.kwargs)
+
+    def _map(self, result):
+        arguments, resnorm = result
+        return arguments if self._item is None else arguments[self._item], types.attributes(resnorm=resnorm)
+
+    def __iter__(self):
+        iter_method = getattr(self.system, 'iter_' + self.method)
+        return map(self._map, iter_method(**self.kwargs))
 
     def solve(self, tol, maxiter=float('inf'), miniter=0):
         '''execute nonlinear solver, return lhs
@@ -956,7 +832,6 @@ class _with_solve(types.Immutable):
         lhs, info = self.solve_withinfo(tol=tol, maxiter=maxiter, miniter=miniter)
         return lhs
 
-    @cache.function
     def solve_withinfo(self, tol, maxiter=float('inf'), miniter=0):
         '''execute nonlinear solver, return lhs and info
 
@@ -965,21 +840,9 @@ class _with_solve(types.Immutable):
         norm and other generator-dependent information.
         '''
 
-        if miniter > maxiter:
-            raise ValueError('The minimum number of iterations cannot be larger than the maximum.')
-        with log.context(self._wrapped.__class__.__name__.strip('_')):
-            with log.context('iter {}', 0) as recontext:
-                it = enumerate(self)
-                iiter, (lhs, info) = next(it)
-                resnorm0 = info.resnorm
-                while info.resnorm > tol or iiter < miniter:
-                    if iiter >= maxiter:
-                        raise SolverError(f'failed to reach target tolerance in {maxiter} iterations')
-                    recontext(f'{iiter+1} ({100 * numpy.log(resnorm0 / max(info.resnorm, tol)) / numpy.log(resnorm0 / tol):.0f}%)')
-                    iiter, (lhs, info) = next(it)
-            log.info(f'converged in {iiter} iterations to residual {info.resnorm:.1e}')
-        info.niter = iiter
-        return lhs, info
+        if maxiter == float('inf'):
+            maxiter = None
+        return self._map(self.system.solve_withnorm(tol=tol, miniter=miniter, maxiter=maxiter, method=self.method, **self.kwargs))
 
 
 # vim:sw=4:sts=4:et

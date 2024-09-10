@@ -132,8 +132,8 @@ class test(testing.TestCase):
                 eNpjaGBAhSBAZTEAEKAUAQ==''')
         with self.subTest('solution'):
             self.assertAlmostEqual64(args['u'], '''
-                eNqTNig6vcVwwekjRuJn5Iy1zzIAwQs999MdBmWn+w0Zz7QYpoPF/v+3Pv3/f/5pBgbWMwwM8WAxiYvu
-                pyvOl50uPMd4puYcRN3T80Wnfc4tOG1zVvzMozMQ8wAOOSng''')
+                eNqTNig6vcVwwekjRuJn5Iy1zzIAwQs999MdBmWn+w0Zz7QYpoPFGBisTzMw5AMx6xkGhniwmMRF99MV
+                58tOF55jPFNzDqLu6fmi0z7nFpy2OSt+5tEZiHkAKRAl5A==''')
         with self.subTest('traction'):
             self.assertAlmostEqual64(args['t'], '''
                 eNpjYEAF/Sc+maMJMdw0emzGgAFiMdSpn8VUV2j+yRwAoCAJFw==''')
