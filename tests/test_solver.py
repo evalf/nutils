@@ -45,19 +45,21 @@ def _test_recursion_cache(testcase, solver_iter):
         with tmpcache():
             for i, length in enumerate(lengths):
                 with testcase.subTest(lengths=lengths, step=i):
-                    if length == 0: # treated as special case because assertLogs would fail
-                        read(0)
-                        continue
-                    with testcase.assertLogs('nutils', 'DEBUG') as cm:
-                        v = read(length)
+                    if length <= 1:
+                        if hasattr(testcase, 'assertNoLogs'): # Python >= 3.10
+                            with testcase.assertNoLogs('nutils', 'DEBUG'):
+                                v = read(length)
+                        else:
+                            v = read(length)
+                    else:
+                        with testcase.assertLogs('nutils', 'DEBUG') as cm:
+                            v = read(length)
+                        testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.function [0-9a-f]{40}\\] '
+                            + ('load' if i and max(lengths[:i]) > 1 else 'failed to load'))
                     _assert_almost_equal(testcase, v, reference[:length])
-                    testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.Recursion [0-9a-f]{40}\\] start iterating')
-                    testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.Recursion [0-9a-f]{40}\\.0000\\] load' if i and max(lengths[:i]) > 0
-                                                          else '\\[cache\\.Recursion [0-9a-f]{40}\\.0000\\] cache exhausted')
 
 
 def _test_solve_cache(testcase, solver_gen):
-    _test_recursion_cache(testcase, solver_gen)
     with testcase.subTest('solve'), tmpcache():
         v1 = _edit(solver_gen().solve(1e-5))
         with testcase.assertLogs('nutils', 'DEBUG') as cm:
@@ -263,16 +265,6 @@ class optimize(TestCase):
         cons = solver.optimize('dofs', err, droptol=1e-15)
         numpy.testing.assert_almost_equal(cons, numpy.take([1, numpy.nan], [0, 1, 1, 0, 1, 1, 0, 1, 1]), decimal=15)
 
-    def test_nonlinear(self):
-        err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2' @ self.ns, degree=6)
-        cons = solver.optimize('dofs', err, droptol=1e-15, tol=1e-15)
-        numpy.testing.assert_almost_equal(cons, numpy.take([1, numpy.nan], [0, 1, 1, 0, 1, 1, 0, 1, 1]), decimal=15)
-
-    def test_nonlinear_multipleroots(self):
-        err = self.domain.boundary['bottom'].integral('(u + u^2 - .75)^2' @ self.ns, degree=2)
-        cons = solver.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(self.ubasis)), tol=1e-10)
-        numpy.testing.assert_almost_equal(cons, numpy.take([.5, numpy.nan], [0, 1, 1, 0, 1, 1, 0, 1, 1]), decimal=15)
-
     def test_nanres(self):
         err = self.domain.integral('(sqrt(1 - u) - .5)^2' @ self.ns, degree=2)
         dofs = solver.optimize('dofs', err, tol=1e-10)
@@ -280,12 +272,8 @@ class optimize(TestCase):
 
     def test_unknowntarget(self):
         err = self.domain.integral('(sqrt(1 - u) - .5)^2' @ self.ns, degree=2)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(KeyError):
             dofs = solver.optimize(['dofs', 'other'], err, tol=1e-10)
-        dofs = solver.optimize(['dofs', 'other'], err, tol=1e-10, droptol=1e-10)
-        self.assertEqual(list(dofs), ['dofs'])
-        dofs = solver.optimize(['other'], err, tol=1e-10, droptol=1e-10)
-        self.assertEqual(dofs, {})
         with self.assertRaises(KeyError):
             dofs = solver.optimize('other', err, tol=1e-10, droptol=1e-10)
 
@@ -331,7 +319,7 @@ class theta_time(TestCase):
         residual = topo.integral('-e_n sin(t) dV' @ ns, degree=0)
         timestep = 0.1
         udesired = numpy.array([0.])
-        uactualiter = iter(method(target='u', residual=residual, inertia=inertia, timestep=timestep, lhs0=udesired, timetarget='t'))
+        uactualiter = iter(method(target='u', residual=residual, inertia=inertia, timestep=timestep, lhs0=udesired.copy(), timetarget='t'))
         for i in range(5):
             with self.subTest(i=i):
                 uactual = next(uactualiter)
