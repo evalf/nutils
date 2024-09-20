@@ -5157,6 +5157,41 @@ def unique(array, return_index=False, return_inverse=False):
     return (unique, index, inverse)[slice(0, 2+return_inverse, 2-return_index) if return_inverse or return_index else 0]
 
 
+class CompressIndices(Array):
+
+    indices: Array
+    length: Array
+
+    dtype = int
+    ndim = 1
+
+    def __post_init__(self):
+        assert self.indices.dtype == int and self.indices.ndim == 1
+        assert self.length.dtype == int and self.length.ndim == 0
+
+    @property
+    def shape(self):
+        return self.length + 1,
+
+    @property
+    def dependencies(self):
+        return self.indices, self.length
+
+    @staticmethod
+    def evalf(indices, length):
+        return numeric.compress_indices(indices, length)
+
+
+def as_csr(array):
+    assert array.ndim == 2
+    values, (rowindices, colindices), (nrows, ncols) = array.simplified.assparse
+    indices, inverse = unique(rowindices * ncols + colindices, return_inverse=True)
+    rowidx, colidx = divmod(indices, ncols)
+    rowptr = CompressIndices(rowidx, nrows)
+    values = Inflate(values, inverse, indices.shape[0])
+    return values, rowptr, colidx, ncols
+
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 

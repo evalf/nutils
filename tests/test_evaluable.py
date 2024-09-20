@@ -1,4 +1,4 @@
-from nutils import evaluable, sparse, numeric, _util as util, types, sample
+from nutils import evaluable, sparse, numeric, _util as util, types, sample, matrix
 from nutils.testing import TestCase, parametrize
 import nutils_poly as poly
 import numpy
@@ -77,6 +77,11 @@ class check(TestCase):
             values, indices, shape = evaluable.eval_coo(actual, evalargs)
             self.assertEqual(shape, desired.shape)
             self.assertArrayAlmostEqual(numeric.accumulate(values, indices, shape), desired, decimal)
+        if actual.ndim == 2:
+            with self.subTest('csr'):
+                values, rowptr, colidx, ncols = evaluable.compile(evaluable.as_csr(actual))(**evalargs)
+                mat = matrix.assemble_csr(values, rowptr, colidx, ncols)
+                self.assertArrayAlmostEqual(mat.export('dense'), desired, decimal)
 
     def test_evalconst(self):
         self.assertFunctionAlmostEqual(decimal=14,
