@@ -85,12 +85,6 @@ def _isindex(arg):
     return isinstance(arg, Array) and arg.ndim == 0 and arg.dtype == int and arg._intbounds[0] >= 0
 
 
-def _equals_scalar_constant(arg: 'Array', value: Dtype):
-    assert isinstance(arg, Array) and arg.ndim == 0, f'arg={arg!r}'
-    assert arg.dtype == type(value), f'arg.dtype={arg.dtype}, type(value)={type(value)}'
-    return arg.isconstant and arg.eval() == value
-
-
 def _equals_simplified(arg1: 'Array', arg2: 'Array'):
     assert isinstance(arg1, Array), f'arg1={arg1!r}'
     assert isinstance(arg2, Array), f'arg2={arg2!r}'
@@ -733,7 +727,7 @@ class Orthonormal(Array):
         return self.vector.shape
 
     def _simplified(self):
-        if _equals_scalar_constant(self.shape[-1], 1):
+        if isunit(self.shape[-1]):
             return Sign(self.vector)
         basis, vector, where = unalign(self.basis, self.vector, naxes=self.ndim - 1)
         if len(where) < self.ndim - 1:
@@ -748,7 +742,7 @@ class Orthonormal(Array):
         return numeric.normalize(n - v3)
 
     def _derivative(self, var, seen):
-        if _equals_scalar_constant(self.shape[-1], 1):
+        if isunit(self.shape[-1]):
             return zeros(self.shape + var.shape)
 
         # definitions:
@@ -956,7 +950,7 @@ class InsertAxis(Array):
         return self.func._unaligned
 
     def _simplified(self):
-        if _equals_scalar_constant(self.length, 0):
+        if iszero(self.length):
             return zeros_like(self)
         return self.func._insertaxis(self.ndim-1, self.length)
 
@@ -970,7 +964,7 @@ class InsertAxis(Array):
             return numpy.repeat(func[..., numpy.newaxis], length, -1)
 
     def _compile_expression(self, py_self, func, length):
-        if _equals_scalar_constant(self.length, 1):
+        if isunit(self.length):
             return func.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Variable('numpy').get_attr('newaxis'))))
         else:
             return super()._compile_expression(py_self, func, length)
@@ -1280,7 +1274,7 @@ class Product(Array):
         return _pyast.Variable('numpy').get_attr('all' if self.dtype == bool else 'prod').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
-        if _equals_scalar_constant(self.func.shape[-1], 1):
+        if isunit(self.func.shape[-1]):
             return get(self.func, self.ndim, constant(0))
         return self.func._product()
 
@@ -1320,9 +1314,9 @@ class Inverse(Array):
         return self.func.shape
 
     def _simplified(self):
-        if _equals_scalar_constant(self.func.shape[-1], 1):
+        if isunit(self.func.shape[-1]):
             return reciprocal(self.func)
-        if _equals_scalar_constant(self.func.shape[-1], 0):
+        if iszero(self.func.shape[-1]):
             return singular_like(self)
         result = self.func._inverse(self.ndim-2, self.ndim-1)
         if result is not None:
@@ -1378,7 +1372,7 @@ class Determinant(Array):
         result = self.func._determinant(self.ndim, self.ndim+1)
         if result is not None:
             return result
-        if _equals_scalar_constant(self.func.shape[-1], 1):
+        if isunit(self.func.shape[-1]):
             return Take(Take(self.func, zeros((), int)), zeros((), int))
 
     evalf = staticmethod(numpy.linalg.det)
@@ -1496,7 +1490,7 @@ class Multiply(Array):
     def _determinant(self, axis1, axis2):
         axis1, axis2 = sorted([axis1, axis2])
         factors = tuple(self._factors)
-        if all(_equals_scalar_constant(self.shape[axis], 1) for axis in (axis1, axis2)):
+        if all(isunit(self.shape[axis]) for axis in (axis1, axis2)):
             return multiply(*[determinant(f, (axis1, axis2)) for f in factors])
         for i, fi in enumerate(factors):
             unaligned, where = unalign(fi)
@@ -1817,7 +1811,7 @@ class Sum(Array):
         return _pyast.Variable('numpy').get_attr('any' if self.dtype == bool else 'sum').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
-        if _equals_scalar_constant(self.func.shape[-1], 1):
+        if isunit(self.func.shape[-1]):
             return Take(self.func, constant(0))
         return self.func._sum(self.ndim)
 
@@ -1895,7 +1889,7 @@ class TakeDiag(Array):
         return self.func.shape[:-1]
 
     def _simplified(self):
-        if _equals_scalar_constant(self.shape[-1], 1):
+        if isunit(self.shape[-1]):
             return Take(self.func, constant(0))
         return self.func._takediag(self.ndim-1, self.ndim)
 
@@ -3121,13 +3115,13 @@ class Inflate(Array):
 
     def _simplified(self):
         for axis in range(self.dofmap.ndim):
-            if _equals_scalar_constant(self.dofmap.shape[axis], 1):
+            if isunit(self.dofmap.shape[axis]):
                 return Inflate(_take(self.func, constant(0), self.func.ndim-self.dofmap.ndim+axis), _take(self.dofmap, constant(0), axis), self.length)
         for axis, parts in self.func._inflations:
             i = axis - (self.ndim-1)
             if i >= 0:
                 return util.sum(Inflate(f, _take(self.dofmap, ind, i), self.length) for ind, f in parts.items())
-        if self.dofmap.ndim == 0 and _equals_scalar_constant(self.dofmap, 0) and _equals_scalar_constant(self.length, 1):
+        if self.dofmap.ndim == 0 and iszero(self.dofmap) and isunit(self.length):
             return InsertAxis(self.func, constant(1))
         return self.func._inflate(self.dofmap, self.length, self.ndim-1) \
             or self.dofmap._rinflate(self.func, self.length, self.ndim-1)
@@ -3648,9 +3642,9 @@ class Ravel(Array):
         return tuple(inflations)
 
     def _simplified(self):
-        if _equals_scalar_constant(self.func.shape[-2], 1):
+        if isunit(self.func.shape[-2]):
             return get(self.func, -2, constant(0))
-        if _equals_scalar_constant(self.func.shape[-1], 1):
+        if isunit(self.func.shape[-1]):
             return get(self.func, -1, constant(0))
         return self.func._ravel(self.ndim-1)
 
@@ -3762,9 +3756,9 @@ class Unravel(Array):
         return *self.func.shape[:-1], self.sh1, self.sh2
 
     def _simplified(self):
-        if _equals_scalar_constant(self.shape[-2], 1):
+        if isunit(self.shape[-2]):
             return insertaxis(self.func, self.ndim-2, constant(1))
-        if _equals_scalar_constant(self.shape[-1], 1):
+        if isunit(self.shape[-1]):
             return insertaxis(self.func, self.ndim-1, constant(1))
         return self.func._unravel(self.ndim-2, self.shape[-2:])
 
@@ -3992,7 +3986,7 @@ class Polyval(Array):
         ncoeffs_lower, ncoeffs_upper = self.coeffs.shape[-1]._intbounds
         if iszero(self.coeffs):
             return zeros_like(self)
-        elif _equals_scalar_constant(self.coeffs.shape[-1], 1):
+        elif isunit(self.coeffs.shape[-1]):
             return prependaxes(get(self.coeffs, -1, constant(0)), self.points.shape[:-1])
         points, where_points = unalign(self.points, naxes=self.points.ndim - 1)
         coeffs, where_coeffs = unalign(self.coeffs, naxes=self.coeffs.ndim - 1)
@@ -4232,9 +4226,9 @@ class PolyGrad(Array):
             return poly.GradPlan(self.nvars, degree)
 
     def _simplified(self):
-        if iszero(self.coeffs) or _equals_scalar_constant(self.degree, 0):
+        if iszero(self.coeffs) or iszero(self.degree):
             return zeros_like(self)
-        elif _equals_scalar_constant(self.degree, 1):
+        elif isunit(self.degree):
             return InsertAxis(Take(self.coeffs, constant(self.nvars - 1) - Range(constant(self.nvars))), constant(1))
 
     def _takediag(self, axis1, axis2):
@@ -4695,7 +4689,7 @@ class _LoopIndex(Array):
         return 0, max(0, upper_length - 1)
 
     def _simplified(self):
-        if _equals_scalar_constant(self.length, 1):
+        if isunit(self.length):
             return Zeros((), int)
 
     @property
@@ -5306,6 +5300,11 @@ def iszero(arg):
     return isinstance(arg.simplified, Zeros)
 
 
+def isunit(arg):
+    simple = arg.simplified
+    return isinstance(simple, Constant) and numpy.all(simple.value == 1)
+
+
 def zeros(shape, dtype=float):
     return Zeros(shape, dtype)
 
@@ -5454,7 +5453,7 @@ def stack(args, axis=0):
 
 def repeat(arg, length, axis):
     arg = asarray(arg)
-    assert _equals_scalar_constant(arg.shape[axis], 1)
+    assert isunit(arg.shape[axis])
     return insertaxis(get(arg, axis, constant(0)), axis, length)
 
 
