@@ -4935,6 +4935,9 @@ class LoopSum(Loop):
             return zeros_like(self)
         elif self.index not in self.func.arguments:
             return self.func * astype(self.index.length, self.func.dtype)
+        for axis, parts in self.func._inflations:
+            if not any(self.index in dofmap.arguments for dofmap in parts):
+                return util.sum(_inflate(loop_sum(func, self.index), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
         return self.func._loopsum(self.index)
 
     def _takediag(self, axis1, axis2):
