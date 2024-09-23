@@ -5385,6 +5385,161 @@ def as_csr(array):
     return values, rowptr, colidx, ncols
 
 
+@util.shallow_replace
+def zero_all_arguments(value):
+    '''Replace all function arguments by zeros.'''
+
+    if isinstance(value, Argument):
+        return zeros_like(value)
+
+
+@log.withcontext
+def factor(array):
+    '''Convert array to a sparse polynomial.
+
+    This function forms the equivalent polynomial of an evaluable array, of
+    which the coefficients are already evaluated, with the aim to speed up
+    repeated evaluations in e.g. time or Newton loops.
+
+    For example, if ``array`` is a quadratic function of ``arg``, then the
+    ``factor`` function returns the equivalent Taylor series::
+    
+        array(arg) -> array(0) + darray_darg(0) arg + .5 arg d2array_darg2 arg
+
+    The coefficients ``array(0)``, ``darray_darg(0)`` and ``d2array_darg2``
+    are evaluated as sparse tensors. As such, the new representation retains
+    all sparsity of the original.'''
+
+    array = array.as_evaluable_array.simplified
+    degree = {arg: array.argument_degree(arg) for arg in array.arguments}
+    log.info(f'analysing function of {", ".join(arg.name for arg in degree)} with highest power {max(degree.values())}')
+
+    # PREPARATION. We construct the equivalent polynomial to the input array,
+    # parameterized by the m_coeffs (monomial coefficients) and m_args
+    # (monomial arguments) lists. For every index i, m_coeffs[i] is an an
+    # evaluable array of shape array.shape (the shape of the calling argument)
+    # plus all the shapes of m_args[i], in order, where every element of
+    # m_args[i] is an Argument object. The same argument may be repeated to
+    # form higher powers. The polynomial (not formed) would result from
+    # contracting the arguments in m_args[i] with the corresponding axes of
+    # m_coeffs[i], and adding the resulting monomials.
+
+    m_coeffs = []
+    m_args = []
+    queue = [((), array)]
+    for args, func in queue:
+        func = func.simplified
+        m_args.append(args)
+        m_coeffs.append(zero_all_arguments(func).simplified)
+        for arg in func.arguments: # as m_args grows, fewer arguments will remain in func
+            # We keep only m_args that are alphabetically ordered to
+            # deduplicate permutations of the same argument set:
+            if not args or arg.name >= args[-1].name:
+                n = args.count(arg) + 1 # new monomial power of arg
+                assert n <= degree[arg]
+                queue.append(((*args, arg), derivative(func, arg) / float(n)))
+    log.info(f'constructing sparse polynomial of degree {max(len(args) for args in m_args)} with {len(m_args)} monomials:',
+        ', '.join('*'.join(f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()) or '1' for args in m_args))
+
+    # EVALUATION. We now form the polynomial, by accumulating evaluable
+    # monomials in which the coefficients are evaluated. To this end we
+    # evaluate the items of m_coeffs in sparse COO form, and contract each
+    # result with the relevant arguments from m_args. The sparse contraction is
+    # performed by first taking from the (flattened) argument the (raveled)
+    # sparse indices, and contracting the resulting vector with the relevant
+    # axis of the sparse values array.
+
+    polynomial = zeros_like(array)
+    nvals = 0
+    for args, (values, indices, shape) in log.iter.fraction('monomial', m_args, eval_coo(m_coeffs)):
+        indices, values = _sort_and_prune(shape, indices, values)
+        if not len(values):
+            continue
+        nvals += len(values)
+        factors = [constant(values)]
+        i = array.ndim
+        for arg, repeated in _iter_repeated(args):
+            if arg.ndim == 0:
+                factor = arg
+            else:
+                j = i + arg.ndim
+                factor = Take(_flat(arg), constant(numpy.ravel_multi_index(indices[i:j], shape[i:j])))
+                i = j
+            if repeated:
+                # With reference to the example of the doc string, derivative
+                # will naively generate an evaluable of the form array'(arg)
+                # darg = darray_darg(0) darg + .5 arg d2array_darg2 darg + .5
+                # darg d2array_darg2 arg. By Schwarz's theorem d2array_darg2 is
+                # symmetric, and the latter two terms are equal. However, since
+                # the row and column indices of d2array_darg2 differ, we cannot
+                # detect this equality but rather need to embed the information
+                # explicitly. To this end, factor produces an evaluable of the
+                # form array(arg) == array(0) + darray_darg(0) arg + .5
+                # SymProd(arg, d2array_darg2 arg), which produces the desired
+                # derivative array'(arg) == darray_darg(0) + d2array_darg2 arg.
+                factor = SymProd(factors.pop(), factor)
+            factors.append(factor)
+        term = util.product(factors)
+        assert i == len(indices)
+        if array.ndim == 0:
+            monomial = Sum(term)
+        else:
+            index = constant(numpy.ravel_multi_index(indices[:array.ndim], shape[:array.ndim]))
+            size = constant(numpy.prod(shape[:array.ndim], dtype=int))
+            monomial = Inflate(term, index, size)
+            while monomial.ndim < array.ndim:
+                monomial = Unravel(monomial, constant(shape[monomial.ndim-1]), constant(numpy.prod(shape[monomial.ndim:array.ndim], dtype=int)))
+        polynomial += monomial
+    log.info(f'factored function contains {nvals:,} doubles ({nvals>>17:,}MB)')
+    return polynomial
+
+
+class SymProd(Array):
+    '''Symmetric product.
+
+    The ``SymProd(a, b)`` operation behaves like ``Multiply(a, b)`` except that
+    its derivative is ``2 a db`` rather than ``a db + da b``, effectively
+    encoding the information that the two terms are equal. Care should be taken
+    that the ``SymProd`` operation is used only where this property applies.'''
+
+    a: Array
+    b: Array
+
+    def __post_init__(self):
+        assert not _any_certainly_different(self.a.shape, self.b.shape)
+        assert self.a.dtype == self.b.dtype
+        assert self.a.dtype != bool
+        assert not isinstance(self.b, SymProd)
+
+    @property
+    def shape(self):
+        return self.a.shape
+
+    @property
+    def dtype(self):
+        return self.a.dtype
+
+    @property
+    def dependencies(self):
+        return self.a, self.b
+
+    @property
+    def power(self):
+        return self.a.power + 1 if isinstance(self.a, SymProd) else 2
+
+    def evalf(self, a, b):
+        return a * b
+
+    def _derivative(self, var, seen):
+        return self.dtype(self.power) * appendaxes(self.a, var.shape) * self.b._derivative(var, seen)
+
+    def _optimized_for_numpy(self):
+        return self.a * self.b
+
+    def _argument_degree(self, argument):
+        return self.a.argument_degree(argument) + self.b.argument_degree(argument)
+
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 
@@ -5456,6 +5611,26 @@ def _make_loop_ids_unique(funcs: typing.Tuple[Evaluable, ...]) -> typing.Tuple[E
         return new_obj
 
     return tuple(map(replace_inner, funcs))
+
+
+def _sort_and_prune(shape, indices, values):
+    assert len(shape) == len(indices)
+    if not shape:
+        v = values.sum()
+        return (), v[None] if v else numpy.zeros(0, int)
+    flat_index, inverse = numpy.unique(numpy.ravel_multi_index(indices, shape), return_inverse=True)
+    values = numeric.accumulate(values, [inverse], flat_index.shape)
+    nonzero = values != 0
+    if nonzero.all():
+        nonzero = slice(None)
+    return numpy.unravel_index(flat_index[nonzero], shape), values[nonzero]
+
+
+def _iter_repeated(iterator):
+    last = object()
+    for item in iterator:
+        yield item, item == last
+        last = item
 
 
 class _Stats:
