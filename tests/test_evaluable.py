@@ -940,7 +940,7 @@ class asciitree(TestCase):
                          '└ B = Loop\n'
                          'NODES\n'
                          '%B0 = LoopConcatenate i\n'
-                         '├ shape[0] = %A0 = Take; i:; [2,2]\n'
+                         '├ shape[0] = %A0 = Take; i:; [0,2]\n'
                          '│ ├ %A1 = _SizesToOffsets; i:3; [0,2]\n'
                          '│ │ └ %A2 = InsertAxis; i:(2); [1,1]\n'
                          '│ │   ├ 1\n'
