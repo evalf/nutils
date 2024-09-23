@@ -5365,6 +5365,116 @@ def as_csr(array):
     return values, rowptr, colidx, ncols
 
 
+@util.shallow_replace
+def zero_all_arguments(value):
+    '''Replace all function arguments by zeros.'''
+
+    if isinstance(value, Argument):
+        return zeros_like(value)
+
+
+@log.withcontext
+def factor(array):
+    '''Convert functional to a sparse polynomial.
+
+    Evaluates all derivatives of the functional to form polynomial
+    coefficients. An upper limit for the polynomial degree must be
+    specified to guard against infinite loops in case a non-polynomial
+    functional is provided.'''
+
+    array = array.as_evaluable_array.simplified
+    degree = {arg: array.argument_degree(arg) for arg in array.arguments}
+    log.info(f'analysing function of {", ".join(arg.name for arg in degree)} with highest power {max(degree.values())}')
+    queue = [((), array)]
+    factor_args = []
+    coeffs = []
+    for args, func in queue:
+        func = func.simplified
+        factor_args.append(args)
+        coeffs.append(zero_all_arguments(func).simplified)
+        for arg in func.arguments:
+            if not args or arg.name >= args[-1].name:
+                n = args.count(arg) + 1
+                assert n <= degree[arg]
+                queue.append(((*args, arg), derivative(func, arg) / float(n)))
+    log.info(f'constructing sparse polynomial of degree {max(len(args) for args in factor_args)} with {len(factor_args)} monomials:',
+        ', '.join('*'.join(f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()) or '1' for args in factor_args))
+    monomials = []
+    ncoeffs = 0
+    for args, (values, indices, shape) in zip(factor_args, eval_coo(coeffs)):
+        indices, values = _sort_and_prune(shape, indices, values)
+        if not len(values):
+            continue
+        ncoeffs += len(values)
+        factors = [constant(values)]
+        i = array.ndim
+        for arg, repeated in _iter_repeated(args):
+            if arg.ndim == 0:
+                factor = arg
+            else:
+                j = i + arg.ndim
+                factor = Take(_flat(arg), constant(numpy.ravel_multi_index(indices[i:j], shape[i:j])))
+                i = j
+            if repeated:
+                factor = SymProd(factors.pop(), factor)
+            factors.append(factor)
+        term = util.product(factors)
+        assert i == len(indices)
+        if array.ndim == 0:
+            monomial = Sum(term)
+        else:
+            index = constant(numpy.ravel_multi_index(indices[:array.ndim], shape[:array.ndim]))
+            size = constant(numpy.prod(shape[:array.ndim], dtype=int))
+            monomial = Inflate(term, index, size)
+            while monomial.ndim < array.ndim:
+                monomial = Unravel(monomial, constant(shape[monomial.ndim-1]), constant(numpy.prod(shape[monomial.ndim:array.ndim], dtype=int)))
+        monomials.append(monomial)
+    log.info(f'factored function contains {ncoeffs:,} doubles ({ncoeffs>>17:,}MB)')
+    if not monomials:
+        return zeros_like(array)
+    return util.sum(monomials)
+
+
+class SymProd(Array):
+
+    a: Array
+    b: Array
+
+    def __post_init__(self):
+        assert not _any_certainly_different(self.a.shape, self.b.shape)
+        assert self.a.dtype == self.b.dtype
+        assert self.a.dtype != bool
+        assert not isinstance(self.b, SymProd)
+
+    @property
+    def shape(self):
+        return self.a.shape
+
+    @property
+    def dtype(self):
+        return self.a.dtype
+
+    @property
+    def dependencies(self):
+        return self.a, self.b
+
+    @property
+    def power(self):
+        return self.a.power + 1 if isinstance(self.a, SymProd) else 2
+
+    def evalf(self, a, b):
+        return a * b
+
+    def _derivative(self, var, seen):
+        return self.dtype(self.power) * appendaxes(self.a, var.shape) * self.b._derivative(var, seen)
+
+    def _optimized_for_numpy(self):
+        return self.a * self.b
+
+    def argument_degree(self, argument):
+        return self.a.argument_degree(argument) + self.b.argument_degree(argument)
+
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 
@@ -5436,6 +5546,26 @@ def _make_loop_ids_unique(funcs: typing.Tuple[Evaluable, ...]) -> typing.Tuple[E
         return new_obj
 
     return tuple(map(replace_inner, funcs))
+
+
+def _sort_and_prune(shape, indices, values):
+    assert len(shape) == len(indices)
+    if not shape:
+        v = values.sum()
+        return (), v[None] if v else numpy.zeros(0, int)
+    flat_index, inverse = numpy.unique(numpy.ravel_multi_index(indices, shape), return_inverse=True)
+    values = numeric.accumulate(values, [inverse], flat_index.shape)
+    nonzero = values != 0
+    if nonzero.all():
+        nonzero = slice(None)
+    return numpy.unravel_index(flat_index[nonzero], shape), values[nonzero]
+
+
+def _iter_repeated(iterator):
+    last = object()
+    for item in iterator:
+        yield item, item == last
+        last = item
 
 
 class _Stats:
