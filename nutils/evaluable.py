@@ -671,17 +671,16 @@ class Array(Evaluable):
     @cached_property
     def _intbounds(self):
         # inclusive lower and upper bounds
+        lower, upper = self._intbounds_impl()
+        assert isinstance(lower, int) or lower == float('-inf')
+        assert isinstance(upper, int) or upper == float('inf')
+        assert lower <= upper
+        return lower, upper
+
+    def _intbounds_impl(self):
         if self.ndim == 0 and self.dtype == int and self.isconstant:
             value = self.__index__()
             return value, value
-        else:
-            lower, upper = self._intbounds_impl()
-            assert isinstance(lower, int) or lower == float('-inf')
-            assert isinstance(upper, int) or upper == float('inf')
-            assert lower <= upper
-            return lower, upper
-
-    def _intbounds_impl(self):
         return float('-inf'), float('inf')
 
     @property
