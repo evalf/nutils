@@ -5478,13 +5478,6 @@ def _inflate(arg: Array, dofmap: Array, length: Array, axis: int):
     return Transpose.from_end(Inflate(Transpose.to_end(arg, *range(axis, axis+dofmap.ndim)), dofmap, length), axis)
 
 
-def mask(arg, mask: Array, axis: int = 0):
-    assert isinstance(arg, Array), f'arg={arg!r}'
-    assert isinstance(mask, numpy.ndarray) and mask.dtype == bool and mask.ndim == 1 and _equals_scalar_constant(arg.shape[axis], len(mask)), f'mask={mask!r}'
-    index, = mask.nonzero()
-    return _take(arg, constant(index), axis)
-
-
 def unravel(func, axis, shape):
     func = asarray(func)
     axis = numeric.normdim(func.ndim, axis)

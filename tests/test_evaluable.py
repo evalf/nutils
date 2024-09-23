@@ -302,18 +302,6 @@ class check(TestCase):
                                        desired=numpy.conjugate(self.desired),
                                        actual=evaluable.conjugate(self.actual))
 
-    def test_mask(self):
-        for idim in range(self.actual.ndim):
-            if self.desired.shape[idim] <= 1:
-                continue
-            mask = numpy.ones(self.desired.shape[idim], dtype=bool)
-            mask[0] = False
-            if self.desired.shape[idim] > 2:
-                mask[-1] = False
-            self.assertFunctionAlmostEqual(decimal=14,
-                                           desired=self.desired[(slice(None,),)*idim+(mask,)],
-                                           actual=evaluable.mask(self.actual, mask, axis=idim))
-
     def test_ravel(self):
         for idim in range(self.actual.ndim-1):
             self.assertFunctionAlmostEqual(decimal=14,
@@ -548,7 +536,6 @@ _check('stack', lambda a, b: evaluable.stack([a, b], 0), lambda a, b: numpy.conc
 _check('eig', lambda a: evaluable.eig(a+a.swapaxes(0, 1), symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(0, 1))[1], ANY(4, 4), hasgrad=False)
 _check('eig-complex', lambda a: evaluable.eig(a+a.swapaxes(0, 1))[1], lambda a: numpy.linalg.eig(a+a.swapaxes(0, 1))[1], ANC(4, 4), hasgrad=False)
 _check('mod', lambda a, b: evaluable.mod(a, b), lambda a, b: numpy.mod(a, b), ANY(4), NZ(4), hasgrad=False)
-_check('mask', lambda f: evaluable.mask(f, numpy.array([True, False, True, False, True, False, True]), axis=1), lambda a: a[:, ::2], ANY(4, 7, 4))
 _check('ravel', lambda f: evaluable.ravel(f, axis=1), lambda a: a.reshape(4, 4, 4, 4), ANY(4, 2, 2, 4, 4))
 _check('unravel', lambda f: evaluable.unravel(f, axis=1, shape=[evaluable.constant(2), evaluable.constant(2)]), lambda a: a.reshape(4, 2, 2, 4, 4), ANY(4, 4, 4, 4))
 _check('ravelindex', lambda a, b: evaluable.RavelIndex(a, b, evaluable.constant(12), evaluable.constant(20)), lambda a, b: a[..., numpy.newaxis, numpy.newaxis] * 20 + b, INT(3, 4), INT(4, 5))
