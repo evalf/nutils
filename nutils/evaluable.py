@@ -6365,7 +6365,7 @@ def _log_stats(func, stats):
     maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
     tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
     aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata for n in node.walk(set())))
-    fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
+    fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime) if node.metadata[1].ncalls else None) if maxtime else None
     if graphviz:
         node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
     log.info('total time: {:.0f}ms\n'.format(tottime/1e6) + '\n'.join('{:4.0f} {} ({} calls, avg {:.3f} per call)'.format(t / 1e6, k, n, t / (1e6*n))
