@@ -169,7 +169,11 @@ class Matrix:
         else:
             assert rconstrain.shape == (nrows,) and constrain.dtype == bool
             I = ~rconstrain
-        lhs[J] += self.submatrix(I, J)._solver((rhs - self @ lhs)[I], solver, atol=atol, rtol=rtol, **solverargs)
+        try:
+            lhs[J] += self.submatrix(I, J)._solver((rhs - self @ lhs)[I], solver, atol=atol, rtol=rtol, **solverargs)
+        except ToleranceNotReached as e:
+            lhs[J] += e.best
+            raise ToleranceNotReached(lhs) from None
         return lhs
 
     def solve_leniently(self, *args, **kwargs):
