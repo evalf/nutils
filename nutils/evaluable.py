@@ -1250,6 +1250,14 @@ class Transpose(Array):
     def _const_uniform(self):
         return self.func._const_uniform
 
+    def _optimized_for_numpy(self):
+        if isinstance(self.func, Transpose):
+            return transpose(self.func.func, [self.func.axes[i] for i in self.axes])
+        if isinstance(self.func, Assemble):
+            offsets = numpy.cumsum([0] + [index.ndim for index in self.func.indices])
+            axes = [n for axis in self.axes for n in range(offsets[axis], offsets[axis+1])]
+            return Assemble(transpose(self.func.func, axes), tuple(self.func.indices[i] for i in self.axes), self.shape)
+
 
 class Product(Array):
 
@@ -3126,6 +3134,10 @@ class Inflate(Array):
         return self.func._inflate(self.dofmap, self.length, self.ndim-1) \
             or self.dofmap._rinflate(self.func, self.length, self.ndim-1)
 
+    def _optimized_for_numpy(self):
+        indices = [Range(n) for n in self.shape[:-1]] + [self.dofmap]
+        return Assemble(self.func, tuple(indices), self.shape)
+
     def evalf(self, array, indices, length):
         assert indices.ndim == self.dofmap.ndim
         assert length.ndim == 0
@@ -3274,6 +3286,81 @@ class SwapInflateTake(Evaluable):
     @property
     def _intbounds_tuple(self):
         return ((0, float('inf')),) * 3
+
+
+class Assemble(Array):
+
+    func: Array
+    indices: typing.Tuple[Array, ...]
+    shape: typing.Tuple[Array, ...]
+
+    def __post_init__(self):
+        assert len(self.indices) == len(self.shape)
+        assert builtins.sum(index.ndim for index in self.indices) == self.func.ndim
+
+    @property
+    def dtype(self):
+        return self.func.dtype
+
+    @property
+    def dependencies(self):
+        return self.func, *self.indices, *self.shape
+
+    @staticmethod
+    def evalf(func, *args):
+        n = len(args) // 2
+        indices = args[:n]
+        shape = args[n:]
+        reshaped_indices = tuple(index.reshape((1,)*offset + index.shape + (1,)*(func.ndim-index.ndim-offset))
+            for offset, index in zip(util.cumsum(index.ndim for index in indices), indices))
+        return numeric.accumulate(func, reshaped_indices, shape)
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        assert mode in ('iadd', 'assign')
+        if mode == 'assign':
+            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        compiled_indices = []
+        advanced_ndim = builtins.sum(index.ndim for index in self.indices if not isinstance(index, Range))
+        i = 0
+        for index in self.indices:
+            if isinstance(index, Range):
+                n = builder.compile(index.shape[0])
+                compiled_indices.append(_pyast.Variable('slice').call(n))
+            else:
+                j = i + index.ndim
+                compiled_index = builder.compile(index)
+                if index.ndim < advanced_ndim:
+                    compiled_index = compiled_index.get_item(_pyast.Raw(','.join(['None'] * i + [':'] * index.ndim + ['None'] * (advanced_ndim-j))))
+                compiled_indices.append(compiled_index)
+                i = j
+        assert i == advanced_ndim
+        compiled_func = builder.compile(self.func)
+        trans = [i for i, index in enumerate(self.indices) if not isinstance(index, Range)]
+        if advanced_ndim and any(numpy.diff(trans) > 1):
+            # see https://numpy.org/doc/stable/user/basics.indexing.html#combining-advanced-and-basic-indexing
+            trans.extend(i for i, index in enumerate(self.indices) if isinstance(index, Range))
+            compiled_func = compiled_func.get_attr('transpose').call(*[_pyast.LiteralInt(i) for i in trans])
+        builder.get_block_for_evaluable(self).array_add_at(out, _pyast.Tuple(tuple(compiled_indices)), compiled_func)
+
+    def _optimized_for_numpy(self):
+        if isinstance(self.func, Assemble):
+            nontrivial_indices = []
+            for f in self.func, self: # order is important to maintain insertion order of ndim=0 indices
+                offset = 0
+                for index in f.indices:
+                    if index != Range(f.shape[offset]):
+                        nontrivial_indices.append((offset, index))
+                    offset += index.ndim
+                assert offset == f.func.ndim
+            nontrivial_indices.sort(key=lambda item: item[0]) # order of equal offsets is maintained
+            indices = []
+            for i, index in nontrivial_indices:
+                if i < len(indices):
+                    return # inflations overlap
+                while i > len(indices):
+                    indices.append(Range(self.shape[len(indices)]))
+                indices.append(index)
+            return Assemble(self.func.func, tuple(indices), self.shape)
 
 
 class Diagonalize(Array):
