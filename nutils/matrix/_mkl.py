@@ -150,7 +150,7 @@ class MKLMatrix(Matrix):
         if not isinstance(other, numpy.ndarray):
             raise TypeError
         if other.shape[0] != self.shape[1]:
-            raise MatrixError
+            raise MatrixError(f'cannot multiply {self.shape[0]}x{self.shape[1]} matrix with array of length {other.shape[0]}')
         x = numpy.ascontiguousarray(other.T, dtype=self.dtype)
         y = numpy.empty(x.shape[:-1] + self.shape[:1], dtype=self.dtype)
         if other.ndim == 1:
