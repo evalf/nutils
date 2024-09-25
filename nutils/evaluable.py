@@ -5729,11 +5729,11 @@ def ravel(func, axis):
     return Transpose.from_end(Ravel(Transpose.to_end(func, axis, axis+1)), axis)
 
 
-def _flat(func):
+def _flat(func, ndim=1):
     func = asarray(func)
-    if func.ndim == 0:
+    if func.ndim == ndim-1:
         return InsertAxis(func, constant(1))
-    while func.ndim > 1:
+    while func.ndim > ndim:
         func = Ravel(func)
     return func
 
