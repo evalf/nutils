@@ -82,7 +82,8 @@ class ScipyMatrix(Matrix):
                 if callback:
                     callback(res)
                 reformat(100 * numpy.log10(max(atol, res)) / numpy.log10(atol))
-            lhs, status = solverfun(self.core, rhs, M=precon, tol=0., atol=atol, callback=mycallback, **solverargs)
+            solverargs['rtol' if scipy.version.version >= '1.12' else 'tol'] = 0
+            lhs, status = solverfun(self.core, rhs, M=precon, atol=atol, callback=mycallback, **solverargs)
         if status != 0:
             raise Exception('status {}'.format(status))
         return lhs
