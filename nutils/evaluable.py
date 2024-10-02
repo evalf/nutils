@@ -114,6 +114,11 @@ class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning):
     pass
 
 
+class NotPolynomal(Exception):
+    def __init__(self, argument):
+        super().__init__(f'evaluable is not polynomial in argument {argument.name!r}')
+
+
 class Evaluable(types.DataClass):
     'Base class'
 
@@ -216,6 +221,18 @@ class Evaluable(types.DataClass):
             raise NotImplementedError
 
         return py_self.get_attr('evalf').call(*args)
+
+    def argument_degree(self, argument):
+        '''return the heighest power of argument of self is polynomial,
+        or raise NotPolynomal otherwise.'''
+        # IMPORTANT: since we are tracking only the highest power, we cannot
+        # ever lower a power, e.g. via division. To see this, consider the sum
+        # of a 0th and 1st power, registered as degree 1. This would be lowered
+        # via division to 0, thereby suggesting that the evaluable is constant
+        # while in reality it is not polynomial.
+        if argument in self.arguments:
+            raise NotPolynomal(argument)
+        return 0
 
 
 class Tuple(Evaluable):
@@ -1081,6 +1098,11 @@ class InsertAxis(Array):
     def _const_uniform(self):
         return self.func._const_uniform
 
+    def argument_degree(self, argument):
+        if argument in self.length.arguments:
+            raise NotPolynomal(argument)
+        return self.func.argument_degree(argument)
+
 
 class Transpose(Array):
 
@@ -1282,6 +1304,9 @@ class Transpose(Array):
             offsets = numpy.cumsum([0] + [index.ndim for index in self.func.indices])
             axes = [n for axis in self.axes for n in range(offsets[axis], offsets[axis+1])]
             return Assemble(transpose(self.func.func, axes), tuple(self.func.indices[i] for i in self.axes), self.shape)
+
+    def argument_degree(self, argument):
+        return self.func.argument_degree(argument)
 
 
 class Product(Array):
@@ -1606,6 +1631,10 @@ class Multiply(Array):
         extrema = [b1 and b2 and b1 * b2 for b1 in func1._intbounds for b2 in func2._intbounds]
         return min(extrema), max(extrema)
 
+    def argument_degree(self, argument):
+        func1, func2 = self.funcs
+        return func1.argument_degree(argument) + func2.argument_degree(argument)
+
 
 class Add(Array):
 
@@ -1756,6 +1785,10 @@ class Add(Array):
         lowers, uppers = zip(*[f._intbounds for f in self._terms])
         return builtins.sum(lowers), builtins.sum(uppers)
 
+    def argument_degree(self, argument):
+        func1, func2 = self.funcs
+        return max(func1.argument_degree(argument), func2.argument_degree(argument))
+
 
 class Einsum(Array):
 
@@ -1895,6 +1928,9 @@ class Sum(Array):
     def _takediag(self, axis1, axis2):
         return sum(_takediag(self.func, axis1, axis2), -2)
 
+    def argument_degree(self, argument):
+        return self.func.argument_degree(argument)
+
 
 class TakeDiag(Array):
 
@@ -2013,6 +2049,11 @@ class Take(Array):
 
     def _intbounds_impl(self):
         return self.func._intbounds
+
+    def argument_degree(self, argument):
+        if argument in self.indices.arguments:
+            raise NotPolynomal(argument)
+        return self.func.argument_degree(argument)
 
 
 class Power(Array):
@@ -3251,6 +3292,11 @@ class Inflate(Array):
         lower, upper = self.func._intbounds
         return min(lower, 0), max(upper, 0)
 
+    def argument_degree(self, argument):
+        if argument in self.dofmap.arguments or argument in self.length.arguments:
+            return NotPolynomal(argument)
+        return self.func.argument_degree(argument)
+
 
 class SwapInflateTake(Evaluable):
 
@@ -3485,6 +3531,9 @@ class Diagonalize(Array):
     def _assparse(self):
         return tuple((*indices, indices[-1], values) for *indices, values in self.func._assparse)
 
+    def argument_degree(self, argument):
+        return self.func.argument_degree(argument)
+
 
 class Guard(Array):
     'bar all simplifications'
@@ -3682,6 +3731,9 @@ class Argument(DerivativeTargetBase):
     @property
     def arguments(self):
         return frozenset({self})
+
+    def argument_degree(self, argument):
+        return 1 if self == argument else 0
 
 
 class IdentifierDerivativeTarget(DerivativeTargetBase):
@@ -3888,6 +3940,11 @@ class Unravel(Array):
     @verify_sparse_chunks
     def _assparse(self):
         return tuple((*indices[:-1], *divmod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
+
+    def argument_degree(self, argument):
+        if argument in self.sh1.arguments or argument in self.sh2.arguments:
+            raise NotPolynomal(argument)
+        return self.func.argument_degree(argument)
 
 
 class RavelIndex(Array):
@@ -4974,6 +5031,9 @@ class LoopSum(Loop):
                 chunks.append(tuple(loop_concatenate(arr, self.index) for arr in (*elem_indices, elem_values)))
         return tuple(chunks)
 
+    def argument_degree(self, argument):
+        return self.func.argument_degree(argument)
+
 
 class _SizesToOffsets(Array):
 
@@ -5131,6 +5191,11 @@ class LoopConcatenate(Loop):
 
     def _intbounds_impl(self):
         return self.func._intbounds
+
+    def argument_degree(self, argument):
+        if argument in self.start.arguments or argument in self.stop.arguments or argument in self.concat_length.arguments:
+            raise NotPolynomal(argument)
+        return self.func.argument_degree(argument)
 
 
 class SearchSorted(Array):
