@@ -71,14 +71,9 @@ class check(TestCase):
         with self.subTest('optimized'):
             self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
         with self.subTest('sparse'):
-            indices, values, shape = sparse.extract(evaluable.eval_sparse(actual, **evalargs))
-            self.assertEqual(tuple(map(int, shape)), desired.shape)
-            if not indices:
-                dense = values.sum()
-            else:
-                dense = numpy.zeros(desired.shape, values.dtype)
-                numpy.add.at(dense, indices, values)
-            self.assertArrayAlmostEqual(dense, desired, decimal)
+            values, indices, shape = evaluable.eval_coo(actual, evalargs)
+            self.assertEqual(shape, desired.shape)
+            self.assertArrayAlmostEqual(numeric.accumulate(values, indices, shape), desired, decimal)
 
     def test_evalconst(self):
         self.assertFunctionAlmostEqual(decimal=14,

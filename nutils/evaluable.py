@@ -595,6 +595,18 @@ class Array(Evaluable):
     def imag(self):
         return imag(self)
 
+    @property
+    def assparse(self):
+        if not self.ndim:
+            return InsertAxis(self, constant(1)), (), ()
+        sparse = self._assparse
+        if not sparse:
+            indices = [zeros((constant(0),), int)] * self.ndim
+            values = zeros((constant(0),), self.dtype)
+        else:
+            *indices, values = tuple(concatenate([_flat(array) for array in arrays]) for arrays in zip(*sparse))
+        return values, tuple(indices), self.shape
+
     @cached_property
     @verify_sparse_chunks
     def _assparse(self):
@@ -5700,6 +5712,26 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
                 d['index']['i'+str(idim)] = ii
             start = stop
         yield data
+
+
+@util.single_or_multiple
+def eval_coo(funcs: AsEvaluableArray, arguments: typing.Mapping[str, numpy.ndarray] = {}) -> typing.Tuple[numpy.ndarray, ...]:
+    '''Evaluate one or several Array objects as COO sparse data.
+
+    Args
+    ----
+    funcs : :class:`tuple` of Array objects
+        Arrays to be evaluated.
+    arguments : :class:`dict` (default: None)
+        Optional arguments for function evaluation.
+
+    Returns
+    -------
+    results : :class:`tuple` of (values, indices, shape) triplets
+    '''
+
+    f = compile(tuple(func.as_evaluable_array.simplified.assparse for func in funcs))
+    return f(**arguments)
 
 
 @functools.lru_cache(32)
