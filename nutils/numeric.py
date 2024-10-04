@@ -444,10 +444,8 @@ def accumulate(data, index, shape):
     ...   return array
     '''
 
-    ndim = len(shape)
-    assert data.ndim == 1
-    assert len(index) == ndim and all(isintarray(ind) and ind.shape == data.shape for ind in index)
-    if not ndim:
+    assert len(index) == len(shape), f'{len(index)} != {len(shape)}'
+    if not shape:
         return data.sum()
     retval = numpy.zeros(shape, data.dtype)
     numpy.add.at(retval, tuple(index), data)
