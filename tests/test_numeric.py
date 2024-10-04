@@ -392,3 +392,26 @@ class sanitize_einsum_subscripts(TestCase):
             self.sanitize_einsum_subscripts('i...j->...', (2,))
         with self.assertRaisesRegex(ValueError, "einstein sum subscripts string included output subscript 'j' which never appeared in an input"):
             self.sanitize_einsum_subscripts('i->j', (2,))
+
+
+class accumulate(TestCase):
+
+    def test_scalar(self):
+        A = numeric.accumulate(numpy.array([1, 2, 3]), (), ())
+        self.assertEqual(A, 6)
+
+    def test_vector(self):
+        A = numeric.accumulate(numpy.array([1, 2, 3]), (numpy.array([0, 3, 0]),), (4,))
+        self.assertEqual(A.tolist(), [4, 0, 0, 2])
+
+    def test_matrix(self):
+        A = numeric.accumulate(numpy.array([1, 2, 3]), (numpy.array([0, 1, 0]), numpy.array([0, 3, 0])), (2,4))
+        self.assertEqual(A.tolist(), [[4, 0, 0, 0], [0, 0, 0, 2]])
+
+    def test_matrix_2dindex(self):
+        A = numeric.accumulate(numpy.array([[1, 2], [3, 4]]), (numpy.array([[0], [1]]), numpy.array([[0, 3]])), (2,4))
+        self.assertEqual(A.tolist(), [[1, 0, 0, 2], [3, 0, 0, 4]])
+
+    def test_matrix_slice(self):
+        A = numeric.accumulate(numpy.array([[1, 2], [3, 4]]), (numpy.array([0, 1]), slice(0, 4, 3)), (2,4))
+        self.assertEqual(A.tolist(), [[1, 0, 0, 2], [3, 0, 0, 4]])
