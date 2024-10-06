@@ -94,24 +94,25 @@ def assemble_coo(values, rowidx, nrows, colidx, ncols):
 
 
 def assemble(data, index, shape):
-    # for backwards compatibility
+    warnings.deprecation('matrix.assemble is deprecated, use matrix.assemble_coo instead')
     rowidx, colidx = index
     nrows, ncols = shape
     return assemble_coo(data, rowidx, nrows, colidx, ncols)
 
 
 def fromsparse(data, inplace=False):
-    indices, values, shape = sparse.extract(sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True))
-    return assemble(values, indices, shape)
+    (rowidx, colidx), values, (nrows, ncols) = sparse.extract(sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True))
+    return assemble_coo(values, rowidx, nrows, colidx, ncols)
 
 
 def empty(shape):
-    return assemble(data=numpy.empty([0], dtype=float), index=numpy.empty([len(shape), 0], dtype=int), shape=shape)
+    nrows, ncols = shape
+    return assemble_csr(numpy.zeros(0, dtype=float), numpy.zeros(nrows+1, dtype=int), numpy.zeros(0, dtype=int), ncols)
 
 
 def diag(d):
-    assert d.ndim == 1
-    return assemble(d, index=numpy.arange(len(d))[numpy.newaxis].repeat(2, axis=0), shape=d.shape*2)
+    n = len(d)
+    return assemble_csr(d, numpy.arange(n+1), numpy.arange(n), n)
 
 
 def eye(n):
