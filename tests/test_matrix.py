@@ -59,7 +59,7 @@ class construction(testing.TestCase):
         self.assertEqual(ncols, 2)
 
     def test_diag(self):
-        values, rowptr, colidx, ncols = matrix.diag(numpy.array([10., 20., 30.]))
+        values, rowptr, colidx, ncols = matrix.diag([10., 20., 30.])
         self.assertEqual(values.tolist(), [10., 20., 30.])
         self.assertEqual(rowptr.tolist(), [0, 1, 2, 3])
         self.assertEqual(colidx.tolist(), [0, 1, 2])
@@ -174,7 +174,7 @@ class backend(testing.TestCase):
     def test_add(self):
         j = self.n//2
         v = 10.
-        other = matrix.assemble(numpy.array([v]*self.n), numpy.array([numpy.arange(self.n), [j]*self.n]), shape=(self.n, self.n))
+        other = matrix.assemble_coo(numpy.full(self.n, v), numpy.arange(self.n), self.n, numpy.full(self.n, j), self.n)
         add = self.matrix + other
         numpy.testing.assert_equal(actual=add.export('dense'), desired=self.exact + numpy.eye(self.n)[j]*v)
         with self.assertRaises(TypeError):
@@ -185,7 +185,7 @@ class backend(testing.TestCase):
     def test_sub(self):
         j = self.n//2
         v = 10.
-        other = matrix.assemble(numpy.array([v]*self.n), numpy.array([numpy.arange(self.n), [j]*self.n]), shape=(self.n, self.n))
+        other = matrix.assemble_coo(numpy.full(self.n, v), numpy.arange(self.n), self.n, numpy.full(self.n, j), self.n)
         sub = self.matrix - other
         numpy.testing.assert_equal(actual=sub.export('dense'), desired=self.exact - numpy.eye(self.n)[j]*v)
         with self.assertRaises(TypeError):
@@ -194,13 +194,13 @@ class backend(testing.TestCase):
             self.matrix - matrix.eye(self.n+1)
 
     def test_transpose(self):
-        asym = matrix.assemble(numpy.arange(1, 7), numpy.array([[0, 0, 0, 1, 1, 2], [0, 1, 2, 1, 2, 2]]), shape=(3, 3))
+        asym = matrix.assemble_coo(numpy.arange(1, 7), [0, 0, 0, 1, 1, 2], 3, [0, 1, 2, 1, 2, 2], 3)
         exact = numpy.array([[1, 2, 3], [0, 4, 5], [0, 0, 6]], dtype=float)
         transpose = asym.T
         numpy.testing.assert_equal(actual=transpose.export('dense'), desired=exact.T)
 
     def test_rowsupp(self):
-        sparse = matrix.assemble(numpy.array([1e-10, 0, 1, 1]), numpy.array([[0, 0, 2, 2], [0, 1, 1, 2]]), shape=(3, 3))
+        sparse = matrix.assemble_coo([1e-10, 0, 1, 1], [0, 0, 2, 2], 3, [0, 1, 1, 2], 3)
         self.assertEqual(tuple(sparse.rowsupp(tol=1e-5)), (False, False, True))
         self.assertEqual(tuple(sparse.rowsupp(tol=0)), (True, False, True))
 
@@ -222,7 +222,7 @@ class backend(testing.TestCase):
                 self.assertLess(numpy.max(res), 1e-9)
 
     def test_singular(self):
-        singularmatrix = matrix.assemble(numpy.arange(self.n)-self.n//2, numpy.arange(self.n)[numpy.newaxis].repeat(2, 0), shape=(self.n, self.n))
+        singularmatrix = matrix.diag(numpy.arange(self.n)-self.n//2)
         rhs = numpy.ones(self.n)
         for args in self.solve_args:
             with self.subTest(args.get('solver', 'direct')), self.assertRaises(matrix.MatrixError):
@@ -258,7 +258,7 @@ class backend(testing.TestCase):
         numpy.testing.assert_equal(actual=array, desired=self.exact[numpy.ix_(rows, cols)])
 
     def test_submatrix_specialcases(self):
-        mat = matrix.assemble(numpy.array([1, 2, 3, 4]), numpy.array([[0, 0, 2, 2], [0, 2, 0, 2]]), (3, 3))
+        mat = matrix.assemble_coo([1, 2, 3, 4], [0, 0, 2, 2], 3, [0, 2, 0, 2], 3)
         self.assertAllEqual(mat.export('dense'), [[1, 0, 2], [0, 0, 0], [3, 0, 4]])
         self.assertAllEqual(mat.submatrix([0, 2], [0, 1, 2]).export('dense'), [[1, 0, 2], [3, 0, 4]])
         self.assertAllEqual(mat.submatrix([0, 1, 2], [0, 2]).export('dense'), [[1, 2], [0, 0], [3, 4]])

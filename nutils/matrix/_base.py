@@ -41,9 +41,9 @@ class Matrix:
         self._cached_submatrix = None
 
     def __reduce__(self):
-        from . import assemble
-        data, index = self.export('coo')
-        return assemble, (data, index, self.shape)
+        from . import assemble_csr
+        data, colidx, rowptr = self.export('csr')
+        return assemble_csr, (data, rowptr, colidx, self.shape[1])
 
     @abc.abstractmethod
     def __add__(self, other):
