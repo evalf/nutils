@@ -676,4 +676,28 @@ def sanitize_einsum_subscripts(subscripts, *shapes):
     return (*in_, out)
 
 
+def compress_indices(indices, length):
+    '''Return insertion positions in monotonically increasing index vector.
+
+    The compressed array ``c`` is such that ``indices[c[i]:c[i+1]] == i`` for
+    any integer ``0 <= i < length``. Fails with ``ValueError`` if ``indices``
+    are out of bounds or not monotonically increasing; otherwise fully
+    equivalent to ``indices.searchsorted(numpy.arange(length + 1))``.
+    '''
+
+    if not len(indices):
+        return numpy.zeros((length+1,), int)
+    if indices[0] < 0 or indices[-1] >= length:
+        raise ValueError('indices are out of bounds')
+    step = numpy.empty(len(indices)+1, dtype=int)
+    step[0] = indices[0] + 1
+    numpy.subtract(indices[1:], indices[:-1], out=step[1:-1])
+    step[-1] = length - indices[-1]
+    nz, = step.nonzero()
+    try:
+        return numpy.repeat(nz, step[nz]) # fails if any step is negative
+    except ValueError:
+        raise ValueError('indices are not monotomically increasing') from None
+
+
 # vim:sw=4:sts=4:et

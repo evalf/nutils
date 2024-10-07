@@ -415,3 +415,25 @@ class accumulate(TestCase):
     def test_matrix_slice(self):
         A = numeric.accumulate(numpy.array([[1, 2], [3, 4]]), (numpy.array([0, 1]), slice(0, 4, 3)), (2,4))
         self.assertEqual(A.tolist(), [[1, 0, 0, 2], [3, 0, 0, 4]])
+
+
+class compress_indices(TestCase):
+
+    def test_valid(self):
+        length = 8
+        for indices in [0, 1, 2], [0, 2, 2, 2, 5, 6, 7], []:
+            c = numeric.compress_indices(indices, length)
+            self.assertEqual(len(c), length+1)
+            for n in range(length):
+                i, j = c[n:n+2]
+                self.assertEqual(list(indices[i:j]), [n] * (j-i))
+
+    def test_not_monotonic(self):
+        with self.assertRaisesRegex(ValueError, 'indices are not monotomically increasing'):
+            numeric.compress_indices([0, 2, 1], 3)
+
+    def test_out_of_bounds(self):
+        length = 2
+        for indices in [0, 1, 2], [-1, 0, 1]:
+            with self.assertRaisesRegex(ValueError, 'indices are out of bounds'):
+                numeric.compress_indices(indices, length)
