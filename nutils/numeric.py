@@ -676,4 +676,20 @@ def sanitize_einsum_subscripts(subscripts, *shapes):
     return (*in_, out)
 
 
+def compress_indices(indices, length):
+    '''Compress an array of monotonically increasing indices.
+
+    The compressed array `c` is such that indices[c[i]:c[i+1]] == i for any
+    value of i in range(length).'''
+
+    step = numpy.empty(len(indices)+1, dtype=int)
+    step[-1] = length
+    if len(indices):
+        step[:-1] = indices
+        step[1:] -= indices
+    step[0] += 1
+    nz, = step.nonzero()
+    return numpy.repeat(nz, step[nz]) # NOTE fails if any step is negative
+
+
 # vim:sw=4:sts=4:et

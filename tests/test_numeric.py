@@ -415,3 +415,18 @@ class accumulate(TestCase):
     def test_matrix_slice(self):
         A = numeric.accumulate(numpy.array([[1, 2], [3, 4]]), (numpy.array([0, 1]), slice(0, 4, 3)), (2,4))
         self.assertEqual(A.tolist(), [[1, 0, 0, 2], [3, 0, 0, 4]])
+
+
+class compress_indices(TestCase):
+
+    def test(self):
+        indices = numpy.array([0, 2, 2, 2, 5, 6, 7])
+        length = 8
+        c = numeric.compress_indices(indices, length)
+        for n in range(length):
+            i, j = c[n:n+2]
+            self.assertEqual(indices[i:j].tolist(), [n] * (j-i))
+
+    def test_empty(self):
+        c = numeric.compress_indices([], 9)
+        self.assertEqual(c.tolist(), [0] * 10)
