@@ -20,7 +20,11 @@ del cls  # clean up for sphinx
 @util.set_current
 @util.defaults_from_env
 def backend(matrix: str = 'auto'):
-    return importlib.import_module('._'+matrix.lower(), __name__)
+    if isinstance(matrix, str):
+        return importlib.import_module('._'+matrix.lower(), __name__)
+    if hasattr(matrix, 'assemble'):
+        return matrix
+    raise ValueError('matrix backend does not have an assemble function')
 
 
 def assemble_csr(values, rowptr, colidx, ncols):

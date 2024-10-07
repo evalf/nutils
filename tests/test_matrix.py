@@ -3,6 +3,76 @@ import pickle
 from nutils import matrix, sparse, testing, warnings
 
 
+class construction(testing.TestCase):
+
+    def setUp(self):
+        super().setUp()
+        class TestBackend:
+            def assemble(values, rowptr, colidx, ncols):
+                self.assertIsInstance(values, numpy.ndarray)
+                self.assertEqual(values.ndim, 1)
+                self.assertIsInstance(rowptr, numpy.ndarray)
+                self.assertEqual(rowptr.ndim, 1)
+                self.assertIn(rowptr.dtype.kind, 'iu')
+                self.assertIsInstance(colidx, numpy.ndarray)
+                self.assertEqual(colidx.ndim, 1)
+                self.assertIn(colidx.dtype.kind, 'iu')
+                self.assertEqual(len(colidx), len(values))
+                self.assertIsInstance(ncols, int)
+                return values, rowptr, colidx, ncols
+        self.enter_context(matrix.backend(TestBackend))
+
+    def test_assemble_csr(self):
+        orig_values = [10., 20., 30.]
+        orig_rowptr = [0, 2, 3]
+        orig_colidx = [0, 2, 1]
+        orig_ncols = 3
+        values, rowptr, colidx, ncols = matrix.assemble_csr(orig_values, orig_rowptr, orig_colidx, orig_ncols)
+        self.assertEqual(values.tolist(), orig_values)
+        self.assertEqual(rowptr.tolist(), orig_rowptr)
+        self.assertEqual(colidx.tolist(), orig_colidx)
+        self.assertEqual(ncols, orig_ncols)
+
+    def test_assemble_coo(self):
+        orig_values = [10., 20., 30.]
+        orig_colidx = [0, 2, 1]
+        orig_ncols = 3
+        values, rowptr, colidx, ncols = matrix.assemble_coo(orig_values, [0, 0, 1], 2, orig_colidx, orig_ncols)
+        self.assertEqual(values.tolist(), orig_values)
+        self.assertEqual(rowptr.tolist(), [0, 2, 3])
+        self.assertEqual(colidx.tolist(), orig_colidx)
+        self.assertEqual(ncols, orig_ncols)
+
+    def test_fromsparse(self):
+        data = sparse.prune(sparse.fromarray(numpy.eye(2, 3, 1)), inplace=True)
+        values, rowptr, colidx, ncols = matrix.fromsparse(data)
+        self.assertEqual(values.tolist(), [1., 1.])
+        self.assertEqual(rowptr.tolist(), [0, 1, 2])
+        self.assertEqual(colidx.tolist(), [1, 2])
+        self.assertEqual(ncols, 3)
+
+    def test_empty(self):
+        values, rowptr, colidx, ncols = matrix.empty((3, 2))
+        self.assertEqual(values.tolist(), [])
+        self.assertEqual(rowptr.tolist(), [0, 0, 0, 0])
+        self.assertEqual(colidx.tolist(), [])
+        self.assertEqual(ncols, 2)
+
+    def test_diag(self):
+        values, rowptr, colidx, ncols = matrix.diag(numpy.array([10., 20., 30.]))
+        self.assertEqual(values.tolist(), [10., 20., 30.])
+        self.assertEqual(rowptr.tolist(), [0, 1, 2, 3])
+        self.assertEqual(colidx.tolist(), [0, 1, 2])
+        self.assertEqual(ncols, 3)
+
+    def test_eye(self):
+        values, rowptr, colidx, ncols = matrix.eye(3)
+        self.assertEqual(values.tolist(), [1., 1., 1.])
+        self.assertEqual(rowptr.tolist(), [0, 1, 2, 3])
+        self.assertEqual(colidx.tolist(), [0, 1, 2])
+        self.assertEqual(ncols, 3)
+
+
 @testing.parametrize
 class backend(testing.TestCase):
 
