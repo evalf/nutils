@@ -5076,6 +5076,90 @@ class SearchSorted(Array):
         return SearchSorted(unravel(self.arg, axis, shape), array=self.array, side=self.side, sorter=self.sorter)
 
 
+class ArgSort(Array):
+
+    array: Array
+
+    dtype = int
+
+    def __post_init__(self):
+        assert self.array.ndim
+
+    @property
+    def shape(self):
+        return self.array.shape
+
+    @property
+    def dependencies(self):
+        return self.array,
+
+    def evalf(self, array):
+        index = numpy.argsort(array, -1)
+        # on some platforms (windows) argsort does not return indices as
+        # numpy.dtype(int), so we type cast it for consistency
+        return index.astype(int, copy=False)
+
+
+class UniqueMask(Array):
+
+    sorted_array: Array
+
+    dtype = bool
+
+    def __post_init__(self):
+        assert self.sorted_array.ndim == 1
+
+    @property
+    def shape(self):
+        return self.sorted_array.shape
+
+    @property
+    def dependencies(self):
+        return self.sorted_array,
+
+    def evalf(self, sorted_array):
+        mask = numpy.empty(sorted_array.shape, dtype=bool)
+        mask[:1] = True
+        numpy.not_equal(sorted_array[1:], sorted_array[:-1], out=mask[1:])
+        return mask
+
+
+class UniqueInverse(Array):
+
+    unique_mask: Array
+    sorter: Array
+
+    dtype = int
+
+    def __post_init__(self):
+        assert self.unique_mask.dtype == bool and self.unique_mask.ndim == 1
+        assert self.sorter.dtype == int and self.sorter.ndim == 1
+        assert self.unique_mask.shape == self.sorter.shape
+
+    @property
+    def shape(self):
+        return self.sorter.shape
+
+    @property
+    def dependencies(self):
+        return self.unique_mask, self.sorter
+
+    def evalf(self, unique_mask, sorter):
+        inverse = numpy.empty_like(sorter)
+        inverse[sorter] = numpy.cumsum(unique_mask)
+        inverse -= 1
+        return inverse
+
+
+def unique(array, return_index=False, return_inverse=False):
+    sorter = ArgSort(array)
+    mask = UniqueMask(Take(array, sorter))
+    index = Take(sorter, Find(mask))
+    unique = Take(array, index)
+    inverse = UniqueInverse(mask, sorter)
+    return (unique, index, inverse)[slice(0, 2+return_inverse, 2-return_index) if return_inverse or return_index else 0]
+
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 

@@ -25,14 +25,16 @@ class check(TestCase):
         self.actual = self.op(*self.args)
         self.desired = self.n_op(*self.arg_values)
         assert numpy.isfinite(self.desired).all(), 'something is wrong with the design of this unit test'
+        self.varshape = not all(n.isconstant for n in self.actual.shape)
+        othershape = self.desired.shape if not self.varshape else ()
         if self.actual.dtype == bool:
-            self.other = numpy.random.normal(size=self.desired.shape) < 0
+            self.other = numpy.random.normal(size=othershape) < 0
         elif self.actual.dtype == int:
-            self.other = numpy.random.randint(0, 100, size=self.desired.shape)
+            self.other = numpy.random.randint(0, 100, size=othershape)
         elif self.actual.dtype == float:
-            self.other = numpy.random.normal(size=self.desired.shape)
+            self.other = numpy.random.normal(size=othershape)
         elif self.actual.dtype == complex:
-            self.other = numpy.random.normal(size=self.desired.shape) + 1j * numpy.random.normal(size=self.desired.shape)
+            self.other = numpy.random.normal(size=othershape) + 1j * numpy.random.normal(size=othershape)
         self.pairs = [(i, j) for i in range(self.actual.ndim-1) for j in range(i+1, self.actual.ndim) if self.actual.shape[i] == self.actual.shape[j]]
         _builtin_warnings.simplefilter('ignore', evaluable.ExpensiveEvaluationWarning)
 
@@ -40,7 +42,8 @@ class check(TestCase):
         self.assertEqual(self.desired.dtype, self.actual.dtype)
 
     def test_shapes(self):
-        self.assertEqual(self.desired.shape, tuple(n.__index__() for n in self.actual.shape))
+        evalargs = dict(zip(self.arg_names, self.arg_values))
+        self.assertEqual(self.desired.shape, tuple(n.eval(**evalargs) for n in self.actual.shape))
 
     def assertArrayAlmostEqual(self, actual, desired, decimal):
         if actual.dtype != desired.dtype:
@@ -152,7 +155,7 @@ class check(TestCase):
     def test_take(self):
         indices = [0, -1]
         for iax, sh in enumerate(self.desired.shape):
-            if sh >= 2:
+            if sh >= 2 and self.actual.shape[iax].isconstant:
                 self.assertFunctionAlmostEqual(decimal=14,
                                                desired=numpy.take(self.desired, indices, axis=iax),
                                                actual=evaluable.take(self.actual, evaluable.constant(indices), axis=iax))
@@ -176,7 +179,7 @@ class check(TestCase):
     def test_take_reversed(self):
         indices = [-1, 0]
         for iax, sh in enumerate(self.desired.shape):
-            if sh >= 2:
+            if sh >= 2 and self.actual.shape[iax].isconstant:
                 self.assertFunctionAlmostEqual(decimal=14,
                                                desired=numpy.take(self.desired, indices, axis=iax),
                                                actual=evaluable.take(self.actual, evaluable.constant(indices), axis=iax))
@@ -191,7 +194,7 @@ class check(TestCase):
 
     def test_inflate(self):
         for iax, sh in enumerate(self.desired.shape):
-            dofmap = evaluable.constant(numpy.arange(int(sh)) * 2)
+            dofmap = evaluable.Range(self.actual.shape[iax]) * 2
             desired = numpy.zeros(self.desired.shape[:iax] + (int(sh)*2-1,) + self.desired.shape[iax+1:], dtype=self.desired.dtype)
             desired[(slice(None),)*iax+(slice(None, None, 2),)] = self.desired
             self.assertFunctionAlmostEqual(decimal=14,
@@ -200,12 +203,12 @@ class check(TestCase):
 
     def test_inflate_duplicate_indices(self):
         for iax, sh in enumerate(self.desired.shape):
-            dofmap = numpy.arange(sh) % 2
+            dofmap = evaluable.Range(self.actual.shape[iax]) % 2
             desired = numpy.zeros(self.desired.shape[:iax] + (2,) + self.desired.shape[iax+1:], dtype=self.desired.dtype)
-            numpy.add.at(desired, (slice(None),)*iax+(dofmap,), self.desired)
+            numpy.add.at(desired, (slice(None),)*iax+(numpy.arange(sh) % 2,), self.desired)
             self.assertFunctionAlmostEqual(decimal=14,
                                            desired=desired,
-                                           actual=evaluable._inflate(self.actual, dofmap=evaluable.constant(dofmap), length=evaluable.constant(2), axis=iax))
+                                           actual=evaluable._inflate(self.actual, dofmap=dofmap, length=evaluable.constant(2), axis=iax))
 
     def test_diagonalize(self):
         for axis in range(self.actual.ndim):
@@ -273,7 +276,7 @@ class check(TestCase):
     def test_power0(self):
         if self.actual.dtype == bool:
             return
-        power = (numpy.arange(self.desired.size) % 2).reshape(self.desired.shape).astype(self.actual.dtype)
+        power = (numpy.arange(self.desired.size) % 2).reshape(self.desired.shape).astype(self.actual.dtype) if not self.varshape else 3
         self.assertFunctionAlmostEqual(decimal=13,
                                        desired=self.desired**power,
                                        actual=self.actual**power)
@@ -307,6 +310,8 @@ class check(TestCase):
 
     def test_unravel(self):
         for idim in range(self.actual.ndim):
+            if not self.actual.shape[idim].isconstant:
+                continue
             length = self.desired.shape[idim]
             unravelshape = (length//3, 3) if (length % 3 == 0) else (length//2, 2) if (length % 2 == 0) else (length, 1)
             self.assertFunctionAlmostEqual(decimal=14,
@@ -314,7 +319,7 @@ class check(TestCase):
                                            actual=evaluable.unravel(self.actual, axis=idim, shape=tuple(map(evaluable.constant, unravelshape))))
 
     def test_loopsum(self):
-        if self.desired.dtype == bool:
+        if self.desired.dtype == bool or self.varshape:
             return
         length = 3
         index = evaluable.loop_index('_testindex', length)
@@ -328,6 +333,8 @@ class check(TestCase):
                                            desired=desired)
 
     def test_loopconcatenate(self):
+        if not self.desired.ndim:
+            return
         length = 3
         index = evaluable.loop_index('_testindex', length)
         for iarg, arg_value in enumerate(self.arg_values):
@@ -577,6 +584,10 @@ _check('polygrad_xy2', lambda c: evaluable.PolyGrad(c, 2), lambda c: poly.grad(c
 
 _check('searchsorted', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata(numpy.linspace(0, 1, 9)), side='left', sorter=None), lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), a).astype(int), POS(4, 2))
 _check('searchsorted_sorter', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata([.2,.8,.4,0,.6,1]), side='left', sorter=types.arraydata([3,0,2,4,1,5])), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]).astype(int), POS(4, 2))
+_check('argsort', evaluable.ArgSort, lambda a: numpy.argsort(a, axis=-1).astype(int), ANY(3, 9))
+_check('unique', evaluable.unique, numpy.unique, numpy.arange(10) % 3)
+_check('unique-index', lambda a: evaluable.unique(a, return_index=True)[1], lambda a: numpy.unique(a, return_index=True)[1].astype(int), numpy.arange(10) % 3)
+_check('unique-inverse', lambda a: evaluable.unique(a, return_inverse=True)[1], lambda a: numpy.unique(a, return_inverse=True)[1].astype(int), numpy.arange(10) % 3)
 
 
 class compile(TestCase):
