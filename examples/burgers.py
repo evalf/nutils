@@ -40,8 +40,8 @@ def main(nelems: int = 40,
     ns.x = geom
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     ns.add_field(('u', 'u0', 'v'), domain.basis(btype, degree=degree))
-    ns.dt = timestep
-    ns.dudt = '(u - u0) / dt'
+    ns.add_field(('t', 't0'))
+    ns.dudt = '(u - u0) / (t - t0)'
     ns.f = '.5 u^2'
     ns.C = 1
     ns.uinit = 'exp(-25 x^2)'
@@ -51,17 +51,19 @@ def main(nelems: int = 40,
 
     sqr = domain.integral('(u - uinit)^2 dV' @ ns, degree=max(degree*2, 5))
     args = solver.optimize('u,', sqr)
+    args['t'] = 0.
+
+    system = solver.System('u:v', res)
 
     bezier = domain.sample('bezier', 7)
-    with log.iter.plain('timestep', itertools.count(step=timestep)) as times:
-        for t in times:
-            log.info('time:', round(t, 10))
+    with log.iter.plain('timestep', itertools.count()) as steps:
+        for _ in steps:
+            log.info('time:', round(args['t'], 10))
             x, u = bezier.eval(['x', 'u'] @ ns, **args)
             export.triplot('solution.png', x[:,numpy.newaxis], u, tri=bezier.tri, hull=bezier.hull, clim=(0, 1))
-            if t >= endtime:
+            if args['t'] >= endtime:
                 break
-            args['u0'] = args['u']
-            args = solver.newton('u:v', res, arguments=args).solve(newtontol)
+            args = system.step(timestep=timestep, arguments=args, timetarget='t', historysuffix='0', tol=newtontol)
 
     return args
 

@@ -74,7 +74,7 @@ def main(etype: str = 'square',
         cons = solver.optimize('u,', sqr, droptol=1e-15, constrain=cons)
 
         res = domain.integral('∇_k(v) ∇_k(u) dV' @ ns, degree=degree*2)
-        args = solver.solve_linear('u:v', res, constrain=cons)
+        args = solver.System('u:v', res).solve(constrain=cons)
 
         ndofs = len(args['u'])
         error = numpy.sqrt(domain.integral(['du^2 dV', '(du^2 + ∇_k(du) ∇_k(du)) dV'] @ ns, degree=7)).eval(**args)

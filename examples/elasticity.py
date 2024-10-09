@@ -53,17 +53,15 @@ def main(nelems: int = 24,
     cons = solver.optimize(('u',), sqr, droptol=1e-15)
 
     # solve for equilibrium configuration
-    internal = domain.integral('E dV' @ ns, degree=degree*2)
-    external = domain.integral('u_i q_i dV' @ ns, degree=degree*2)
-    args = solver.optimize('u,', internal - external, constrain=cons)
+    energy = domain.integral('(E - u_i q_i) dV' @ ns, degree=degree*2)
+    args = solver.System('u', energy).solve(constrain=cons)
 
     # evaluate tractions and net force
     if direct:
         ns.t_i = 'σ_ij n_j' # <-- this is an inadmissible boundary term
     else:
-        external += domain.boundary['top'].integral('u_i t_i dS' @ ns, degree=degree*2)
-        invcons = dict(t=numpy.choose(numpy.isnan(cons['u']), [numpy.nan, 0.]))
-        args = solver.solve_linear(('t',), [(internal - external).derivative('u')], constrain=invcons, arguments=args)
+        energy -= domain.boundary['top'].integral('u_i t_i dS' @ ns, degree=degree*2)
+        args = solver.System('t:u', energy).solve(constrain={'t': numpy.isnan(cons['u'])}, arguments=args)
     F = domain.boundary['top'].integrate('t_i dS' @ ns, degree=degree*2, arguments=args)
     log.user('total clamping force:', F)
 

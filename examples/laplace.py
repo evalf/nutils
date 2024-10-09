@@ -77,7 +77,7 @@ def main(nelems: int = 10,
     # evaluates to zero for all possible values of `v`. The resulting array `u`
     # matches `cons` in the constrained entries.
 
-    args = solver.solve_linear('u:v', res, constrain=cons)
+    args = solver.System('u:v', res).solve(constrain=cons)
 
     # Once all arguments are establised, the corresponding solution can be
     # vizualised by sampling values of `ns.u` along with physical coordinates
