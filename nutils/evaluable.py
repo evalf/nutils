@@ -878,9 +878,8 @@ class Constant(Array):
                                                                     list(range(axis1)) + list(range(axis1+1, axis2)) + list(range(axis2+1, self.ndim)) + [axis1, axis2])))
 
     def _take(self, index, axis):
-        if index.isconstant:
-            index_ = index.eval()
-            return constant(self.value.take(index_, axis))
+        if isinstance(index, Constant):
+            return constant(self.value.take(index.value, axis))
 
     def _power(self, n):
         if isinstance(n, Constant):
@@ -1619,10 +1618,10 @@ class Add(Array):
             parts2 = func2_inflations[axis]
             dofmaps = set(parts1) | set(parts2)
             if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
-                    and self.shape[axis].isconstant and all(dofmap.isconstant for dofmap in dofmaps)):
-                mask = numpy.zeros(int(self.shape[axis]), dtype=bool)
+                    and isinstance(self.shape[axis], Constant) and all(isinstance(dofmap, Constant) for dofmap in dofmaps)):
+                mask = numpy.zeros(self.shape[axis].value, dtype=bool)
                 for dofmap in dofmaps:
-                    mask[dofmap.eval()] = True
+                    mask[dofmap.value] = True
                 if mask.all():  # axis adds up to dense
                     continue
             inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
@@ -2040,9 +2039,10 @@ class Power(Array):
         return _pyast.Variable('numpy').get_attr('power').call(func, power)
 
     def _derivative(self, var, seen):
-        if self.power.isconstant:
-            p = self.power.eval()
-            return einsum('A,A,AB->AB', constant(p), power(self.func, p - (p != 0)), derivative(self.func, var, seen))
+        if isinstance(self.power, Constant):
+            p = self.power.value.copy()
+            p -= p != 0 # exclude zero powers from decrement to avoid potential division by zero errors
+            return einsum('A,A,AB->AB', self.power, power(self.func, p), derivative(self.func, var, seen))
         # self = func**power
         # ln self = power * ln func
         # self` / self = power` * ln func + power * func` / func
@@ -3212,7 +3212,7 @@ class Inflate(Array):
             return Inflate(unravel(self.func, axis, shape), self.dofmap, self.length)
 
     def _sign(self):
-        if self.dofmap.isconstant and _isunique(self.dofmap.eval()):
+        if isinstance(self.dofmap, Constant) and _isunique(self.dofmap.value):
             return Inflate(Sign(self.func), self.dofmap, self.length)
 
     @cached_property
@@ -3245,8 +3245,8 @@ class SwapInflateTake(Evaluable):
         return self.inflateidx, self.takeidx
 
     def _simplified(self):
-        if self.isconstant:
-            return Tuple(tuple(map(constant, self.eval())))
+        if isinstance(self.inflateidx, Constant) and isinstance(self.takeidx, Constant):
+            return Tuple(tuple(map(constant, self.evalf(self.inflateidx.value, self.takeidx.value))))
 
     def __iter__(self):
         shape = ArrayFromTuple(self, index=2, shape=(), dtype=int),
@@ -3522,8 +3522,9 @@ class Find(Array):
         return _pyast.Variable('numpy').get_attr('nonzero').call(where).get_item(_pyast.LiteralInt(0))
 
     def _simplified(self):
-        if self.isconstant:
-            return constant(self.eval())
+        if isinstance(self.where, Constant):
+            indices, = self.where.value.nonzero()
+            return constant(indices)
 
 
 class DerivativeTargetBase(Array):
@@ -4503,8 +4504,8 @@ class NormDim(Array):
             return self.index
         if isinstance(lower_length, int) and lower_length == upper_length and -lower_length <= lower_index and upper_index < 0:
             return self.index + lower_length
-        if self.length.isconstant and self.index.isconstant:
-            return constant(self.eval())
+        if isinstance(self.length, Constant) and isinstance(self.index, Constant):
+            return constant(self.evalf(self.length.value, self.index.value))
 
     def _intbounds_impl(self):
         lower_length, upper_length = self.length._intbounds
@@ -5660,8 +5661,8 @@ def take(arg: Array, index: Array, axis: int):
     if index.dtype == bool:
         assert _equals_simplified(index.shape[0], length)
         index = Find(index)
-    elif index.isconstant:
-        index_ = index.eval()
+    elif isinstance(index, Constant):
+        index_ = index.value
         ineg = numpy.less(index_, 0)
         if not length.isconstant:
             if ineg.any():
