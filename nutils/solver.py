@@ -32,6 +32,7 @@ time dependent problems.
 
 from . import function, evaluable, cache, numeric, types, _util as util, matrix, warnings, sparse
 from dataclasses import dataclass
+from typing import Optional, Union, Tuple, Dict, Any, Iterator, Callable
 import abc
 import numpy
 import itertools
@@ -178,6 +179,392 @@ class MedianBased:
             scale = numpy.inf
         log.info('estimated {}-quantile at {:.0f}% of update vector'.format(self.quantile, scale*100))
         return min(max(scale, self.minscale), self.maxscale), scale >= self.acceptscale
+
+
+# SYSTEM
+
+class System:
+    '''System of one or more variables.
+
+    The System class represents a linear or nonlinear problem of one or more
+    variables, and offers several methods to solve it. The main solution method
+    is ``solve``, which serves as a general entry point that offloads the
+    problem to specialized solvers. The other prominent method is ``step``,
+    which adds functionality to deal with time dependent problems.
+    '''
+
+    def __init__(self, residual: Union[evaluable.AsEvaluableArray,Tuple[evaluable.AsEvaluableArray,...]], /, trial: Union[str,Tuple[str,...]], test: Optional[Union[str,Tuple[str,...]]] = None):
+        '''Construct a system.
+
+        Parameters
+        ----------
+        residual :
+            Any object that supports conversion to a scalar evaluable Array via
+            the AsEvaluableArray protocol. This is the function that the trial
+            arguments will seek to make constant in all the test arguments, or
+            zero in all the derivatives. If provided as a tuple of vectors then
+            these are already the derivatives to be made zero, and no test
+            arguments may be specified.
+        trial :
+            Names of the trial arguments, provided as a string ('arg1,arg2') or
+            tuple of strings (('arg1', 'arg2')).
+        test :
+            Names of the test arguments (optional) provided as a string or
+            tuple of strings. Must be omitted if residual is a tuple of
+            vectors; otherwise, may be omitted if test and trial are equal.
+        '''
+
+        self.trials = tuple(trial.split(',') if isinstance(trial, str) else trial)
+
+        if isinstance(residual, (tuple, list)):
+            if test is not None:
+                raise ValueError('a test argument is not allowed in combination with a residual vector')
+            residuals = [res.as_evaluable_array for res in residual]
+            self.dtype = residuals[0].dtype
+            if not all(v.dtype == self.dtype for v in residuals):
+                raise ValueError('inconsistent data types in residual vector')
+            argobjects = _dict((arg.name, arg) for res in residuals for arg in res.arguments if isinstance(arg, evaluable.Argument))
+            self.is_symmetric = False
+        else:
+            functional = residual.as_evaluable_array
+            self.dtype = functional.dtype
+            argobjects = {arg.name: arg for arg in functional.arguments if isinstance(arg, evaluable.Argument)}
+            tests = self.trials if test is None else tuple(test.split(',') if isinstance(test, str) else test)
+            residuals = [evaluable.derivative(functional, argobjects[t]) for t in tests]
+            self.is_symmetric = self.trials == tests
+
+        self.trialshapes = dict(zip(self.trials, evaluable.compile(tuple(argobjects[t].shape for t in self.trials))()))
+        self.__trial_offsets = numpy.cumsum([0] + [numpy.prod(self.trialshapes[t], dtype=int) for t in self.trials])
+
+        value = functional if self.is_symmetric else evaluable.constant(numpy.nan)
+        block_vector = [evaluable._flat(res) for res in residuals]
+        block_matrix = [[evaluable._flat(evaluable.derivative(res, argobjects[t]).simplified, 2) for t in self.trials] for res in block_vector]
+        self.__eval = evaluable.compile((tuple(tuple(map(evaluable.as_csr, row)) for row in block_matrix), tuple(block_vector), value))
+
+        self.is_linear = not any(arg.name in self.trials for row in block_matrix for col in row for arg in col.arguments)
+        self.is_constant = self.is_linear and not any(col.arguments for row in block_matrix for col in row)
+        self.__matrix_cache = None
+
+    @property
+    def __nutils_hash__(self):
+        return self.__eval.__nutils_hash__
+
+    @log.withcontext
+    def assemble(self, arguments: Dict[str, numpy.ndarray]):
+        mat_blocks, vec_blocks, val = self.__eval(**arguments)
+        vec = numpy.concatenate(vec_blocks)
+        if self.__matrix_cache is not None:
+            mat = self.__matrix_cache
+        else:
+            mat = matrix.assemble_block_csr(mat_blocks)
+            if self.is_constant:
+                self.__matrix_cache = mat
+        return mat, vec, val
+
+    def prepare_solution_vector(self, arguments: Dict[str, numpy.ndarray], constrain: Dict[str, numpy.ndarray]):
+        arguments = arguments.copy()
+        x = numpy.empty(self.__trial_offsets[-1], self.dtype)
+        iscons = numpy.empty(self.__trial_offsets[-1], dtype=bool)
+        for trial, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:]):
+            trialshape = self.trialshapes[trial]
+            trialarg = x[i:j].reshape(trialshape)
+            trialarg[...] = arguments.get(trial, 0)
+            c = constrain.get(trial, False)
+            if c is not False:
+                assert c.shape == trialshape
+                if c.dtype != bool:
+                    c, v = ~numpy.isnan(c), c
+                    trialarg[c] = v[c]
+            trialcons = iscons[i:j].reshape(trialshape)
+            trialcons[...] = c
+            arguments[trial] = trialarg # IMPORTANT: arguments share memory with x
+        return x, iscons, arguments
+
+    @property
+    def _trial_info(self):
+        return ' and '.join(t + ' (' + ','.join(map(str, shape)) + ')' for t, shape in self.trialshapes.items())
+
+    MethodIter = Iterator[Tuple[Dict[str, numpy.ndarray], float, float]]
+
+    @cache.function
+    @log.withcontext
+    def solve(self, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}, tol: float = 0., miniter: int = 0, maxiter: Optional[int] = None, method: Optional[Callable[...,MethodIter]] = None) -> Tuple[Dict[str, numpy.ndarray], float]:
+        '''Solve the system.
+
+        Determines the trial arguments for which the derivatives of the
+        system's scalar functional are zero in all the test arguments.
+
+        Parameters
+        ----------
+        arguments
+            Arguments required to evaluate the system. Arguments that coincide
+            with the system's trial arguments serve as initial guess.
+        constrain
+            Constrained values for any of the trial arguments, supplied as
+            float vectors with NaN entries or boolean vectors, the latter
+            holding values at those of the initial guess.
+        linargs
+            Keyword arguments to be passed on to the linear solver.
+        tol
+            Maximum residual norm, stopping criterion for the iterative solver.
+            Required for nonlinear problems.
+        miniter
+            Minimum number of iterations for the iterative solver, overruling
+            to ``tol`` based stopping criterion.
+        maxiter
+            Maximum number of iterations, after which a ``SolverError`` is
+            raised.
+        method
+            Iterative solution method, in the form of a callable that returns
+            an iterator of (arguments, resnorm, value) triplets.
+        '''
+
+        if method is None and not self.is_linear:
+            method = Newton()
+        log.info(f'{"optimizing" if self.is_symmetric else "solving"} for argument {self._trial_info} using {method or "direct"} method')
+        if method is None:
+            x, iscons, arguments = self.prepare_solution_vector(arguments, constrain)
+            jac, res, val = self.assemble(arguments)
+            dx = -jac.solve(res, constrain=iscons, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
+            if self.is_symmetric:
+                log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
+            x += dx
+            return arguments
+        if tol <= 0:
+            raise ValueError('iterative solver requires a strictly positive tolerance')
+        first = _First()
+        with log.iter.plain('iter', itertools.count()) as steps:
+            for arguments, resnorm, val in method(self, arguments=arguments, constrain=constrain, linargs=linargs):
+                progress = numpy.log(first(resnorm)/resnorm) / numpy.log(first(resnorm)/tol) if resnorm > tol else 1
+                log.info(f'residual: {resnorm:.0e} ({100*progress:.0f}%)')
+                iiter = next(steps) # opens new log context
+                if iiter >= miniter and resnorm <= tol:
+                    break
+                if maxiter is not None and iiter >= maxiter:
+                    raise SolverError(f'failed to converge in {maxiter} iterations')
+        if self.is_symmetric:
+            log.info(f'optimal value: {val:.1e}')
+        return arguments
+
+    def step(self, *, timestep: float, timetarget: str, historysuffix: str, arguments: Dict[str, numpy.ndarray], **solveargs) -> Dict[str, numpy.ndarray]:
+        '''Advance a time step.
+
+        This method is best described by an example. Let ``timetarget`` equal
+        't' and ``historysuffix`` '0', and let our system's trial arguments be
+        'u' and 'v'. This method then creates argument copies 't0', 'u0', 'v0',
+        advances 't' by ``timestep``, and solves for the new 'u' and 'v'.
+
+        Parameters
+        ----------
+        timetarget
+            Name of the scalar argument that tracks the time.
+        timestep
+            Size of the time increment.
+        historysuffix
+            String suffix to add to argument names to denote their value at the
+            beginning of the time step.
+        arguments
+            Arguments required to evaluate the system. Arguments that coincide
+            with the system's trial arguments serve as initial value.
+        solveargs
+            Remaining keyword arguments are passed on to the ``solver`` method.
+        '''
+
+        arguments = arguments.copy()
+        for trial in self.trials:
+            if trial in arguments:
+                arguments[trial + historysuffix] = arguments[trial]
+        time = arguments.get(timetarget, 0.)
+        arguments[timetarget + historysuffix] = time
+        arguments[timetarget] = time + timestep
+        try:
+            return self.solve(arguments=arguments, **solveargs)
+        except (SolverError, matrix.MatrixError) as e:
+            log.error(f'error: {e}; retrying with timestep {timestep/2}')
+            with log.context('tic'):
+                halfway_arguments = self.step(timestep=timestep/2, timetarget=timetarget, historysuffix=historysuffix, arguments=arguments, **solveargs)
+            with log.context('toc'):
+                return self.step(timestep=timestep/2, timetarget=timetarget, historysuffix=historysuffix, arguments=halfway_arguments, **solveargs)
+
+    @cache.function
+    @log.withcontext
+    def optimize(self, *, droptol: Optional[float], arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> Tuple[Dict[str, numpy.ndarray], float]:
+        '''Optimize singular system.
+
+        This method is similar to ``solve``, but specific to symmetric linear
+        systems, with the added ability to solve a limited class of singular
+        systems. It does so by isolating the subset of arguments that
+        contribute to the functional and solving the corresponding submatrix.
+        The remaining argument values are returned as NaN (not a number).
+
+        Parameters
+        ----------
+        arguments
+            Arguments required to evaluate the system. Any arguments that
+            coincide with the system's trial arguments serve as initial guess.
+        constrain
+            Constrained values for any of the trial arguments, supplied as
+            float vectors with NaN entries or boolean vectors, the latter
+            holding values at those of the initial guess.
+        linargs
+            Keyword arguments to be passed on to the linear solver.
+        droptol
+            Minimum absolute value if matrix entries for rows and columns to
+            participate in the optimization problem.
+        '''
+
+        log.info(f'optimizing for argument {self._trial_info} with drop tolerance {droptol:.0e}')
+        if not self.is_linear:
+            raise SolverError('system is not linear')
+        if not self.is_symmetric:
+            raise SolverError('system is not symmetric')
+        x, iscons, arguments = self.prepare_solution_vector(arguments, constrain)
+        jac, res, val = self.assemble(arguments)
+        nosupp = ~jac.rowsupp(droptol)
+        dx = -jac.solve(res, constrain=iscons | nosupp, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
+        log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
+        x += dx
+        x[nosupp & ~iscons] = numpy.nan
+        return arguments
+
+
+@dataclass(eq=True, frozen=True)
+class Newton:
+
+    def __str__(self):
+        return 'newton'
+
+    def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+        x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
+        linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
+        while True:
+            jac, res, val = system.assemble(arguments)
+            yield arguments, numpy.linalg.norm(res[~iscons]), val
+            x -= jac.solve_leniently(res, constrain=iscons, **linargs)
+
+
+@dataclass(eq=True, frozen=True)
+class LinesearchNewton:
+
+    strategy: Callable = NormBased()
+    failrelax: float = 1e-6
+    relax0: float = 1.
+
+    def __str__(self):
+        return 'linesearch-newton'
+
+    def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+        x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
+        linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
+        jac, res, val = system.assemble(arguments)
+        relax = self.relax0
+        while True: # newton iterations
+            yield arguments, numpy.linalg.norm(res[~iscons]), val
+            dx = -jac.solve_leniently(res, constrain=iscons, **linargs)
+            x += dx * relax
+            res0 = res
+            jac0dx = jac@dx # == res0 if dx was solved to infinite precision
+            while True: # line search
+                jac, res, _ = system.assemble(arguments)
+                relax, adjust = self._linesearch(res0, jac0dx, res, jac@dx, iscons, relax)
+                if not adjust:
+                    break
+                if relax <= self.failrelax:
+                    raise SolverError('stuck in local minimum')
+                x += dx * adjust
+
+    def _linesearch(self, res0, dres0, res1, dres1, iscons, relax):
+        isdof = ~iscons
+        scale, accept = self.strategy(res0[isdof], dres0[isdof] * relax, res1[isdof], dres1[isdof] * relax)
+        if accept:
+            log.info('update accepted at relaxation', round(relax, 5))
+            return min(relax * scale, 1), 0
+        assert scale < 1
+        return relax * scale, relax * (scale-1)
+
+
+@dataclass(eq=True, frozen=True)
+class Minimize:
+
+    rampup: float = .5
+    rampdown: float = -1.
+    failrelax: float = -10.
+
+    def __str__(self):
+        return 'newton'
+
+    def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+        if not system.is_symmetric:
+            raise SolverError('problem is not symmetric')
+        x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
+        jac, res, val = system.assemble(arguments)
+        linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
+        relax = 0.
+        while True:
+            yield arguments, numpy.linalg.norm(res[~iscons]), val
+            dx = -jac.solve_leniently(res, constrain=iscons, **linargs) # baseline: vanilla Newton
+            # compute first two ritz values to determine approximate path of steepest descent
+            zres = res * ~iscons
+            dxnorm = numpy.linalg.norm(dx)
+            k0 = dx / dxnorm
+            k1 = -zres / dxnorm # == jac @ k0
+            a = k1 @ k0
+            k1 -= k0 * a # orthogonalize
+            c = numpy.linalg.norm(k1)
+            k1 /= c # normalize
+            b = k1 @ (jac @ k1)
+            # at this point k0 and k1 are orthonormal, and [k0 k1]^T jac [k0 k1] = [a c; c b]
+            D = numpy.hypot(b-a, 2*c)
+            L = numpy.array([a+b-D, a+b+D]) / 2 # 2nd order ritz values: eigenvalues of [a c; c b]
+            v0, v1 = zres + dx * L[:, numpy.newaxis]
+            V = numpy.stack([v1, -v0], axis=1) / D # ritz vectors times dx -- note: V @ L == -zres, V.sum() == dx
+            log.info('spectrum: {:.1e}..{:.1e} ({}definite)'.format(*L, 'positive ' if L[0] > 0 else 'negative ' if L[-1] < 0 else 'in'))
+            val0 = val
+            while True: # line search along steepest descent curve
+                r = numpy.exp(relax - numpy.log(D)) # == exp(relax) / D
+                eL = numpy.exp(-r*L)
+                dx -= V @ eL
+                x += dx
+                jac, res, val = system.assemble(arguments)
+                slope = res @ (V @ (eL*L))
+                log.info('energy {:+.2e} / e{:+.1f} and {}creasing'.format(val - val0, relax, 'in' if slope > 0 else 'de'))
+                if numpy.isfinite(val) and numpy.isfinite(res).all() and val <= val0 and slope <= 0:
+                    relax += self.rampup
+                    break
+                relax += self.rampdown
+                if relax <= self.failrelax:
+                    raise SolverError('stuck in local minimum')
+                dx = V @ eL # return to baseline
+
+
+@dataclass(eq=True, frozen=True)
+class Pseudotime:
+
+    inertia: Tuple[evaluable.AsEvaluableArray,...]
+    timestep: float
+
+    def __str__(self):
+        return 'pseudotime'
+
+    def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+        x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
+        linargs = _copy_with_defaults(linargs, rtol=1-3)
+        djac = self._assemble_inertia_matrix(system.trialshapes, arguments)
+
+        first = _First()
+        while True:
+            jac, res, val = system.assemble(arguments)
+            resnorm = numpy.linalg.norm(res[~iscons])
+            yield arguments, resnorm, val
+            timestep = self.timestep * (first(resnorm) / resnorm)
+            log.info(f'timestep: {timestep:.0e}')
+            x -= (jac + djac / timestep).solve_leniently(res, constrain=iscons, **linargs)
+
+    def _assemble_inertia_matrix(self, trialshapes, arguments):
+        argobjs = [evaluable.Argument(t, tuple(map(evaluable.constant, shape)), float) for t, shape in trialshapes.items()]
+        djacobians = [[evaluable._flat(evaluable.derivative(evaluable._flat(res), argobj).simplified, 2) for argobj in argobjs] for res in self.inertia]
+        djac_blocks = evaluable.compile(tuple(tuple(map(evaluable.as_csr, row)) for row in djacobians))
+        return matrix.assemble_block_csr(djac_blocks(**arguments))
 
 
 # SOLVERS
@@ -791,6 +1178,22 @@ def _strip(kwargs, prefix):
     return {key[len(prefix):]: kwargs.pop(key) for key in list(kwargs) if key.startswith(prefix)}
 
 
+def _dict(items):
+    '''construct dictionary from items while checking that duplicate keys have matching values'''
+
+    d = {}
+    for k, v in items:
+        v_ = d.setdefault(k, v)
+        if v_ is not v and v_ != v: # cheap test first to avoid equality checks
+            raise ValueError('incompatible items')
+    return d
+
+
+def _copy_with_defaults(d, **kwargs):
+    kwargs.update(d)
+    return kwargs
+
+
 def _parse_lhs_cons(constrain, targets, argobjs, arguments):
     arguments = {t: numpy.asarray(a) for t, a in arguments.items()}
     constrain = {t: numpy.asarray(c) for t, c in constrain.items()}
@@ -915,6 +1318,15 @@ def _target_helper(target, *args):
             raise ValueError('inconsistent residuals')
         args = [[function.zeros(shape) if f is None else f for f, (shape,) in zip(arg, shapes)] for arg in args]
     return (tuple(targets), *[tuple(f.as_evaluable_array for f in arg) for arg in args])
+
+
+class _First:
+    def __call__(self, value):
+        try:
+            return self.value
+        except AttributeError:
+            self.value = value
+            return value
 
 
 class _with_solve(types.Immutable):
