@@ -5940,6 +5940,7 @@ def eval_coo(funcs: AsEvaluableArray, arguments: typing.Mapping[str, numpy.ndarr
 
 
 @functools.lru_cache(32)
+@log.withcontext
 def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = None, cache_const_intermediates: bool = True):
     '''Returns a callable that evaluates ``func``.
 
