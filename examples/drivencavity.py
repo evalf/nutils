@@ -1,4 +1,5 @@
-from nutils import mesh, function, solver, export, testing
+from nutils import mesh, function, export, testing
+from nutils.solver import System, LinesearchNewton
 from nutils.expression_v2 import Namespace
 import treelog as log
 import numpy
@@ -117,12 +118,12 @@ def main(nelems: int = 32,
 
     # strong enforcement of non-penetrating boundary conditions
     sqr = domain.boundary.integral('(u_k n_k)^2 dS' @ ns, degree=degree*2)
-    cons = solver.optimize('u,', sqr, droptol=1e-15)
+    cons = System(sqr, trial='u').optimize(droptol=1e-15)
 
     if strongbc:
         # strong enforcement of tangential boundary conditions
         sqr = domain.boundary.integral('(ε_ij n_i (u_j - uwall_j))^2 dS' @ ns, degree=degree*2)
-        tcons = solver.optimize('u,', sqr, droptol=1e-15)
+        tcons = System(sqr, trial='u').optimize(droptol=1e-15)
         cons['u'] = numpy.choose(numpy.isnan(cons['u']), [cons['u'], tcons['u']])
     else:
         # weak enforcement of tangential boundary conditions via Nitsche's method
@@ -131,7 +132,7 @@ def main(nelems: int = 32,
         res += domain.boundary.integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=2*degree)
 
     with log.context('stokes'):
-        args0 = solver.solve_linear('u:v,p:q', res, constrain=cons)
+        args0 = System(res, trial='u,p', test='v,q').solve(constrain=cons)
         postprocess(domain, ns, **args0)
 
     # change to Navier-Stokes by adding convection
@@ -141,7 +142,7 @@ def main(nelems: int = 32,
         res += domain.integral('.5 u_i v_i ∇_j(u_j) dV' @ ns, degree=degree*3)
 
     with log.context('navier-stokes'):
-        args1 = solver.newton('u:v,p:q', res, arguments=args0, constrain=cons).solve(tol=1e-10)
+        args1 = System(res, trial='u,p', test='v,q').solve(arguments=args0, constrain=cons, tol=1e-10, method=LinesearchNewton())
         postprocess(domain, ns, **args1)
 
     return args0, args1
@@ -155,7 +156,7 @@ def postprocess(domain, ns, **arguments):
 
     # reconstruct velocity streamlines
     sqr = domain.integral('Σ_i (u_i - ε_ij ∇_j(ψ))^2 dV' @ ns, degree=4)
-    arguments = solver.optimize('ψ,', sqr, arguments=arguments)
+    arguments = System(sqr, trial='ψ').solve(arguments=arguments)
 
     bezier = domain.sample('bezier', 9)
     x, u, p, ψ = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'p', 'ψ'] @ ns, **arguments)

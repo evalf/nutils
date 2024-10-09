@@ -1,4 +1,5 @@
-from nutils import mesh, function, solver, export, testing
+from nutils import mesh, function, export, testing
+from nutils.solver import System, Minimize
 from nutils.expression_v2 import Namespace
 import numpy
 
@@ -57,10 +58,10 @@ def main(nelems: int = 20,
 
     sqr = domain.boundary['left'].integral('u_k u_k dS' @ ns, degree=degree*2)
     sqr += domain.boundary['right'].integral('((u_0 - X_1 sin(2 angle) - cos(angle) + 1)^2 + (u_1 - X_1 (cos(2 angle) - 1) + sin(angle))^2) dS' @ ns, degree=degree*2)
-    cons = solver.optimize('u,', sqr, droptol=1e-15)
+    cons = System(sqr, trial='u').optimize(droptol=1e-15)
 
     energy = domain.integral('energy dV' @ ns, degree=degree*2)
-    args0 = solver.optimize('u,', energy, constrain=cons)
+    args0 = System(energy, trial='u').solve(constrain=cons)
     x, energy = bezier.eval(['x_i', 'energy'] @ ns, **args0)
     export.triplot('linear.png', x, energy, tri=bezier.tri, hull=bezier.hull, cmap='jet')
 
@@ -68,7 +69,7 @@ def main(nelems: int = 20,
     ns.energy = 'λ ε_ii ε_jj + 2 μ ε_ij ε_ij'
 
     energy = domain.integral('energy dV' @ ns, degree=degree*2)
-    args1 = solver.minimize('u,', energy, arguments=args0, constrain=cons).solve(restol)
+    args1 = System(energy, trial='u').solve(arguments=args0, constrain=cons, method=Minimize(), tol=restol)
     x, energy = bezier.eval(['x_i', 'energy'] @ ns, **args1)
     export.triplot('nonlinear.png', x, energy, tri=bezier.tri, hull=bezier.hull, cmap='jet')
 

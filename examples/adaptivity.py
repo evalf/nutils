@@ -1,4 +1,5 @@
-from nutils import mesh, function, solver, export, testing
+from nutils import mesh, function, export, testing
+from nutils.solver import System
 from nutils.expression_v2 import Namespace
 import numpy
 import treelog
@@ -68,13 +69,13 @@ def main(etype: str = 'square',
         ns.du = 'u - uexact'
 
         sqr = domain.boundary['corner'].integral('u^2 dS' @ ns, degree=degree*2)
-        cons = solver.optimize('u,', sqr, droptol=1e-15)
+        cons = System(sqr, trial='u').optimize(droptol=1e-15)
 
         sqr = domain.boundary.integral('du^2 dS' @ ns, degree=7)
-        cons = solver.optimize('u,', sqr, droptol=1e-15, constrain=cons)
+        cons = System(sqr, trial='u').optimize(droptol=1e-15, constrain=cons)
 
         res = domain.integral('∇_k(v) ∇_k(u) dV' @ ns, degree=degree*2)
-        args = solver.solve_linear('u:v', res, constrain=cons)
+        args = System(res, trial='u', test='v').solve(constrain=cons)
 
         ndofs = len(args['u'])
         error = numpy.sqrt(domain.integral(['du^2 dV', '(du^2 + ∇_k(du) ∇_k(du)) dV'] @ ns, degree=7)).eval(**args)

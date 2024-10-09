@@ -1,4 +1,5 @@
-from nutils import mesh, function, solver, export, testing
+from nutils import mesh, function, export, testing
+from nutils.solver import System
 from nutils.expression_v2 import Namespace
 import treelog
 
@@ -71,13 +72,13 @@ def main(nelems: int = 10,
 
     sqr = domain.boundary['left'].integral('u^2 dS' @ ns, degree=degree*2)
     sqr += domain.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 dS' @ ns, degree=degree*2)
-    cons = solver.optimize('u,', sqr, droptol=1e-15)
+    cons = System(sqr, trial='u').optimize(droptol=1e-15)
 
     # The unconstrained entries of `u` are to be such that the residual
     # evaluates to zero for all possible values of `v`. The resulting array `u`
     # matches `cons` in the constrained entries.
 
-    args = solver.solve_linear('u:v', res, constrain=cons)
+    args = System(res, trial='u', test='v').solve(constrain=cons)
 
     # Once all arguments are establised, the corresponding solution can be
     # vizualised by sampling values of `ns.u` along with physical coordinates

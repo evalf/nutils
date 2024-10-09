@@ -1,4 +1,5 @@
-from nutils import mesh, function, solver, export, testing, numeric
+from nutils import mesh, function, export, testing, numeric
+from nutils.solver import System
 from nutils.expression_v2 import Namespace
 import itertools
 import numpy
@@ -118,8 +119,8 @@ def main(nelems: int = 99,
         domain.basis('spline', degree=(degree, degree-1), removedofs=((0,), None)),
         domain.basis('spline', degree=(degree-1, degree))]) @ J.T / detJ)
     ns.add_field(('p', 'q'), domain.basis('spline', degree=degree-1) / detJ)
-    ns.dt = timestep
-    ns.DuDt_i = '(u_i - u0_i) / dt + ∇_j(u_i) u_j' # material derivative
+    ns.add_field(('t', 't0'))
+    ns.DuDt_i = '(u_i - u0_i) / (t - t0) + ∇_j(u_i) u_j' # material derivative
     ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
     ns.ω = 'ε_ij ∇_j(u_i)'
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
@@ -128,10 +129,10 @@ def main(nelems: int = 99,
     ns.uwall_i = 'rotation ε_ij x_j' # clockwise positive rotation
 
     sqr = domain.boundary['inflow'].integral('Σ_i (u_i - uinf_i)^2 dS' @ ns, degree=degree*2)
-    cons = solver.optimize('u,', sqr, droptol=1e-15) # constrain inflow boundary to unit horizontal flow
+    cons = System(sqr, trial='u').optimize(droptol=1e-15) # constrain inflow boundary to unit horizontal flow
 
     sqr = domain.integral('(.5 Σ_i (u_i - uinf_i)^2 - ∇_k(u_k) p) dV' @ ns, degree=degree*2)
-    args = solver.optimize('u,p', sqr, constrain=cons) # set initial condition to potential flow
+    args = System(sqr, trial='u,p').solve(constrain=cons) # set initial condition to potential flow
 
     res = domain.integral('(v_i DuDt_i + ∇_j(v_i) σ_ij + q ∇_k(u_k)) dV' @ ns, degree=degree*3)
     res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=degree*2)
@@ -142,10 +143,11 @@ def main(nelems: int = 99,
     steps = treelog.iter.fraction('timestep', range(round(endtime / timestep))) if endtime < float('inf') \
        else treelog.iter.plain('timestep', itertools.count())
 
+    system = System(res, trial='u,p', test='v,q')
+
     for _ in steps:
         treelog.info(f'velocity divergence: {div.eval(**args):.0e}')
-        args['u0'] = args['u']
-        args = solver.newton('u:v,p:q', residual=res, arguments=args, constrain=cons).solve(1e-10)
+        args = system.step(timestep=timestep, timetarget='t', historysuffix='0', arguments=args, constrain=cons, tol=1e-10)
         postprocess(args)
 
     return args, numpy.sqrt(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2))
@@ -161,7 +163,6 @@ class PostProcessor:
         self.spacing = spacing
         self.pstep = pstep
         self.vortlim = vortlim
-        self.t = 0.
         self.initialize_xgrd()
         self.topo = topo
 
@@ -199,10 +200,8 @@ class PostProcessor:
             ax.tricontour(*x.T, self.bezier.tri, p, numpy.arange(numpy.min(p)//1, numpy.max(p), self.pstep), colors='k', linestyles='solid', linewidths=.5, zorder=9)
             export.plotlines_(ax, x.T, self.bezier.hull, colors='k', linewidths=.1, alpha=.5)
             ax.quiver(*self.xgrd.T, *ugrd.T, angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5, pivot='tip')
-            ax.plot(0, 0, 'k', marker=(3, 2, -self.t*self.ns.rotation.eval()*180/numpy.pi-90), markersize=20)
-        dt = self.ns.dt.eval()
-        self.t += dt
-        self.xgrd += ugrd * dt
+            ax.plot(0, 0, 'k', marker=(3, 2, -args['t']*self.ns.rotation.eval()*180/numpy.pi-90), markersize=20)
+        self.xgrd += ugrd * (args['t'] - args['t0'])
         self.regularize_xgrd()
 
 

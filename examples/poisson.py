@@ -1,4 +1,5 @@
-from nutils import mesh, function, solver, export, testing
+from nutils import mesh, function, export, testing
+from nutils.solver import System
 
 # This script demonstrates direct function manipulation without the aid of
 # namespace expressions.
@@ -24,10 +25,10 @@ def main(nelems: int = 32):
     J = function.J(x)
 
     sqr = topo.boundary.integral(u**2 * J, degree=2)
-    cons = solver.optimize(('u',), sqr, droptol=1e-12)
+    cons = System(sqr, trial='u').optimize(droptol=1e-12)
 
     energy = topo.integral((g @ g / 2 - u) * J, degree=1)
-    args = solver.optimize(('u',), energy, constrain=cons)
+    args = System(energy, trial='u').solve(constrain=cons)
 
     bezier = topo.sample('bezier', 3)
     x, u = bezier.eval([x, u], **args)

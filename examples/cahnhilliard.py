@@ -1,4 +1,5 @@
-from nutils import mesh, function, solver, numeric, export, testing
+from nutils import mesh, function, numeric, export, testing
+from nutils.solver import System
 from nutils.expression_v2 import Namespace
 from nutils.SI import Length, Time, Density, Tension, Energy, Pressure, Velocity, parse
 import numpy
@@ -178,6 +179,9 @@ def main(size: Length = parse('10cm'),
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     ns.add_field(('φ', 'φ0'), basis)
     ns.add_field('η', basis * stens / epsilon) # basis scaling to give η the required unit
+    ns.add_field(('t', 't0'))
+    ns.t *= timestep
+    ns.t0 *= timestep
     ns.ε = epsilon
     ns.σ = stens
     ns.σmean = (wtensp + wtensn) / 2
@@ -188,7 +192,7 @@ def main(size: Length = parse('10cm'),
     ns.δψ = stab.value
     ns.M = mobility
     ns.J_i = '-M ∇_i(η)'
-    ns.dt = timestep
+    ns.dt = 't - t0'
 
     nrg_mix = domain.integral('(ψ σ / ε) dV' @ ns, degree=degree*4)
     nrg_iface = domain.integral('.5 σ ε ∇_k(φ) ∇_k(φ) dV' @ ns, degree=degree*4)
@@ -198,14 +202,15 @@ def main(size: Length = parse('10cm'),
     numpy.random.seed(seed)
     args = dict(φ=numpy.random.normal(0, .5, basis.shape)) # initial condition
 
+    system = System(nrg / tol, trial='φ,η')
+
     with log.iter.fraction('timestep', range(round(endtime / timestep))) as steps:
         for istep in steps:
 
             E = numpy.stack(function.eval([nrg_mix, nrg_iface, nrg_wall], **args))
             log.user('energy: {0:,.0μJ/m} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(numpy.sum(E), 100*E/numpy.sum(E)))
 
-            args['φ0'] = args['φ']
-            args = solver.optimize(['φ', 'η'], nrg / tol, arguments=args, tol=1)
+            args = system.step(timestep=1., timetarget='t', historysuffix='0', arguments=args, tol=1, maxiter=5)
 
             with export.mplfigure('phase.png') as fig:
                 ax = fig.add_subplot(aspect='equal', xlabel='[mm]', ylabel='[mm]')

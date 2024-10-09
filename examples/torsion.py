@@ -1,4 +1,5 @@
-from nutils import mesh, function, solver, export, testing
+from nutils import mesh, function, export, testing
+from nutils.solver import System, Minimize
 from nutils.expression_v2 import Namespace
 import treelog as log
 import numpy as np
@@ -85,12 +86,13 @@ def main(length: float = 2*np.pi,
     ns.W = 'F_ij F_ij - 3 - 2 log(J) + D (J - 1)^2' # Neo-Hookean energy density
 
     energy = topo.integral('W dV' @ ns, degree=degree*2)
+    system = System(energy, trial='u')
 
     args = {}
     clim = (0, 1) if stretch == 1 else None # fix scale for undeformed configuration
     for args['φ'] in np.linspace(0, rotation, round(rotation / increment) + 1):
         with log.context('{φ:.1f} deg', **args):
-            args = solver.minimize('u,', energy, arguments=args).solve(restol)
+            args = system.solve(arguments=args, method=Minimize(), tol=restol)
             x, W = bezier.eval(['x_i', 'W'] @ ns, **args)
             export.triplot('energy.jpg', x, W, tri=bezier.tri, hull=bezier.hull,
                 clim=clim, cmap='inferno_r', vlabel='strain energy density')
