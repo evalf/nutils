@@ -691,6 +691,46 @@ class Array(Evaluable):
         return NotImplemented
 
 
+class AssertEqual(Array):
+    'Confirm arrays equality at runtime'
+
+    a: Array
+    b: Array
+
+    @classmethod
+    def map(cls, A, B):
+        return tuple(map(cls, A, B))
+
+    def __post_init__(self):
+        assert not _certainly_different(self.a, self.b)
+
+    @property
+    def dtype(self):
+        return self.a.dtype
+
+    @cached_property
+    def shape(self):
+        return self.map(self.a.shape, self.b.shape)
+
+    def _intbounds_impl(self):
+        lowera, uppera = self.a._intbounds_impl()
+        lowerb, upperb = self.b._intbounds_impl()
+        return max(lowera, lowerb), min(uppera, upperb)
+
+    def _simplified(self):
+        if self.a == self.b:
+            return self.a
+
+    @property
+    def dependencies(self):
+        return self.a, self.b
+
+    def evalf(self, a, b):
+        if a.shape != b.shape or (a != b).any():
+            raise Exception('values are not equal')
+        return a
+
+
 class Orthonormal(Array):
     'make a vector orthonormal to a subspace'
 
@@ -1402,7 +1442,7 @@ class Multiply(Array):
     @cached_property
     def shape(self):
         func1, func2 = self.funcs
-        return func1.shape
+        return AssertEqual.map(func1.shape, func2.shape)
 
     @property
     def _factors(self):
@@ -1589,7 +1629,7 @@ class Add(Array):
     @cached_property
     def shape(self):
         func1, func2 = self.funcs
-        return func1.shape
+        return AssertEqual.map(func1.shape, func2.shape)
 
     @cached_property
     def _inflations(self):
@@ -1734,13 +1774,12 @@ class Einsum(Array):
         lengths = {}
         for idx, arg in zip(self.args_idx, self.args):
             for i, length in zip(idx, arg.shape):
-                if i not in lengths:
-                    lengths[i] = length
-                elif _certainly_different(lengths[i], length):
-                    raise ValueError('Axes with index {} have different lengths.'.format(i))
-        for i in self.out_idx:
-            if i not in lengths:
-                raise ValueError(f'Output axis {i} is not listed in any of the arguments.')
+                n = lengths.get(i)
+                lengths[i] = length if n is None else AssertEqual(length, n)
+        try:
+            self.shape = tuple(lengths[i] for i in self.out_idx)
+        except KeyError(e):
+            raise ValueError(f'Output axis {e} is not listed in any of the arguments.')
 
     @cached_property
     def _einsumfmt(self):
@@ -1753,11 +1792,6 @@ class Einsum(Array):
     @cached_property
     def dtype(self):
         return self.args[0].dtype
-
-    @cached_property
-    def shape(self):
-        lengths = {i: length for idx, arg in zip(self.args_idx, self.args) for i, length in zip(idx, arg.shape)}
-        return tuple(lengths[i] for i in self.out_idx)
 
     def _compile_expression(self, py_self, *args):
         return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr(self._einsumfmt), *args)
@@ -2065,12 +2099,9 @@ class Pointwise(Array):
     dependencies = util.abstract_property()
 
     def __post_init__(self):
-        shape0 = self.dependencies[0].shape
-        assert not any(_any_certainly_different(arg.shape, shape0) for arg in self.dependencies[1:]), 'pointwise arguments have inconsistent shapes'
-
-    @cached_property
-    def shape(self):
-        return self.dependencies[0].shape
+        self.shape = self.dependencies[0].shape
+        for dep in self.dependencies[1:]:
+            self.shape = AssertEqual.map(self.shape, dep.shape)
 
     def _newargs(self, *args):
         '''
