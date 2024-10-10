@@ -2043,8 +2043,6 @@ class Power(Array):
         if self.power.isconstant:
             p = self.power.eval()
             return einsum('A,A,AB->AB', constant(p), power(self.func, p - (p != 0)), derivative(self.func, var, seen))
-        if self.dtype == complex:
-            raise NotImplementedError('The complex derivative is not implemented.')
         # self = func**power
         # ln self = power * ln func
         # self` / self = power` * ln func + power * func` / func
