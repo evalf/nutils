@@ -5063,10 +5063,15 @@ class LoopConcatenate(Loop):
         elif self.index not in self.func.arguments:
             return Ravel(Transpose.from_end(InsertAxis(self.func, self.index.length), -2))
         unaligned, where = unalign(self.func)
+        reinserted_unit = False
         if self.ndim-1 not in where:
             # reinsert concatenation axis, at unit length if possible so we can
             # insert the remainder outside of the loop
-            unaligned = InsertAxis(unaligned, self.func.shape[-1] if self.index in self.func.shape[-1].arguments else constant(1))
+            n = self.func.shape[-1]
+            if self.index not in n.arguments and not isunit(n):
+                n = constant(1)
+                reinserted_unit = True
+            unaligned = InsertAxis(unaligned, n)
             where += self.ndim-1,
         elif where[-1] != self.ndim-1:
             # bring concatenation axis to the end
@@ -5074,7 +5079,7 @@ class LoopConcatenate(Loop):
             unaligned = Transpose.to_end(unaligned, axis)
             where = (*where[:axis], *where[axis+1:], self.ndim-1)
         f = loop_concatenate(unaligned, self.index)
-        if not _equals_simplified(self.shape[-1], f.shape[-1]):
+        if reinserted_unit:
             # last axis was reinserted at unit length AND it was not unit length
             # originally - if it was unit length originally then we proceed only if
             # there are other insertions to promote, otherwise we'd get a recursion.
