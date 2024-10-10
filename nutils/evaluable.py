@@ -86,42 +86,28 @@ def _isindex(arg):
 
 
 def _equals_simplified(arg1: 'Array', arg2: 'Array'):
+    'return True if certainly equal, False if certainly not equal, None otherwise'
+
     assert isinstance(arg1, Array), f'arg1={arg1!r}'
     assert isinstance(arg2, Array), f'arg2={arg2!r}'
     if arg1 is arg2:
         return True
-    assert equalshape(arg1.shape, arg2.shape) and arg1.dtype == arg2.dtype, f'arg1={arg1!r}, arg2={arg2!r}'
+    if arg1.dtype != arg2.dtype or arg1.ndim != arg2.ndim:
+        return False
     arg1 = arg1.simplified
     arg2 = arg2.simplified
     if arg1 is arg2:
         return True
     if arg1.arguments != arg2.arguments:
         return False
-    if arg1.isconstant: # implies arg2.isconstant
-        return numpy.all(arg1.eval() == arg2.eval())
+    if isinstance(arg1, Constant) and isinstance(arg2, Constant):
+        return False # values differ
 
 
-def equalshape(N: typing.Tuple['Array', ...], M: typing.Tuple['Array', ...]):
-    '''Compare two array shapes.
-
-    Returns `True` if all indices are certainly equal, `False` if any indices are
-    certainly not equal, or `None` if equality cannot be determined at compile
-    time.
-    '''
-
-    assert isinstance(N, tuple) and all(_isindex(n) for n in N), f'N={N!r}'
-    assert isinstance(M, tuple) and all(_isindex(n) for n in M), f'M={M!r}'
-    if N == M:
-        return True
-    if len(N) != len(M):
-        return False
-    retval = True
-    for eq in map(_equals_simplified, N, M):
-        if eq == False:
-            return False
-        if eq == None:
-            retval = None
-    return retval
+_certainly_different = lambda a, b: _equals_simplified(a, b) is False
+_certainly_equal = lambda a, b: _equals_simplified(a, b) is True
+_any_certainly_different = lambda a, b: any(map(_certainly_different, a, b))
+_all_certainly_equal = lambda a, b: all(map(_certainly_equal, a, b))
 
 
 class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning):
@@ -178,7 +164,7 @@ class Evaluable(types.DataClass):
         if retval is None:
             return obj
         if isinstance(obj, Array):
-            assert isinstance(retval, Array) and equalshape(retval.shape, obj.shape) and retval.dtype == obj.dtype, '{} --simplify--> {}'.format(obj, retval)
+            assert isinstance(retval, Array) and not _any_certainly_different(retval.shape, obj.shape) and retval.dtype == obj.dtype, '{} --simplify--> {}'.format(obj, retval)
         return retval
 
     def _simplified(self):
@@ -194,7 +180,7 @@ class Evaluable(types.DataClass):
         if retval is None:
             return obj
         if isinstance(obj, Array):
-            assert isinstance(retval, Array) and equalshape(retval.shape, obj.shape), '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
+            assert isinstance(retval, Array) and not _any_certainly_different(retval.shape, obj.shape), '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
         return retval
 
     def _optimized_for_numpy(self):
@@ -398,7 +384,7 @@ def align(arg, where, shape):
             where.append(i)
     if where != list(range(len(shape))):
         arg = Transpose(arg, util.untake(where))
-    assert equalshape(arg.shape, shape), f'arg.shape={arg.shape!r}, shape={shape!r}'
+    assert not _any_certainly_different(arg.shape, shape), f'arg.shape={arg.shape!r}, shape={shape!r}'
     return arg
 
 
@@ -457,7 +443,7 @@ def verify_sparse_chunks(func):
             for *indices, values in chunks:
                 assert len(indices) == self.ndim
                 assert all(idx.dtype == int for idx in indices)
-                assert all(equalshape(idx.shape, values.shape) for idx in indices)
+                assert not any(_any_certainly_different(idx.shape, values.shape) for idx in indices)
         elif chunks:
             assert len(chunks) == 1
             chunk, = chunks
@@ -716,7 +702,7 @@ class Orthonormal(Array):
     def __post_init__(self):
         assert isinstance(self.basis, Array) and self.basis.ndim >= 2 and self.basis.dtype not in (bool, complex), f'basis={self.basis!r}'
         assert isinstance(self.vector, Array) and self.vector.ndim >= 1 and self.vector.dtype not in (bool, complex), f'vector={self.vector!r}'
-        assert equalshape(self.basis.shape[:-1], self.vector.shape)
+        assert not _any_certainly_different(self.basis.shape[:-1], self.vector.shape)
 
     @property
     def dependencies(self):
@@ -772,7 +758,7 @@ class Orthonormal(Array):
         Q = -einsum('Aim,Amn,AjnB->AijB', G, invGG, derivative(G, var, seen))
         QN = einsum('Ai,AjiB->AjB', self, Q)
 
-        if _equals_simplified(G.shape[-1], G.shape[-2] - 1): # dim(kern(G)) = 1
+        if _certainly_equal(G.shape[-1], G.shape[-2] - 1): # dim(kern(G)) = 1
             # In this situation, since N is a basis for the kernel of G, we
             # have the identity P == N N^T which cancels the entire second term
             # of N' along with any reference to v', reducing it to N' = Q N.
@@ -1306,7 +1292,7 @@ class Inverse(Array):
     func: Array
 
     def __post_init__(self):
-        assert isinstance(self.func, Array) and self.func.dtype in (float, complex) and self.func.ndim >= 2 and _equals_simplified(self.func.shape[-1], self.func.shape[-2]), f'func={self.func!r}'
+        assert isinstance(self.func, Array) and self.func.dtype in (float, complex) and self.func.ndim >= 2 and not _certainly_different(self.func.shape[-1], self.func.shape[-2]), f'func={self.func!r}'
 
     @property
     def dependencies(self):
@@ -1361,7 +1347,7 @@ class Determinant(Array):
     func: Array
 
     def __post_init__(self):
-        assert isarray(self.func) and self.func.dtype in (float, complex) and self.func.ndim >= 2 and _equals_simplified(self.func.shape[-1], self.func.shape[-2])
+        assert isarray(self.func) and self.func.dtype in (float, complex) and self.func.ndim >= 2 and not _certainly_different(self.func.shape[-1], self.func.shape[-2])
 
     @property
     def dependencies(self):
@@ -1401,7 +1387,7 @@ class Multiply(Array):
     def __post_init__(self):
         assert isinstance(self.funcs, types.frozenmultiset), f'funcs={self.funcs!r}'
         func1, func2 = self.funcs
-        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Multiply({}, {})'.format(func1, func2)
+        assert not _any_certainly_different(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Multiply({}, {})'.format(func1, func2)
 
     @property
     def dependencies(self):
@@ -1588,7 +1574,7 @@ class Add(Array):
     def __post_init__(self):
         assert isinstance(self.funcs, types.frozenmultiset) and len(self.funcs) == 2, f'funcs={self.funcs!r}'
         func1, func2 = self.funcs
-        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Add({}, {})'.format(func1, func2)
+        assert not _any_certainly_different(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Add({}, {})'.format(func1, func2)
 
     @property
     def dependencies(self):
@@ -1750,7 +1736,7 @@ class Einsum(Array):
             for i, length in zip(idx, arg.shape):
                 if i not in lengths:
                     lengths[i] = length
-                elif not _equals_simplified(lengths[i], length):
+                elif _certainly_different(lengths[i], length):
                     raise ValueError('Axes with index {} have different lengths.'.format(i))
         for i in self.out_idx:
             if i not in lengths:
@@ -1881,7 +1867,7 @@ class TakeDiag(Array):
     func: Array
 
     def __post_init__(self):
-        assert isinstance(self.func, Array) and self.func.ndim >= 2 and _equals_simplified(*self.func.shape[-2:]), f'func={self.func!r}'
+        assert isinstance(self.func, Array) and self.func.ndim >= 2 and not _certainly_different(*self.func.shape[-2:]), f'func={self.func!r}'
 
     @property
     def dependencies(self):
@@ -2003,7 +1989,7 @@ class Power(Array):
     def __post_init__(self):
         assert isinstance(self.func, Array) and self.func.dtype != bool, f'func={self.func!r}'
         assert isinstance(self.power, Array) and (self.power.dtype in (float, complex) or self.power.dtype == int and self.power._intbounds[0] >= 0), f'power={self.power!r}'
-        assert equalshape(self.func.shape, self.power.shape) and self.func.dtype == self.power.dtype, 'Power({}, {})'.format(self.func, self.power)
+        assert not _any_certainly_different(self.func.shape, self.power.shape) and self.func.dtype == self.power.dtype, 'Power({}, {})'.format(self.func, self.power)
 
     @property
     def dependencies(self):
@@ -2080,7 +2066,7 @@ class Pointwise(Array):
 
     def __post_init__(self):
         shape0 = self.dependencies[0].shape
-        assert all(equalshape(arg.shape, shape0) for arg in self.dependencies[1:]), 'pointwise arguments have inconsistent shapes'
+        assert not any(_any_certainly_different(arg.shape, shape0) for arg in self.dependencies[1:]), 'pointwise arguments have inconsistent shapes'
 
     @cached_property
     def shape(self):
@@ -2907,7 +2893,7 @@ class Eig(Evaluable):
     symmetric: bool = False
 
     def __post_init__(self):
-        assert isinstance(self.func, Array) and self.func.ndim >= 2 and _equals_simplified(self.func.shape[-1], self.func.shape[-2]), f'func={self.func!r}'
+        assert isinstance(self.func, Array) and self.func.ndim >= 2 and not _certainly_different(self.func.shape[-1], self.func.shape[-2]), f'func={self.func!r}'
         assert isinstance(self.symmetric, bool), f'symmetric={self.symmetric!r}'
 
     @property
@@ -3094,7 +3080,7 @@ class Inflate(Array):
         assert isinstance(self.func, Array), f'func={self.func!r}'
         assert isinstance(self.dofmap, Array), f'dofmap={self.dofmap!r}'
         assert _isindex(self.length), f'length={self.length!r}'
-        assert equalshape(self.func.shape[self.func.ndim-self.dofmap.ndim:], self.dofmap.shape), f'func.shape={self.func.shape!r}, dofmap.shape={self.dofmap.shape!r}'
+        assert not _any_certainly_different(self.func.shape[self.func.ndim-self.dofmap.ndim:], self.dofmap.shape), f'func.shape={self.func.shape!r}, dofmap.shape={self.dofmap.shape!r}'
 
     @property
     def dependencies(self):
@@ -3739,7 +3725,7 @@ class Ravel(Array):
         return f.reshape(f.shape[:-2] + (f.shape[-2]*f.shape[-1],))
 
     def _multiply(self, other):
-        if isinstance(other, Ravel) and equalshape(other.func.shape[-2:], self.func.shape[-2:]):
+        if isinstance(other, Ravel) and _all_certainly_equal(other.func.shape[-2:], self.func.shape[-2:]):
             return Ravel(multiply(self.func, other.func))
         return Ravel(multiply(self.func, Unravel(other, *self.func.shape[-2:])))
 
@@ -3773,7 +3759,7 @@ class Ravel(Array):
     def _unravel(self, axis, shape):
         if axis != self.ndim-1:
             return Ravel(unravel(self.func, axis, shape))
-        elif equalshape(shape, self.func.shape[-2:]):
+        elif _all_certainly_equal(shape, self.func.shape[-2:]):
             return self.func
 
     def _inflate(self, dofmap, length, axis):
@@ -3827,7 +3813,7 @@ class Unravel(Array):
         assert isinstance(self.func, Array) and self.func.ndim > 0, f'func={self.func!r}'
         assert _isindex(self.sh1), f'sh1={self.sh1!r}'
         assert _isindex(self.sh2), f'sh2={self.sh2!r}'
-        assert _equals_simplified(self.func.shape[-1], self.sh1 * self.sh2)
+        assert not _certainly_different(self.func.shape[-1], self.sh1 * self.sh2)
 
     @property
     def dependencies(self):
@@ -3911,11 +3897,11 @@ class RavelIndex(Array):
             return RavelIndex(self.ia, _take(self.ib, index, axis - self.ia.ndim), self.na, self.nb)
 
     def _rtake(self, func, axis):
-        if _equals_simplified(func.shape[axis], self._length):
+        if _certainly_equal(func.shape[axis], self._length):
             return _take(_take(unravel(func, axis, (self.na, self.nb)), self.ib, axis+1), self.ia, axis)
 
     def _rinflate(self, func, length, axis):
-        if _equals_simplified(length, self._length):
+        if _certainly_equal(length, self._length):
             return Ravel(Inflate(_inflate(func, self.ia, self.na, func.ndim - self.ndim), self.ib, self.nb))
 
     def _unravel(self, axis, shape):
@@ -3956,7 +3942,7 @@ class Range(Array):
             return RavelIndex(Range(shape[0]), Range(shape[1]), shape[0], shape[1])
 
     def _rtake(self, func, axis):
-        if _equals_simplified(self.length, func.shape[axis]):
+        if _certainly_equal(self.length, func.shape[axis]):
             return func
 
     def _rinflate(self, func, length, axis):
@@ -4212,7 +4198,7 @@ class PolyMul(Array):
     def __post_init__(self):
         assert isinstance(self.coeffs_left, Array) and self.coeffs_left.ndim >= 1 and self.coeffs_left.dtype == float, f'coeffs_left={self.coeffs_left!r}'
         assert isinstance(self.coeffs_right, Array) and self.coeffs_right.ndim >= 1 and self.coeffs_right.dtype == float, f'coeffs_right={self.coeffs_right!r}'
-        assert equalshape(self.coeffs_left.shape[:-1], self.coeffs_right.shape[:-1]), 'PolyMul({}, {})'.format(self.coeffs_left, self.coeffs_right)
+        assert not _any_certainly_different(self.coeffs_left.shape[:-1], self.coeffs_right.shape[:-1]), 'PolyMul({}, {})'.format(self.coeffs_left, self.coeffs_right)
 
     @cached_property
     def degree_left(self):
@@ -4404,7 +4390,7 @@ class Choose(Array):
     def __post_init__(self):
         assert isinstance(self.index, Array) and self.index.dtype == int, f'index={self.index!r}'
         assert isinstance(self.choices, Array), f'choices={self.choices!r}'
-        assert equalshape(self.choices.shape[:-1], self.index.shape)
+        assert not _any_certainly_different(self.choices.shape[:-1], self.index.shape)
 
     @property
     def dependencies(self):
@@ -4467,7 +4453,7 @@ class NormDim(Array):
     def __post_init__(self):
         assert isinstance(self.length, Array) and self.length.dtype == int, f'length={self.length!r}'
         assert isinstance(self.index, Array) and self.index.dtype == int, f'index={self.index!r}'
-        assert equalshape(self.length.shape, self.index.shape)
+        assert not _any_certainly_different(self.length.shape, self.index.shape)
         # The following corner cases makes the assertion fail, hence we can only
         # assert the bounds if the arrays are guaranteed to be unempty:
         #
@@ -5219,7 +5205,7 @@ class UniqueInverse(Array):
     def __post_init__(self):
         assert self.unique_mask.dtype == bool and self.unique_mask.ndim == 1
         assert self.sorter.dtype == int and self.sorter.ndim == 1
-        assert self.unique_mask.shape == self.sorter.shape
+        assert not _any_certainly_different(self.unique_mask.shape, self.sorter.shape), (self.unique_mask, self.sorter)
 
     @property
     def shape(self):
@@ -5303,7 +5289,7 @@ def _numpy_align(a, b):
         return _inflate_scalar(a, b.shape), b
     if not b.ndim:
         return a, _inflate_scalar(b, a.shape)
-    if equalshape(a.shape, b.shape):
+    if not _any_certainly_different(a.shape, b.shape):
         return a, b
     raise ValueError('incompatible shapes: {} != {}'.format(*[tuple(int(n) if n.isconstant else n for n in arg.shape) for arg in (a, b)]))
 
@@ -5577,7 +5563,7 @@ def grammium(arg, axes=(-2, -1)):
 
 def sqrt_abs_det_gram(arg, axes=(-2, -1)):
     arg = Transpose.to_end(arg, *axes)
-    if _equals_simplified(arg.shape[-1], arg.shape[-2]):
+    if _certainly_equal(arg.shape[-1], arg.shape[-2]):
         return abs(determinant(arg))
     else:
         return sqrt(abs(determinant(grammium(arg))))
@@ -5617,7 +5603,7 @@ def derivative(func, var, seen=None):
     else:
         result = func._derivative(var, seen)
         seen[func] = result
-    assert equalshape(result.shape, func.shape+var.shape) and result.dtype == func.dtype, 'bug in {}._derivative'.format(type(func).__name__)
+    assert not _any_certainly_different(result.shape, func.shape+var.shape) and result.dtype == func.dtype, 'bug in {}._derivative'.format(type(func).__name__)
     return result
 
 
@@ -5664,7 +5650,7 @@ def take(arg: Array, index: Array, axis: int):
     assert isinstance(axis, int), f'axis={axis!r}'
     length = arg.shape[axis]
     if index.dtype == bool:
-        assert _equals_simplified(index.shape[0], length)
+        assert not _certainly_different(index.shape[0], length)
         index = Find(index)
     elif isinstance(index, Constant):
         index_ = index.value
@@ -5695,7 +5681,7 @@ def _inflate(arg: Array, dofmap: Array, length: Array, axis: int):
     assert _isindex(length), f'length={length!r}'
     assert isinstance(axis, int), f'axis={axis!r}'
     axis = numeric.normdim(arg.ndim+1-dofmap.ndim, axis)
-    assert equalshape(dofmap.shape, arg.shape[axis:axis+dofmap.ndim])
+    assert not _any_certainly_different(dofmap.shape, arg.shape[axis:axis+dofmap.ndim])
     return Transpose.from_end(Inflate(Transpose.to_end(arg, *range(axis, axis+dofmap.ndim)), dofmap, length), axis)
 
 
@@ -5790,7 +5776,7 @@ def replace_arguments(value, arguments):
     '''
     if isinstance(value, Argument) and value.name in arguments:
         v = asarray(arguments[value.name])
-        assert equalshape(value.shape, v.shape), (value.shape, v.shape)
+        assert not _any_certainly_different(value.shape, v.shape), (value.shape, v.shape)
         assert value.dtype == v.dtype, (value.dtype, v.dtype)
         return v
 
@@ -5872,7 +5858,7 @@ def einsum(fmt, *args, **dims):
     for s, arg in zip(sin, args):
         assert len(s) == arg.ndim
         for c, sh in zip(s, arg.shape):
-            if not _equals_simplified(shapes.setdefault(c, sh), sh):
+            if _certainly_different(shapes.setdefault(c, sh), sh):
                 raise ValueError('shapes do not match for axis {0[0]}{0[1]}'.format(c))
 
     ret = None

@@ -43,8 +43,7 @@ class LowerArgs(NamedTuple):
     coordinates: Mapping[str, evaluable.Array]
 
     def consistent(self):
-        return all(
-            evaluable.equalshape(coords.shape[:-1], self.points_shape)
+        return not any(evaluable._any_certainly_different(coords.shape[:-1], self.points_shape)
             and space in self.transform_chains
                 for space, coords in self.coordinates.items())
 
@@ -2438,7 +2437,7 @@ class Basis(Array):
         self._arg_ndofs_evaluable = evaluable.asarray(self._arg_dofs_evaluable.shape[0])
         assert self._arg_dofs_evaluable.ndim == 1
         assert self._arg_coeffs_evaluable.ndim == 2
-        assert evaluable._equals_simplified(self._arg_dofs_evaluable.shape[0], self._arg_coeffs_evaluable.shape[0])
+        assert not evaluable._certainly_different(self._arg_dofs_evaluable.shape[0], self._arg_coeffs_evaluable.shape[0])
 
     @cached_property
     def _arg_dofs(self):

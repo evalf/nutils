@@ -530,7 +530,7 @@ class _pseudotime(cache.Recursion, length=1):
         if len(residual) != len(inertia):
             raise Exception('length of residual and inertia do no match')
         for inert, res in zip(inertia, residual):
-            if inert and not evaluable.equalshape(inert.shape, res.shape):
+            if inert and evaluable._any_certainly_different(inert.shape, res.shape):
                 raise ValueError('expected `inertia` with shape {} but got {}'.format(res.shape, inert.shape))
         self.target = target
         self.timesteptarget = '_pseudotime_timestep'
@@ -627,7 +627,7 @@ class _thetamethod(cache.Recursion, length=1, version=1):
         if len(residual) != len(inertia):
             raise Exception('length of residual and inertia do no match')
         for inert, res in zip(inertia, residual):
-            if not evaluable.equalshape(inert.shape, res.shape):
+            if evaluable._any_certainly_different(inert.shape, res.shape):
                 raise ValueError('expected `inertia` with shape {} but got {}'.format(res.shape, inert.shape))
         self.target = target
         self.newtonargs = newtonargs
@@ -819,7 +819,7 @@ def _derivative(residual, target, jacobian=None):
         jacobian = tuple(evaluable.derivative(res, argobjs[t]).simplified for res in residual for t in target)
     elif len(jacobian) != len(residual) * len(target):
         raise ValueError('jacobian has incorrect length')
-    elif not all(evaluable.equalshape(jacobian[i*len(target)+j].shape, res.shape + argobjs[t].shape) for i, res in enumerate(residual) for j, t in enumerate(target)):
+    elif any(evaluable._any_certainly_different(jacobian[i*len(target)+j].shape, res.shape + argobjs[t].shape) for i, res in enumerate(residual) for j, t in enumerate(target)):
         raise ValueError('jacobian has incorrect shape')
     return jacobian
 
