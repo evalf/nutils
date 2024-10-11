@@ -1302,22 +1302,38 @@ def _determine_dtype(targets, residuals, lhs0, constrain):
     return dtype
 
 
-def _target_helper(target, *args):
-    targets = target.rstrip(',').split(',') if isinstance(target, str) else list(target)
-    is_functional = [':' in target for target in targets]
-    if all(is_functional):
-        targets, tests = zip(*[t.split(':', 1) for t in targets])
-        arguments = function._join_arguments(arg.arguments for arg in args)
-        testargs = [function.Argument(t, *arguments[t]) for t in tests]
-        args = [map(arg.derivative, testargs) for arg in args]
-    elif any(is_functional):
+def _split_trial_test(target):
+    if isinstance(target, str):
+        target = target.rstrip(',')
+        target = target.split(',') if target else []
+    if not target:
+        raise ValueError('no targets specified')
+    target = [item.split(':') if isinstance(item, str) else item for item in target]
+    n = len(target[0])
+    if not all(len(t) == n for t in target):
         raise ValueError('inconsistent targets')
+    if n == 1:
+        trial, = zip(*target)
+        test = None
+    elif n == 2:
+        trial, test = zip(*target)
+    else:
+        raise ValueError('invalid targets')
+    return trial, test
+
+
+def _target_helper(target, *args):
+    trial, test = _split_trial_test(target)
+    if test is not None:
+        arguments = function._join_arguments(arg.arguments for arg in args)
+        testargs = [function.Argument(t, *arguments[t]) for t in test]
+        args = [map(arg.derivative, testargs) for arg in args]
     elif len(args) > 1:
         shapes = [{f.shape for f in ziparg if f is not None} for ziparg in zip(*args)]
         if any(len(arg) != len(shapes) for arg in args) or any(len(shape) != 1 for shape in shapes):
             raise ValueError('inconsistent residuals')
         args = [[function.zeros(shape) if f is None else f for f, (shape,) in zip(arg, shapes)] for arg in args]
-    return (tuple(targets), *[tuple(f.as_evaluable_array for f in arg) for arg in args])
+    return trial, *[tuple(f.as_evaluable_array for f in arg) for arg in args]
 
 
 class _First:
