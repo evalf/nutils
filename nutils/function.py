@@ -3341,7 +3341,11 @@ class __implementations__:
             raise NotImplementedError('only "ord" values of None are supported for now')
         if axis is None:
             axis = range(x.ndim)
-        return numpy.sqrt(numpy.sum(x * numpy.conjugate(x), axis))
+        # NOTE while the sum of squares is always positive, we wrap it in
+        # maximum(0, ..) to guard against the situation that the function
+        # simplifies to a form in which round-off errors may nudge it below
+        # zero (e.g. (a-b)^2 -> a^2 - 2 a b + b^2).
+        return numpy.sqrt(numpy.maximum(0, numpy.sum(numpy.real(x)**2 + numpy.imag(x)**2, axis)))
 
     def _eig(symmetric, index, a):
         return evaluable.Eig(a, symmetric)[index]
