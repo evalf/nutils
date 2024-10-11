@@ -43,6 +43,8 @@ class check(TestCase):
         self.assertEqual(self.desired.shape, tuple(n.__index__() for n in self.actual.shape))
 
     def assertArrayAlmostEqual(self, actual, desired, decimal):
+        if actual.dtype != desired.dtype:
+            self.fail('dtypes of actual {} and desired {} are different.'.format(actual.dtype, desired.dtype))
         if actual.shape != desired.shape:
             self.fail('shapes of actual {} and desired {} are incompatible.'.format(actual.shape, desired.shape))
         error = actual - desired if not actual.dtype.kind == desired.dtype.kind == 'b' else actual ^ desired
@@ -74,7 +76,7 @@ class check(TestCase):
             indices, values, shape = sparse.extract(evaluable.eval_sparse(actual, **evalargs))
             self.assertEqual(tuple(map(int, shape)), desired.shape)
             if not indices:
-                dense = values.sum()
+                dense = values.sum(dtype=values.dtype)
             else:
                 dense = numpy.zeros(desired.shape, values.dtype)
                 numpy.add.at(dense, indices, values)
@@ -299,7 +301,7 @@ class check(TestCase):
 
     def test_conjugate(self):
         self.assertFunctionAlmostEqual(decimal=14,
-                                       desired=numpy.conjugate(self.desired),
+                                       desired=numpy.conjugate(self.desired).astype(self.desired.dtype),
                                        actual=evaluable.conjugate(self.actual))
 
     def test_mask(self):
