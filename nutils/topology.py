@@ -1561,6 +1561,8 @@ class TransformChainsTopology(Topology):
             with log.iter.percentage('trimming', range(len(self)), self.references) as items:
                 for ielem, ref in items:
                     levels = levelset(_trim_index=ielem, **arguments)
+                    if numpy.isnan(levels).any():
+                        raise Exception('levelset function evaluated to NaN values')
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
         else:
             # `levelset` is evaluable on `leveltopo`, which must be a uniform
@@ -1596,6 +1598,8 @@ class TransformChainsTopology(Topology):
                             lowered_levelset[degree] = evaluable.compile(levelset.lower(lower_args), stats=False)
                         levels[indices] = lowered_levelset[degree](_ielem=ielem, **arguments)
                         mask[indices] = False
+                    if numpy.isnan(levels).any():
+                        raise Exception('levelset function evaluated to NaN values')
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
             log.debug('cache', fcache.stats)
         return SubsetTopology(self, refs, newboundary=name)
