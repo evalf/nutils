@@ -6261,7 +6261,9 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
 
     # Compile.
     eval(builtins.compile(script, name, 'exec'), globals)
-    return globals['compiled']
+    compiled = globals['compiled']
+    compiled.__nutils_hash__ = types.nutils_hash(script)
+    return compiled
 
 
 def _define_loop_block_structure(targets: typing.Tuple[Evaluable, ...]) -> typing.Tuple[Evaluable, ...]:
