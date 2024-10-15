@@ -365,7 +365,7 @@ class System:
             log.info(f'optimal value: {val:.1e}')
         return arguments
 
-    def step(self, *, timestep: float, timearg: str, suffix: str, arguments: Dict[str, numpy.ndarray], **solveargs) -> Dict[str, numpy.ndarray]:
+    def step(self, *, timestep: float, suffix: str, arguments: Dict[str, numpy.ndarray], timearg: Optional[str] = None, timesteparg: Optional[str] = None, **solveargs) -> Dict[str, numpy.ndarray]:
         '''Advance a time step.
 
         This method is best described by an example. Let ``timearg`` equal 't'
@@ -389,21 +389,28 @@ class System:
             Remaining keyword arguments are passed on to the ``solver`` method.
         '''
 
+        if not timearg and not timesteparg:
+            raise ValueError('either timearg or timesteparg should be specified')
         arguments = arguments.copy()
         for trial in self.trials:
             if trial in arguments:
                 arguments[trial + suffix] = arguments[trial]
-        time = arguments.get(timearg, 0.)
-        arguments[timearg + suffix] = time
-        arguments[timearg] = time + timestep
+        if timesteparg:
+            arguments[timesteparg] = timestep
+        if timearg:
+            time = arguments.get(timearg, 0.)
+            arguments[timearg + suffix] = time
+            arguments[timearg] = time + timestep
         try:
             return self.solve(arguments=arguments, **solveargs)
         except (SolverError, matrix.MatrixError) as e:
+            if timearg not in self.argshapes and timesteparg not in self.argshapes:
+                raise
             log.error(f'error: {e}; retrying with timestep {timestep/2}')
             with log.context('tic'):
-                halfway_arguments = self.step(timestep=timestep/2, timearg=timearg, suffix=suffix, arguments=arguments, **solveargs)
+                halfway_arguments = self.step(timestep=timestep/2, timearg=timearg, timesteparg=timesteparg, suffix=suffix, arguments=arguments, **solveargs)
             with log.context('toc'):
-                return self.step(timestep=timestep/2, timearg=timearg, suffix=suffix, arguments=halfway_arguments, **solveargs)
+                return self.step(timestep=timestep/2, timearg=timearg, timesteparg=timesteparg, suffix=suffix, arguments=halfway_arguments, **solveargs)
 
     @cache.function
     @log.withcontext
