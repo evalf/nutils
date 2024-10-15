@@ -1,4 +1,5 @@
-from nutils import mesh, function, solver, export, testing
+from nutils import mesh, function, export, testing
+from nutils.solver import System
 from nutils.expression_v2 import Namespace
 import treelog as log
 import numpy
@@ -50,20 +51,18 @@ def main(nelems: int = 24,
     ns.q_i = '-δ_i1'
 
     sqr = domain.boundary['top'].integral('u_k u_k dS' @ ns, degree=degree*2)
-    cons = solver.optimize(('u',), sqr, droptol=1e-15)
+    cons = System(sqr, trial='u').optimize(droptol=1e-15)
 
     # solve for equilibrium configuration
-    internal = domain.integral('E dV' @ ns, degree=degree*2)
-    external = domain.integral('u_i q_i dV' @ ns, degree=degree*2)
-    args = solver.optimize('u,', internal - external, constrain=cons)
+    energy = domain.integral('(E - u_i q_i) dV' @ ns, degree=degree*2)
+    args = System(energy, trial='u').solve(constrain=cons)
 
     # evaluate tractions and net force
     if direct:
         ns.t_i = 'σ_ij n_j' # <-- this is an inadmissible boundary term
     else:
-        external += domain.boundary['top'].integral('u_i t_i dS' @ ns, degree=degree*2)
-        invcons = dict(t=numpy.choose(numpy.isnan(cons['u']), [numpy.nan, 0.]))
-        args = solver.solve_linear(('t',), [(internal - external).derivative('u')], constrain=invcons, arguments=args)
+        energy -= domain.boundary['top'].integral('u_i t_i dS' @ ns, degree=degree*2)
+        args = System(energy, trial='t', test='u').solve(constrain={'t': numpy.isnan(cons['u'])}, arguments=args)
     F = domain.boundary['top'].integrate('t_i dS' @ ns, degree=degree*2, arguments=args)
     log.user('total clamping force:', F)
 
@@ -132,8 +131,8 @@ class test(testing.TestCase):
                 eNpjaGBAhSBAZTEAEKAUAQ==''')
         with self.subTest('solution'):
             self.assertAlmostEqual64(args['u'], '''
-                eNqTNig6vcVwwekjRuJn5Iy1zzIAwQs999MdBmWn+w0Zz7QYpoPF/v+3Pv3/f/5pBgbWMwwM8WAxiYvu
-                pyvOl50uPMd4puYcRN3T80Wnfc4tOG1zVvzMozMQ8wAOOSng''')
+                eNqTNig6vcVwwekjRuJn5Iy1zzIAwQs999MdBmWn+w0Zz7QYpoPFGBisTzMw5AMx6xkGhniwmMRF99MV
+                58tOF55jPFNzDqLu6fmi0z7nFpy2OSt+5tEZiHkAKRAl5A==''')
         with self.subTest('traction'):
             self.assertAlmostEqual64(args['t'], '''
                 eNpjYEAF/Sc+maMJMdw0emzGgAFiMdSpn8VUV2j+yRwAoCAJFw==''')

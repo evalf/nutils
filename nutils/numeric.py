@@ -444,11 +444,9 @@ def accumulate(data, index, shape):
     ...   return array
     '''
 
-    ndim = len(shape)
-    assert data.ndim == 1
-    assert len(index) == ndim and all(isintarray(ind) and ind.shape == data.shape for ind in index)
-    if not ndim:
-        return data.sum()
+    assert len(index) == len(shape), f'{len(index)} != {len(shape)}'
+    if not shape:
+        return data.sum(dtype=data.dtype)
     retval = numpy.zeros(shape, data.dtype)
     numpy.add.at(retval, tuple(index), data)
     return retval
@@ -676,6 +674,30 @@ def sanitize_einsum_subscripts(subscripts, *shapes):
     for index in set(out) - set(''.join(in_)):
         raise ValueError(f'einstein sum subscripts string included output subscript {index!r} which never appeared in an input')
     return (*in_, out)
+
+
+def compress_indices(indices, length):
+    '''Return insertion positions in monotonically increasing index vector.
+
+    The compressed array ``c`` is such that ``indices[c[i]:c[i+1]] == i`` for
+    any integer ``0 <= i < length``. Fails with ``ValueError`` if ``indices``
+    are out of bounds or not monotonically increasing; otherwise fully
+    equivalent to ``indices.searchsorted(numpy.arange(length + 1))``.
+    '''
+
+    if not len(indices):
+        return numpy.zeros((length+1,), int)
+    if indices[0] < 0 or indices[-1] >= length:
+        raise ValueError('indices are out of bounds')
+    step = numpy.empty(len(indices)+1, dtype=int)
+    step[0] = indices[0] + 1
+    numpy.subtract(indices[1:], indices[:-1], out=step[1:-1])
+    step[-1] = length - indices[-1]
+    nz, = step.nonzero()
+    try:
+        return numpy.repeat(nz, step[nz]) # fails if any step is negative
+    except ValueError:
+        raise ValueError('indices are not monotomically increasing') from None
 
 
 # vim:sw=4:sts=4:et

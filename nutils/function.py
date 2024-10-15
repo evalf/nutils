@@ -43,8 +43,7 @@ class LowerArgs(NamedTuple):
     coordinates: Mapping[str, evaluable.Array]
 
     def consistent(self):
-        return all(
-            evaluable.equalshape(coords.shape[:-1], self.points_shape)
+        return not any(evaluable._any_certainly_different(coords.shape[:-1], self.points_shape)
             and space in self.transform_chains
                 for space, coords in self.coordinates.items())
 
@@ -2438,7 +2437,7 @@ class Basis(Array):
         self._arg_ndofs_evaluable = evaluable.asarray(self._arg_dofs_evaluable.shape[0])
         assert self._arg_dofs_evaluable.ndim == 1
         assert self._arg_coeffs_evaluable.ndim == 2
-        assert evaluable._equals_simplified(self._arg_dofs_evaluable.shape[0], self._arg_coeffs_evaluable.shape[0])
+        assert not evaluable._certainly_different(self._arg_dofs_evaluable.shape[0], self._arg_coeffs_evaluable.shape[0])
 
     @cached_property
     def _arg_dofs(self):
@@ -3341,7 +3340,11 @@ class __implementations__:
             raise NotImplementedError('only "ord" values of None are supported for now')
         if axis is None:
             axis = range(x.ndim)
-        return numpy.sqrt(numpy.sum(x * numpy.conjugate(x), axis))
+        # NOTE while the sum of squares is always positive, we wrap it in
+        # maximum(0, ..) to guard against the situation that the function
+        # simplifies to a form in which round-off errors may nudge it below
+        # zero (e.g. (a-b)^2 -> a^2 - 2 a b + b^2).
+        return numpy.sqrt(numpy.maximum(0, numpy.sum(numpy.real(x)**2 + numpy.imag(x)**2, axis)))
 
     def _eig(symmetric, index, a):
         return evaluable.Eig(a, symmetric)[index]

@@ -41,9 +41,9 @@ class Matrix:
         self._cached_submatrix = None
 
     def __reduce__(self):
-        from . import assemble
-        data, index = self.export('coo')
-        return assemble, (data, index, self.shape)
+        from . import assemble_csr
+        data, colidx, rowptr = self.export('csr')
+        return assemble_csr, (data, rowptr, colidx, self.shape[1])
 
     @abc.abstractmethod
     def __add__(self, other):
@@ -169,7 +169,11 @@ class Matrix:
         else:
             assert rconstrain.shape == (nrows,) and constrain.dtype == bool
             I = ~rconstrain
-        lhs[J] += self.submatrix(I, J)._solver((rhs - self @ lhs)[I], solver, atol=atol, rtol=rtol, **solverargs)
+        try:
+            lhs[J] += self.submatrix(I, J)._solver((rhs - self @ lhs)[I], solver, atol=atol, rtol=rtol, **solverargs)
+        except ToleranceNotReached as e:
+            lhs[J] += e.best
+            raise ToleranceNotReached(lhs) from None
         return lhs
 
     def solve_leniently(self, *args, **kwargs):

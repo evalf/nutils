@@ -1,4 +1,5 @@
-from nutils import export, function, mesh, solver, testing
+from nutils import export, function, mesh, testing
+from nutils.solver import System
 from nutils.expression_v2 import Namespace
 import functools
 import numpy
@@ -115,7 +116,7 @@ def main(nelems: int = 50,
     res = REV.integral(RZ.integral('-∇_j(Atest_i) ∇_j(A_i) dV' @ ns, degree=2*degree), degree=0)
     res += REV.integral(RZ['coil'].integral('μ0 Atest_i J_i dV' @ ns, degree=2*degree), degree=0)
 
-    args = solver.solve_linear('A:Atest,', res)
+    args = System(res, trial='A', test='Atest').solve()
 
     # Since the coordinate transformation is singular at r=0 we can't evaluate
     # `B` (the curl of `A`) at r=0. We circumvent this problem by projecting `B`
@@ -124,7 +125,7 @@ def main(nelems: int = 50,
     ns.Borig = ns.B
     ns.add_field(('B', 'Btest'), RZ.basis('spline', degree=degree), ns.rot, dtype=complex)
     res = REV.integral(RZ.integral('Btest_i (B_i - Borig_i) dV' @ ns, degree=2*degree), degree=0)
-    args = solver.solve_linear('B:Btest,', res, arguments=args)
+    args = System(res, trial='B', test='Btest').solve(arguments=args)
 
     with export.mplfigure('magnetic-potential-1.png', dpi=300) as fig:
         ax = fig.add_subplot(111, aspect='equal', xlabel='$x_0$', ylabel='$x_2$', adjustable='datalim')

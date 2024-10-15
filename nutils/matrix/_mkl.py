@@ -18,13 +18,11 @@ else:
         raise BackendNotAvailable('the Intel MKL matrix backend requires libmkl to be installed (try: pip install mkl)')
 
 
-def assemble(data, index, shape):
+def assemble(data, rowptr, colidx, ncols):
     # In the increments below the output dtype is set to int32 not only to avoid
     # an additional allocation, but crucially also to avoid truncation in case
     # the incremented index overflows the original type.
-    return MKLMatrix(data, ncols=shape[1],
-                     rowptr=numpy.add(index[0].searchsorted(numpy.arange(shape[0]+1)), 1, dtype=numpy.int32),
-                     colidx=numpy.add(index[1], 1, dtype=numpy.int32))
+    return MKLMatrix(data, ncols=ncols, rowptr=numpy.add(rowptr, 1, dtype=numpy.int32), colidx=numpy.add(colidx, 1, dtype=numpy.int32))
 
 
 class Pardiso:
@@ -150,7 +148,7 @@ class MKLMatrix(Matrix):
         if not isinstance(other, numpy.ndarray):
             raise TypeError
         if other.shape[0] != self.shape[1]:
-            raise MatrixError
+            raise MatrixError(f'cannot multiply {self.shape[0]}x{self.shape[1]} matrix with array of length {other.shape[0]}')
         x = numpy.ascontiguousarray(other.T, dtype=self.dtype)
         y = numpy.empty(x.shape[:-1] + self.shape[:1], dtype=self.dtype)
         if other.ndim == 1:

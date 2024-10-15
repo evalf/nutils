@@ -85,49 +85,29 @@ def _isindex(arg):
     return isinstance(arg, Array) and arg.ndim == 0 and arg.dtype == int and arg._intbounds[0] >= 0
 
 
-def _equals_scalar_constant(arg: 'Array', value: Dtype):
-    assert isinstance(arg, Array) and arg.ndim == 0, f'arg={arg!r}'
-    assert arg.dtype == type(value), f'arg.dtype={arg.dtype}, type(value)={type(value)}'
-    return arg.isconstant and arg.eval() == value
-
-
 def _equals_simplified(arg1: 'Array', arg2: 'Array'):
+    'return True if certainly equal, False if certainly not equal, None otherwise'
+
     assert isinstance(arg1, Array), f'arg1={arg1!r}'
     assert isinstance(arg2, Array), f'arg2={arg2!r}'
     if arg1 is arg2:
         return True
-    assert equalshape(arg1.shape, arg2.shape) and arg1.dtype == arg2.dtype, f'arg1={arg1!r}, arg2={arg2!r}'
+    if arg1.dtype != arg2.dtype or arg1.ndim != arg2.ndim:
+        return False
     arg1 = arg1.simplified
     arg2 = arg2.simplified
     if arg1 is arg2:
         return True
     if arg1.arguments != arg2.arguments:
         return False
-    if arg1.isconstant: # implies arg2.isconstant
-        return numpy.all(arg1.eval() == arg2.eval())
+    if isinstance(arg1, Constant) and isinstance(arg2, Constant):
+        return False # values differ
 
 
-def equalshape(N: typing.Tuple['Array', ...], M: typing.Tuple['Array', ...]):
-    '''Compare two array shapes.
-
-    Returns `True` if all indices are certainly equal, `False` if any indices are
-    certainly not equal, or `None` if equality cannot be determined at compile
-    time.
-    '''
-
-    assert isinstance(N, tuple) and all(_isindex(n) for n in N), f'N={N!r}'
-    assert isinstance(M, tuple) and all(_isindex(n) for n in M), f'M={M!r}'
-    if N == M:
-        return True
-    if len(N) != len(M):
-        return False
-    retval = True
-    for eq in map(_equals_simplified, N, M):
-        if eq == False:
-            return False
-        if eq == None:
-            retval = None
-    return retval
+_certainly_different = lambda a, b: _equals_simplified(a, b) is False
+_certainly_equal = lambda a, b: _equals_simplified(a, b) is True
+_any_certainly_different = lambda a, b: any(map(_certainly_different, a, b))
+_all_certainly_equal = lambda a, b: all(map(_certainly_equal, a, b))
 
 
 class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning):
@@ -184,7 +164,7 @@ class Evaluable(types.DataClass):
         if retval is None:
             return obj
         if isinstance(obj, Array):
-            assert isinstance(retval, Array) and equalshape(retval.shape, obj.shape) and retval.dtype == obj.dtype, '{} --simplify--> {}'.format(obj, retval)
+            assert isinstance(retval, Array) and not _any_certainly_different(retval.shape, obj.shape) and retval.dtype == obj.dtype, '{} --simplify--> {}'.format(obj, retval)
         return retval
 
     def _simplified(self):
@@ -200,7 +180,7 @@ class Evaluable(types.DataClass):
         if retval is None:
             return obj
         if isinstance(obj, Array):
-            assert isinstance(retval, Array) and equalshape(retval.shape, obj.shape), '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
+            assert isinstance(retval, Array) and not _any_certainly_different(retval.shape, obj.shape), '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
         return retval
 
     def _optimized_for_numpy(self):
@@ -404,7 +384,7 @@ def align(arg, where, shape):
             where.append(i)
     if where != list(range(len(shape))):
         arg = Transpose(arg, util.untake(where))
-    assert equalshape(arg.shape, shape), f'arg.shape={arg.shape!r}, shape={shape!r}'
+    assert not _any_certainly_different(arg.shape, shape), f'arg.shape={arg.shape!r}, shape={shape!r}'
     return arg
 
 
@@ -463,7 +443,7 @@ def verify_sparse_chunks(func):
             for *indices, values in chunks:
                 assert len(indices) == self.ndim
                 assert all(idx.dtype == int for idx in indices)
-                assert all(equalshape(idx.shape, values.shape) for idx in indices)
+                assert not any(_any_certainly_different(idx.shape, values.shape) for idx in indices)
         elif chunks:
             assert len(chunks) == 1
             chunk, = chunks
@@ -595,6 +575,18 @@ class Array(Evaluable):
     def imag(self):
         return imag(self)
 
+    @property
+    def assparse(self):
+        if not self.ndim:
+            return InsertAxis(self, constant(1)), (), ()
+        sparse = self._assparse
+        if not sparse:
+            indices = [zeros((constant(0),), int)] * self.ndim
+            values = zeros((constant(0),), self.dtype)
+        else:
+            *indices, values = tuple(concatenate([_flat(array) for array in arrays]) for arrays in zip(*sparse))
+        return values, tuple(indices), self.shape
+
     @cached_property
     @verify_sparse_chunks
     def _assparse(self):
@@ -671,17 +663,16 @@ class Array(Evaluable):
     @cached_property
     def _intbounds(self):
         # inclusive lower and upper bounds
+        lower, upper = self._intbounds_impl()
+        assert isinstance(lower, int) or lower == float('-inf')
+        assert isinstance(upper, int) or upper == float('inf')
+        assert lower <= upper
+        return lower, upper
+
+    def _intbounds_impl(self):
         if self.ndim == 0 and self.dtype == int and self.isconstant:
             value = self.__index__()
             return value, value
-        else:
-            lower, upper = self._intbounds_impl()
-            assert isinstance(lower, int) or lower == float('-inf')
-            assert isinstance(upper, int) or upper == float('inf')
-            assert lower <= upper
-            return lower, upper
-
-    def _intbounds_impl(self):
         return float('-inf'), float('inf')
 
     @property
@@ -700,6 +691,46 @@ class Array(Evaluable):
         return NotImplemented
 
 
+class AssertEqual(Array):
+    'Confirm arrays equality at runtime'
+
+    a: Array
+    b: Array
+
+    @classmethod
+    def map(cls, A, B):
+        return tuple(map(cls, A, B))
+
+    def __post_init__(self):
+        assert not _certainly_different(self.a, self.b)
+
+    @property
+    def dtype(self):
+        return self.a.dtype
+
+    @cached_property
+    def shape(self):
+        return self.map(self.a.shape, self.b.shape)
+
+    def _intbounds_impl(self):
+        lowera, uppera = self.a._intbounds_impl()
+        lowerb, upperb = self.b._intbounds_impl()
+        return max(lowera, lowerb), min(uppera, upperb)
+
+    def _simplified(self):
+        if self.a == self.b:
+            return self.a
+
+    @property
+    def dependencies(self):
+        return self.a, self.b
+
+    def evalf(self, a, b):
+        if a.shape != b.shape or (a != b).any():
+            raise Exception('values are not equal')
+        return a
+
+
 class Orthonormal(Array):
     'make a vector orthonormal to a subspace'
 
@@ -711,7 +742,7 @@ class Orthonormal(Array):
     def __post_init__(self):
         assert isinstance(self.basis, Array) and self.basis.ndim >= 2 and self.basis.dtype not in (bool, complex), f'basis={self.basis!r}'
         assert isinstance(self.vector, Array) and self.vector.ndim >= 1 and self.vector.dtype not in (bool, complex), f'vector={self.vector!r}'
-        assert equalshape(self.basis.shape[:-1], self.vector.shape)
+        assert not _any_certainly_different(self.basis.shape[:-1], self.vector.shape)
 
     @property
     def dependencies(self):
@@ -722,7 +753,7 @@ class Orthonormal(Array):
         return self.vector.shape
 
     def _simplified(self):
-        if _equals_scalar_constant(self.shape[-1], 1):
+        if isunit(self.shape[-1]):
             return Sign(self.vector)
         basis, vector, where = unalign(self.basis, self.vector, naxes=self.ndim - 1)
         if len(where) < self.ndim - 1:
@@ -737,7 +768,7 @@ class Orthonormal(Array):
         return numeric.normalize(n - v3)
 
     def _derivative(self, var, seen):
-        if _equals_scalar_constant(self.shape[-1], 1):
+        if isunit(self.shape[-1]):
             return zeros(self.shape + var.shape)
 
         # definitions:
@@ -767,7 +798,7 @@ class Orthonormal(Array):
         Q = -einsum('Aim,Amn,AjnB->AijB', G, invGG, derivative(G, var, seen))
         QN = einsum('Ai,AjiB->AjB', self, Q)
 
-        if _equals_simplified(G.shape[-1], G.shape[-2] - 1): # dim(kern(G)) = 1
+        if _certainly_equal(G.shape[-1], G.shape[-2] - 1): # dim(kern(G)) = 1
             # In this situation, since N is a basis for the kernel of G, we
             # have the identity P == N N^T which cancels the entire second term
             # of N' along with any reference to v', reducing it to N' = Q N.
@@ -873,9 +904,8 @@ class Constant(Array):
                                                                     list(range(axis1)) + list(range(axis1+1, axis2)) + list(range(axis2+1, self.ndim)) + [axis1, axis2])))
 
     def _take(self, index, axis):
-        if index.isconstant:
-            index_ = index.eval()
-            return constant(self.value.take(index_, axis))
+        if isinstance(index, Constant):
+            return constant(self.value.take(index.value, axis))
 
     def _power(self, n):
         if isinstance(n, Constant):
@@ -945,7 +975,7 @@ class InsertAxis(Array):
         return self.func._unaligned
 
     def _simplified(self):
-        if _equals_scalar_constant(self.length, 0):
+        if iszero(self.length):
             return zeros_like(self)
         return self.func._insertaxis(self.ndim-1, self.length)
 
@@ -959,7 +989,7 @@ class InsertAxis(Array):
             return numpy.repeat(func[..., numpy.newaxis], length, -1)
 
     def _compile_expression(self, py_self, func, length):
-        if _equals_scalar_constant(self.length, 1):
+        if isunit(self.length):
             return func.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Variable('numpy').get_attr('newaxis'))))
         else:
             return super()._compile_expression(py_self, func, length)
@@ -1245,6 +1275,14 @@ class Transpose(Array):
     def _const_uniform(self):
         return self.func._const_uniform
 
+    def _optimized_for_numpy(self):
+        if isinstance(self.func, Transpose):
+            return transpose(self.func.func, [self.func.axes[i] for i in self.axes])
+        if isinstance(self.func, Assemble):
+            offsets = numpy.cumsum([0] + [index.ndim for index in self.func.indices])
+            axes = [n for axis in self.axes for n in range(offsets[axis], offsets[axis+1])]
+            return Assemble(transpose(self.func.func, axes), tuple(self.func.indices[i] for i in self.axes), self.shape)
+
 
 class Product(Array):
 
@@ -1269,7 +1307,7 @@ class Product(Array):
         return _pyast.Variable('numpy').get_attr('all' if self.dtype == bool else 'prod').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
-        if _equals_scalar_constant(self.func.shape[-1], 1):
+        if isunit(self.func.shape[-1]):
             return get(self.func, self.ndim, constant(0))
         return self.func._product()
 
@@ -1294,7 +1332,7 @@ class Inverse(Array):
     func: Array
 
     def __post_init__(self):
-        assert isinstance(self.func, Array) and self.func.dtype in (float, complex) and self.func.ndim >= 2 and _equals_simplified(self.func.shape[-1], self.func.shape[-2]), f'func={self.func!r}'
+        assert isinstance(self.func, Array) and self.func.dtype in (float, complex) and self.func.ndim >= 2 and not _certainly_different(self.func.shape[-1], self.func.shape[-2]), f'func={self.func!r}'
 
     @property
     def dependencies(self):
@@ -1309,9 +1347,9 @@ class Inverse(Array):
         return self.func.shape
 
     def _simplified(self):
-        if _equals_scalar_constant(self.func.shape[-1], 1):
+        if isunit(self.func.shape[-1]):
             return reciprocal(self.func)
-        if _equals_scalar_constant(self.func.shape[-1], 0):
+        if iszero(self.func.shape[-1]):
             return singular_like(self)
         result = self.func._inverse(self.ndim-2, self.ndim-1)
         if result is not None:
@@ -1349,7 +1387,7 @@ class Determinant(Array):
     func: Array
 
     def __post_init__(self):
-        assert isarray(self.func) and self.func.dtype in (float, complex) and self.func.ndim >= 2 and _equals_simplified(self.func.shape[-1], self.func.shape[-2])
+        assert isarray(self.func) and self.func.dtype in (float, complex) and self.func.ndim >= 2 and not _certainly_different(self.func.shape[-1], self.func.shape[-2])
 
     @property
     def dependencies(self):
@@ -1367,7 +1405,7 @@ class Determinant(Array):
         result = self.func._determinant(self.ndim, self.ndim+1)
         if result is not None:
             return result
-        if _equals_scalar_constant(self.func.shape[-1], 1):
+        if isunit(self.func.shape[-1]):
             return Take(Take(self.func, zeros((), int)), zeros((), int))
 
     evalf = staticmethod(numpy.linalg.det)
@@ -1389,7 +1427,7 @@ class Multiply(Array):
     def __post_init__(self):
         assert isinstance(self.funcs, types.frozenmultiset), f'funcs={self.funcs!r}'
         func1, func2 = self.funcs
-        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Multiply({}, {})'.format(func1, func2)
+        assert not _any_certainly_different(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Multiply({}, {})'.format(func1, func2)
 
     @property
     def dependencies(self):
@@ -1404,7 +1442,7 @@ class Multiply(Array):
     @cached_property
     def shape(self):
         func1, func2 = self.funcs
-        return func1.shape
+        return AssertEqual.map(func1.shape, func2.shape)
 
     @property
     def _factors(self):
@@ -1485,7 +1523,7 @@ class Multiply(Array):
     def _determinant(self, axis1, axis2):
         axis1, axis2 = sorted([axis1, axis2])
         factors = tuple(self._factors)
-        if all(_equals_scalar_constant(self.shape[axis], 1) for axis in (axis1, axis2)):
+        if all(isunit(self.shape[axis]) for axis in (axis1, axis2)):
             return multiply(*[determinant(f, (axis1, axis2)) for f in factors])
         for i, fi in enumerate(factors):
             unaligned, where = unalign(fi)
@@ -1576,7 +1614,7 @@ class Add(Array):
     def __post_init__(self):
         assert isinstance(self.funcs, types.frozenmultiset) and len(self.funcs) == 2, f'funcs={self.funcs!r}'
         func1, func2 = self.funcs
-        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Add({}, {})'.format(func1, func2)
+        assert not _any_certainly_different(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Add({}, {})'.format(func1, func2)
 
     @property
     def dependencies(self):
@@ -1591,7 +1629,7 @@ class Add(Array):
     @cached_property
     def shape(self):
         func1, func2 = self.funcs
-        return func1.shape
+        return AssertEqual.map(func1.shape, func2.shape)
 
     @cached_property
     def _inflations(self):
@@ -1606,10 +1644,10 @@ class Add(Array):
             parts2 = func2_inflations[axis]
             dofmaps = set(parts1) | set(parts2)
             if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
-                    and self.shape[axis].isconstant and all(dofmap.isconstant for dofmap in dofmaps)):
-                mask = numpy.zeros(int(self.shape[axis]), dtype=bool)
+                    and isinstance(self.shape[axis], Constant) and all(isinstance(dofmap, Constant) for dofmap in dofmaps)):
+                mask = numpy.zeros(self.shape[axis].value, dtype=bool)
                 for dofmap in dofmaps:
-                    mask[dofmap.eval()] = True
+                    mask[dofmap.value] = True
                 if mask.all():  # axis adds up to dense
                     continue
             inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
@@ -1736,13 +1774,12 @@ class Einsum(Array):
         lengths = {}
         for idx, arg in zip(self.args_idx, self.args):
             for i, length in zip(idx, arg.shape):
-                if i not in lengths:
-                    lengths[i] = length
-                elif not _equals_simplified(lengths[i], length):
-                    raise ValueError('Axes with index {} have different lengths.'.format(i))
-        for i in self.out_idx:
-            if i not in lengths:
-                raise ValueError(f'Output axis {i} is not listed in any of the arguments.')
+                n = lengths.get(i)
+                lengths[i] = length if n is None else AssertEqual(length, n)
+        try:
+            self.shape = tuple(lengths[i] for i in self.out_idx)
+        except KeyError(e):
+            raise ValueError(f'Output axis {e} is not listed in any of the arguments.')
 
     @cached_property
     def _einsumfmt(self):
@@ -1755,11 +1792,6 @@ class Einsum(Array):
     @cached_property
     def dtype(self):
         return self.args[0].dtype
-
-    @cached_property
-    def shape(self):
-        lengths = {i: length for idx, arg in zip(self.args_idx, self.args) for i, length in zip(idx, arg.shape)}
-        return tuple(lengths[i] for i in self.out_idx)
 
     def _compile_expression(self, py_self, *args):
         return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr(self._einsumfmt), *args)
@@ -1806,7 +1838,7 @@ class Sum(Array):
         return _pyast.Variable('numpy').get_attr('any' if self.dtype == bool else 'sum').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
-        if _equals_scalar_constant(self.func.shape[-1], 1):
+        if isunit(self.func.shape[-1]):
             return Take(self.func, constant(0))
         return self.func._sum(self.ndim)
 
@@ -1869,7 +1901,7 @@ class TakeDiag(Array):
     func: Array
 
     def __post_init__(self):
-        assert isinstance(self.func, Array) and self.func.ndim >= 2 and _equals_simplified(*self.func.shape[-2:]), f'func={self.func!r}'
+        assert isinstance(self.func, Array) and self.func.ndim >= 2 and not _certainly_different(*self.func.shape[-2:]), f'func={self.func!r}'
 
     @property
     def dependencies(self):
@@ -1884,7 +1916,7 @@ class TakeDiag(Array):
         return self.func.shape[:-1]
 
     def _simplified(self):
-        if _equals_scalar_constant(self.shape[-1], 1):
+        if isunit(self.shape[-1]):
             return Take(self.func, constant(0))
         return self.func._takediag(self.ndim-1, self.ndim)
 
@@ -1991,7 +2023,7 @@ class Power(Array):
     def __post_init__(self):
         assert isinstance(self.func, Array) and self.func.dtype != bool, f'func={self.func!r}'
         assert isinstance(self.power, Array) and (self.power.dtype in (float, complex) or self.power.dtype == int and self.power._intbounds[0] >= 0), f'power={self.power!r}'
-        assert equalshape(self.func.shape, self.power.shape) and self.func.dtype == self.power.dtype, 'Power({}, {})'.format(self.func, self.power)
+        assert not _any_certainly_different(self.func.shape, self.power.shape) and self.func.dtype == self.power.dtype, 'Power({}, {})'.format(self.func, self.power)
 
     @property
     def dependencies(self):
@@ -2027,11 +2059,10 @@ class Power(Array):
         return _pyast.Variable('numpy').get_attr('power').call(func, power)
 
     def _derivative(self, var, seen):
-        if self.power.isconstant:
-            p = self.power.eval()
-            return einsum('A,A,AB->AB', constant(p), power(self.func, p - (p != 0)), derivative(self.func, var, seen))
-        if self.dtype == complex:
-            raise NotImplementedError('The complex derivative is not implemented.')
+        if isinstance(self.power, Constant):
+            p = self.power.value.copy()
+            p -= p != 0 # exclude zero powers from decrement to avoid potential division by zero errors
+            return einsum('A,A,AB->AB', self.power, power(self.func, p), derivative(self.func, var, seen))
         # self = func**power
         # ln self = power * ln func
         # self` / self = power` * ln func + power * func` / func
@@ -2068,12 +2099,9 @@ class Pointwise(Array):
     dependencies = util.abstract_property()
 
     def __post_init__(self):
-        shape0 = self.dependencies[0].shape
-        assert all(equalshape(arg.shape, shape0) for arg in self.dependencies[1:]), 'pointwise arguments have inconsistent shapes'
-
-    @cached_property
-    def shape(self):
-        return self.dependencies[0].shape
+        self.shape = self.dependencies[0].shape
+        for dep in self.dependencies[1:]:
+            self.shape = AssertEqual.map(self.shape, dep.shape)
 
     def _newargs(self, *args):
         '''
@@ -2896,7 +2924,7 @@ class Eig(Evaluable):
     symmetric: bool = False
 
     def __post_init__(self):
-        assert isinstance(self.func, Array) and self.func.ndim >= 2 and _equals_simplified(self.func.shape[-1], self.func.shape[-2]), f'func={self.func!r}'
+        assert isinstance(self.func, Array) and self.func.ndim >= 2 and not _certainly_different(self.func.shape[-1], self.func.shape[-2]), f'func={self.func!r}'
         assert isinstance(self.symmetric, bool), f'symmetric={self.symmetric!r}'
 
     @property
@@ -3083,7 +3111,7 @@ class Inflate(Array):
         assert isinstance(self.func, Array), f'func={self.func!r}'
         assert isinstance(self.dofmap, Array), f'dofmap={self.dofmap!r}'
         assert _isindex(self.length), f'length={self.length!r}'
-        assert equalshape(self.func.shape[self.func.ndim-self.dofmap.ndim:], self.dofmap.shape), f'func.shape={self.func.shape!r}, dofmap.shape={self.dofmap.shape!r}'
+        assert not _any_certainly_different(self.func.shape[self.func.ndim-self.dofmap.ndim:], self.dofmap.shape), f'func.shape={self.func.shape!r}, dofmap.shape={self.dofmap.shape!r}'
 
     @property
     def dependencies(self):
@@ -3110,25 +3138,28 @@ class Inflate(Array):
 
     def _simplified(self):
         for axis in range(self.dofmap.ndim):
-            if _equals_scalar_constant(self.dofmap.shape[axis], 1):
+            if isunit(self.dofmap.shape[axis]):
                 return Inflate(_take(self.func, constant(0), self.func.ndim-self.dofmap.ndim+axis), _take(self.dofmap, constant(0), axis), self.length)
         for axis, parts in self.func._inflations:
             i = axis - (self.ndim-1)
             if i >= 0:
                 return util.sum(Inflate(f, _take(self.dofmap, ind, i), self.length) for ind, f in parts.items())
-        if self.dofmap.ndim == 0 and _equals_scalar_constant(self.dofmap, 0) and _equals_scalar_constant(self.length, 1):
+        if self.dofmap.ndim == 0 and iszero(self.dofmap) and isunit(self.length):
             return InsertAxis(self.func, constant(1))
         return self.func._inflate(self.dofmap, self.length, self.ndim-1) \
             or self.dofmap._rinflate(self.func, self.length, self.ndim-1)
+
+    def _optimized_for_numpy(self):
+        indices = [Range(n) for n in self.shape[:-1]] + [self.dofmap]
+        return Assemble(self.func, tuple(indices), self.shape)
 
     def evalf(self, array, indices, length):
         assert indices.ndim == self.dofmap.ndim
         assert length.ndim == 0
         if not self.dofmap.isconstant and int(length) > indices.size:
             warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
-        inflated = numpy.zeros(array.shape[:array.ndim-indices.ndim] + (length,), dtype=self.dtype)
-        numpy.add.at(inflated, (slice(None),)*(self.ndim-1)+(indices,), array)
-        return inflated
+        shape = *array.shape[:array.ndim-indices.ndim], length
+        return numeric.accumulate(array, (slice(None),)*(self.ndim-1)+(indices,), shape)
 
     def _compile_with_out(self, builder, out, out_block_id, mode):
         assert mode in ('iadd', 'assign')
@@ -3198,7 +3229,7 @@ class Inflate(Array):
             return Inflate(unravel(self.func, axis, shape), self.dofmap, self.length)
 
     def _sign(self):
-        if self.dofmap.isconstant and _isunique(self.dofmap.eval()):
+        if isinstance(self.dofmap, Constant) and _isunique(self.dofmap.value):
             return Inflate(Sign(self.func), self.dofmap, self.length)
 
     @cached_property
@@ -3231,8 +3262,8 @@ class SwapInflateTake(Evaluable):
         return self.inflateidx, self.takeidx
 
     def _simplified(self):
-        if self.isconstant:
-            return Tuple(tuple(map(constant, self.eval())))
+        if isinstance(self.inflateidx, Constant) and isinstance(self.takeidx, Constant):
+            return Tuple(tuple(map(constant, self.evalf(self.inflateidx.value, self.takeidx.value))))
 
     def __iter__(self):
         shape = ArrayFromTuple(self, index=2, shape=(), dtype=int),
@@ -3270,6 +3301,81 @@ class SwapInflateTake(Evaluable):
     @property
     def _intbounds_tuple(self):
         return ((0, float('inf')),) * 3
+
+
+class Assemble(Array):
+
+    func: Array
+    indices: typing.Tuple[Array, ...]
+    shape: typing.Tuple[Array, ...]
+
+    def __post_init__(self):
+        assert len(self.indices) == len(self.shape)
+        assert builtins.sum(index.ndim for index in self.indices) == self.func.ndim
+
+    @property
+    def dtype(self):
+        return self.func.dtype
+
+    @property
+    def dependencies(self):
+        return self.func, *self.indices, *self.shape
+
+    @staticmethod
+    def evalf(func, *args):
+        n = len(args) // 2
+        indices = args[:n]
+        shape = args[n:]
+        reshaped_indices = tuple(index.reshape((1,)*offset + index.shape + (1,)*(func.ndim-index.ndim-offset))
+            for offset, index in zip(util.cumsum(index.ndim for index in indices), indices))
+        return numeric.accumulate(func, reshaped_indices, shape)
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        assert mode in ('iadd', 'assign')
+        if mode == 'assign':
+            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        compiled_indices = []
+        advanced_ndim = builtins.sum(index.ndim for index in self.indices if not isinstance(index, Range))
+        i = 0
+        for index in self.indices:
+            if isinstance(index, Range):
+                n = builder.compile(index.shape[0])
+                compiled_indices.append(_pyast.Variable('slice').call(n))
+            else:
+                j = i + index.ndim
+                compiled_index = builder.compile(index)
+                if index.ndim < advanced_ndim:
+                    compiled_index = compiled_index.get_item(_pyast.Raw(','.join(['None'] * i + [':'] * index.ndim + ['None'] * (advanced_ndim-j))))
+                compiled_indices.append(compiled_index)
+                i = j
+        assert i == advanced_ndim
+        compiled_func = builder.compile(self.func)
+        trans = [i for i, index in enumerate(self.indices) if not isinstance(index, Range)]
+        if advanced_ndim and any(numpy.diff(trans) > 1):
+            # see https://numpy.org/doc/stable/user/basics.indexing.html#combining-advanced-and-basic-indexing
+            trans.extend(i for i, index in enumerate(self.indices) if isinstance(index, Range))
+            compiled_func = compiled_func.get_attr('transpose').call(*[_pyast.LiteralInt(i) for i in trans])
+        builder.get_block_for_evaluable(self).array_add_at(out, _pyast.Tuple(tuple(compiled_indices)), compiled_func)
+
+    def _optimized_for_numpy(self):
+        if isinstance(self.func, Assemble):
+            nontrivial_indices = []
+            for f in self.func, self: # order is important to maintain insertion order of ndim=0 indices
+                offset = 0
+                for index in f.indices:
+                    if index != Range(f.shape[offset]):
+                        nontrivial_indices.append((offset, index))
+                    offset += index.ndim
+                assert offset == f.func.ndim
+            nontrivial_indices.sort(key=lambda item: item[0]) # order of equal offsets is maintained
+            indices = []
+            for i, index in nontrivial_indices:
+                if i < len(indices):
+                    return # inflations overlap
+                while i > len(indices):
+                    indices.append(Range(self.shape[len(indices)]))
+                indices.append(index)
+            return Assemble(self.func.func, tuple(indices), self.shape)
 
 
 class Diagonalize(Array):
@@ -3433,8 +3539,9 @@ class Find(Array):
         return _pyast.Variable('numpy').get_attr('nonzero').call(where).get_item(_pyast.LiteralInt(0))
 
     def _simplified(self):
-        if self.isconstant:
-            return constant(self.eval())
+        if isinstance(self.where, Constant):
+            indices, = self.where.value.nonzero()
+            return constant(indices)
 
 
 class DerivativeTargetBase(Array):
@@ -3638,9 +3745,9 @@ class Ravel(Array):
         return tuple(inflations)
 
     def _simplified(self):
-        if _equals_scalar_constant(self.func.shape[-2], 1):
+        if isunit(self.func.shape[-2]):
             return get(self.func, -2, constant(0))
-        if _equals_scalar_constant(self.func.shape[-1], 1):
+        if isunit(self.func.shape[-1]):
             return get(self.func, -1, constant(0))
         return self.func._ravel(self.ndim-1)
 
@@ -3649,7 +3756,7 @@ class Ravel(Array):
         return f.reshape(f.shape[:-2] + (f.shape[-2]*f.shape[-1],))
 
     def _multiply(self, other):
-        if isinstance(other, Ravel) and equalshape(other.func.shape[-2:], self.func.shape[-2:]):
+        if isinstance(other, Ravel) and _all_certainly_equal(other.func.shape[-2:], self.func.shape[-2:]):
             return Ravel(multiply(self.func, other.func))
         return Ravel(multiply(self.func, Unravel(other, *self.func.shape[-2:])))
 
@@ -3683,7 +3790,7 @@ class Ravel(Array):
     def _unravel(self, axis, shape):
         if axis != self.ndim-1:
             return Ravel(unravel(self.func, axis, shape))
-        elif equalshape(shape, self.func.shape[-2:]):
+        elif _all_certainly_equal(shape, self.func.shape[-2:]):
             return self.func
 
     def _inflate(self, dofmap, length, axis):
@@ -3737,7 +3844,7 @@ class Unravel(Array):
         assert isinstance(self.func, Array) and self.func.ndim > 0, f'func={self.func!r}'
         assert _isindex(self.sh1), f'sh1={self.sh1!r}'
         assert _isindex(self.sh2), f'sh2={self.sh2!r}'
-        assert _equals_simplified(self.func.shape[-1], self.sh1 * self.sh2)
+        assert not _certainly_different(self.func.shape[-1], self.sh1 * self.sh2)
 
     @property
     def dependencies(self):
@@ -3752,9 +3859,9 @@ class Unravel(Array):
         return *self.func.shape[:-1], self.sh1, self.sh2
 
     def _simplified(self):
-        if _equals_scalar_constant(self.shape[-2], 1):
+        if isunit(self.shape[-2]):
             return insertaxis(self.func, self.ndim-2, constant(1))
-        if _equals_scalar_constant(self.shape[-1], 1):
+        if isunit(self.shape[-1]):
             return insertaxis(self.func, self.ndim-1, constant(1))
         return self.func._unravel(self.ndim-2, self.shape[-2:])
 
@@ -3821,11 +3928,11 @@ class RavelIndex(Array):
             return RavelIndex(self.ia, _take(self.ib, index, axis - self.ia.ndim), self.na, self.nb)
 
     def _rtake(self, func, axis):
-        if _equals_simplified(func.shape[axis], self._length):
+        if _certainly_equal(func.shape[axis], self._length):
             return _take(_take(unravel(func, axis, (self.na, self.nb)), self.ib, axis+1), self.ia, axis)
 
     def _rinflate(self, func, length, axis):
-        if _equals_simplified(length, self._length):
+        if _certainly_equal(length, self._length):
             return Ravel(Inflate(_inflate(func, self.ia, self.na, func.ndim - self.ndim), self.ib, self.nb))
 
     def _unravel(self, axis, shape):
@@ -3866,7 +3973,7 @@ class Range(Array):
             return RavelIndex(Range(shape[0]), Range(shape[1]), shape[0], shape[1])
 
     def _rtake(self, func, axis):
-        if _equals_simplified(self.length, func.shape[axis]):
+        if _certainly_equal(self.length, func.shape[axis]):
             return func
 
     def _rinflate(self, func, length, axis):
@@ -3982,7 +4089,7 @@ class Polyval(Array):
         ncoeffs_lower, ncoeffs_upper = self.coeffs.shape[-1]._intbounds
         if iszero(self.coeffs):
             return zeros_like(self)
-        elif _equals_scalar_constant(self.coeffs.shape[-1], 1):
+        elif isunit(self.coeffs.shape[-1]):
             return prependaxes(get(self.coeffs, -1, constant(0)), self.points.shape[:-1])
         points, where_points = unalign(self.points, naxes=self.points.ndim - 1)
         coeffs, where_coeffs = unalign(self.coeffs, naxes=self.coeffs.ndim - 1)
@@ -4122,7 +4229,7 @@ class PolyMul(Array):
     def __post_init__(self):
         assert isinstance(self.coeffs_left, Array) and self.coeffs_left.ndim >= 1 and self.coeffs_left.dtype == float, f'coeffs_left={self.coeffs_left!r}'
         assert isinstance(self.coeffs_right, Array) and self.coeffs_right.ndim >= 1 and self.coeffs_right.dtype == float, f'coeffs_right={self.coeffs_right!r}'
-        assert equalshape(self.coeffs_left.shape[:-1], self.coeffs_right.shape[:-1]), 'PolyMul({}, {})'.format(self.coeffs_left, self.coeffs_right)
+        assert not _any_certainly_different(self.coeffs_left.shape[:-1], self.coeffs_right.shape[:-1]), 'PolyMul({}, {})'.format(self.coeffs_left, self.coeffs_right)
 
     @cached_property
     def degree_left(self):
@@ -4222,9 +4329,9 @@ class PolyGrad(Array):
             return poly.GradPlan(self.nvars, degree)
 
     def _simplified(self):
-        if iszero(self.coeffs) or _equals_scalar_constant(self.degree, 0):
+        if iszero(self.coeffs) or iszero(self.degree):
             return zeros_like(self)
-        elif _equals_scalar_constant(self.degree, 1):
+        elif isunit(self.degree):
             return InsertAxis(Take(self.coeffs, constant(self.nvars - 1) - Range(constant(self.nvars))), constant(1))
 
     def _takediag(self, axis1, axis2):
@@ -4314,7 +4421,7 @@ class Choose(Array):
     def __post_init__(self):
         assert isinstance(self.index, Array) and self.index.dtype == int, f'index={self.index!r}'
         assert isinstance(self.choices, Array), f'choices={self.choices!r}'
-        assert equalshape(self.choices.shape[:-1], self.index.shape)
+        assert not _any_certainly_different(self.choices.shape[:-1], self.index.shape)
 
     @property
     def dependencies(self):
@@ -4377,7 +4484,7 @@ class NormDim(Array):
     def __post_init__(self):
         assert isinstance(self.length, Array) and self.length.dtype == int, f'length={self.length!r}'
         assert isinstance(self.index, Array) and self.index.dtype == int, f'index={self.index!r}'
-        assert equalshape(self.length.shape, self.index.shape)
+        assert not _any_certainly_different(self.length.shape, self.index.shape)
         # The following corner cases makes the assertion fail, hence we can only
         # assert the bounds if the arrays are guaranteed to be unempty:
         #
@@ -4414,8 +4521,8 @@ class NormDim(Array):
             return self.index
         if isinstance(lower_length, int) and lower_length == upper_length and -lower_length <= lower_index and upper_index < 0:
             return self.index + lower_length
-        if self.length.isconstant and self.index.isconstant:
-            return constant(self.eval())
+        if isinstance(self.length, Constant) and isinstance(self.index, Constant):
+            return constant(self.evalf(self.length.value, self.index.value))
 
     def _intbounds_impl(self):
         lower_length, upper_length = self.length._intbounds
@@ -4685,7 +4792,7 @@ class _LoopIndex(Array):
         return 0, max(0, upper_length - 1)
 
     def _simplified(self):
-        if _equals_scalar_constant(self.length, 1):
+        if isunit(self.length):
             return Zeros((), int)
 
     @property
@@ -4973,10 +5080,15 @@ class LoopConcatenate(Loop):
         elif self.index not in self.func.arguments:
             return Ravel(Transpose.from_end(InsertAxis(self.func, self.index.length), -2))
         unaligned, where = unalign(self.func)
+        reinserted_unit = False
         if self.ndim-1 not in where:
             # reinsert concatenation axis, at unit length if possible so we can
             # insert the remainder outside of the loop
-            unaligned = InsertAxis(unaligned, self.func.shape[-1] if self.index in self.func.shape[-1].arguments else constant(1))
+            n = self.func.shape[-1]
+            if self.index not in n.arguments and not isunit(n):
+                n = constant(1)
+                reinserted_unit = True
+            unaligned = InsertAxis(unaligned, n)
             where += self.ndim-1,
         elif where[-1] != self.ndim-1:
             # bring concatenation axis to the end
@@ -4984,7 +5096,7 @@ class LoopConcatenate(Loop):
             unaligned = Transpose.to_end(unaligned, axis)
             where = (*where[:axis], *where[axis+1:], self.ndim-1)
         f = loop_concatenate(unaligned, self.index)
-        if not _equals_simplified(self.shape[-1], f.shape[-1]):
+        if reinserted_unit:
             # last axis was reinserted at unit length AND it was not unit length
             # originally - if it was unit length originally then we proceed only if
             # there are other insertions to promote, otherwise we'd get a recursion.
@@ -5066,6 +5178,125 @@ class SearchSorted(Array):
         return SearchSorted(unravel(self.arg, axis, shape), array=self.array, side=self.side, sorter=self.sorter)
 
 
+class ArgSort(Array):
+
+    array: Array
+
+    dtype = int
+
+    def __post_init__(self):
+        assert self.array.ndim
+
+    @property
+    def shape(self):
+        return self.array.shape
+
+    @property
+    def dependencies(self):
+        return self.array,
+
+    def evalf(self, array):
+        index = numpy.argsort(array, -1)
+        # on some platforms (windows) argsort does not return indices as
+        # numpy.dtype(int), so we type cast it for consistency
+        return index.astype(int, copy=False)
+
+
+class UniqueMask(Array):
+
+    sorted_array: Array
+
+    dtype = bool
+
+    def __post_init__(self):
+        assert self.sorted_array.ndim == 1
+
+    @property
+    def shape(self):
+        return self.sorted_array.shape
+
+    @property
+    def dependencies(self):
+        return self.sorted_array,
+
+    def evalf(self, sorted_array):
+        mask = numpy.empty(sorted_array.shape, dtype=bool)
+        mask[:1] = True
+        numpy.not_equal(sorted_array[1:], sorted_array[:-1], out=mask[1:])
+        return mask
+
+
+class UniqueInverse(Array):
+
+    unique_mask: Array
+    sorter: Array
+
+    dtype = int
+
+    def __post_init__(self):
+        assert self.unique_mask.dtype == bool and self.unique_mask.ndim == 1
+        assert self.sorter.dtype == int and self.sorter.ndim == 1
+        assert not _any_certainly_different(self.unique_mask.shape, self.sorter.shape), (self.unique_mask, self.sorter)
+
+    @property
+    def shape(self):
+        return self.sorter.shape
+
+    @property
+    def dependencies(self):
+        return self.unique_mask, self.sorter
+
+    def evalf(self, unique_mask, sorter):
+        inverse = numpy.empty_like(sorter)
+        inverse[sorter] = numpy.cumsum(unique_mask)
+        inverse -= 1
+        return inverse
+
+
+def unique(array, return_index=False, return_inverse=False):
+    sorter = ArgSort(array)
+    mask = UniqueMask(Take(array, sorter))
+    index = Take(sorter, Find(mask))
+    unique = Take(array, index)
+    inverse = UniqueInverse(mask, sorter)
+    return (unique, index, inverse)[slice(0, 2+return_inverse, 2-return_index) if return_inverse or return_index else 0]
+
+
+class CompressIndices(Array):
+
+    indices: Array
+    length: Array
+
+    dtype = int
+    ndim = 1
+
+    def __post_init__(self):
+        assert self.indices.dtype == int and self.indices.ndim == 1
+        assert self.length.dtype == int and self.length.ndim == 0
+
+    @property
+    def shape(self):
+        return self.length + 1,
+
+    @property
+    def dependencies(self):
+        return self.indices, self.length
+
+    @staticmethod
+    def evalf(indices, length):
+        return numeric.compress_indices(indices, length)
+
+
+def as_csr(array):
+    assert array.ndim == 2
+    values, (rowindices, colindices), (nrows, ncols) = array.simplified.assparse
+    indices, inverse = unique(rowindices * ncols + colindices, return_inverse=True)
+    rowidx, colidx = divmod(indices, ncols)
+    rowptr = CompressIndices(rowidx, nrows)
+    values = Inflate(values, inverse, indices.shape[0])
+    return values, rowptr, colidx, ncols
+
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 
@@ -5089,7 +5320,7 @@ def _numpy_align(a, b):
         return _inflate_scalar(a, b.shape), b
     if not b.ndim:
         return a, _inflate_scalar(b, a.shape)
-    if equalshape(a.shape, b.shape):
+    if not _any_certainly_different(a.shape, b.shape):
         return a, b
     raise ValueError('incompatible shapes: {} != {}'.format(*[tuple(int(n) if n.isconstant else n for n in arg.shape) for arg in (a, b)]))
 
@@ -5178,6 +5409,11 @@ def constant(v):
 
 def iszero(arg):
     return isinstance(arg.simplified, Zeros)
+
+
+def isunit(arg):
+    simple = arg.simplified
+    return isinstance(simple, Constant) and numpy.all(simple.value == 1)
 
 
 def zeros(shape, dtype=float):
@@ -5328,7 +5564,7 @@ def stack(args, axis=0):
 
 def repeat(arg, length, axis):
     arg = asarray(arg)
-    assert _equals_scalar_constant(arg.shape[axis], 1)
+    assert isunit(arg.shape[axis])
     return insertaxis(get(arg, axis, constant(0)), axis, length)
 
 
@@ -5358,7 +5594,7 @@ def grammium(arg, axes=(-2, -1)):
 
 def sqrt_abs_det_gram(arg, axes=(-2, -1)):
     arg = Transpose.to_end(arg, *axes)
-    if _equals_simplified(arg.shape[-1], arg.shape[-2]):
+    if _certainly_equal(arg.shape[-1], arg.shape[-2]):
         return abs(determinant(arg))
     else:
         return sqrt(abs(determinant(grammium(arg))))
@@ -5398,7 +5634,7 @@ def derivative(func, var, seen=None):
     else:
         result = func._derivative(var, seen)
         seen[func] = result
-    assert equalshape(result.shape, func.shape+var.shape) and result.dtype == func.dtype, 'bug in {}._derivative'.format(type(func).__name__)
+    assert not _any_certainly_different(result.shape, func.shape+var.shape) and result.dtype == func.dtype, 'bug in {}._derivative'.format(type(func).__name__)
     return result
 
 
@@ -5445,10 +5681,10 @@ def take(arg: Array, index: Array, axis: int):
     assert isinstance(axis, int), f'axis={axis!r}'
     length = arg.shape[axis]
     if index.dtype == bool:
-        assert _equals_simplified(index.shape[0], length)
+        assert not _certainly_different(index.shape[0], length)
         index = Find(index)
-    elif index.isconstant:
-        index_ = index.eval()
+    elif isinstance(index, Constant):
+        index_ = index.value
         ineg = numpy.less(index_, 0)
         if not length.isconstant:
             if ineg.any():
@@ -5476,15 +5712,8 @@ def _inflate(arg: Array, dofmap: Array, length: Array, axis: int):
     assert _isindex(length), f'length={length!r}'
     assert isinstance(axis, int), f'axis={axis!r}'
     axis = numeric.normdim(arg.ndim+1-dofmap.ndim, axis)
-    assert equalshape(dofmap.shape, arg.shape[axis:axis+dofmap.ndim])
+    assert not _any_certainly_different(dofmap.shape, arg.shape[axis:axis+dofmap.ndim])
     return Transpose.from_end(Inflate(Transpose.to_end(arg, *range(axis, axis+dofmap.ndim)), dofmap, length), axis)
-
-
-def mask(arg, mask: Array, axis: int = 0):
-    assert isinstance(arg, Array), f'arg={arg!r}'
-    assert isinstance(mask, numpy.ndarray) and mask.dtype == bool and mask.ndim == 1 and _equals_scalar_constant(arg.shape[axis], len(mask)), f'mask={mask!r}'
-    index, = mask.nonzero()
-    return _take(arg, constant(index), axis)
 
 
 def unravel(func, axis, shape):
@@ -5500,11 +5729,11 @@ def ravel(func, axis):
     return Transpose.from_end(Ravel(Transpose.to_end(func, axis, axis+1)), axis)
 
 
-def _flat(func):
+def _flat(func, ndim=1):
     func = asarray(func)
-    if func.ndim == 0:
+    if func.ndim == ndim-1:
         return InsertAxis(func, constant(1))
-    while func.ndim > 1:
+    while func.ndim > ndim:
         func = Ravel(func)
     return func
 
@@ -5578,7 +5807,7 @@ def replace_arguments(value, arguments):
     '''
     if isinstance(value, Argument) and value.name in arguments:
         v = asarray(arguments[value.name])
-        assert equalshape(value.shape, v.shape), (value.shape, v.shape)
+        assert not _any_certainly_different(value.shape, v.shape), (value.shape, v.shape)
         assert value.dtype == v.dtype, (value.dtype, v.dtype)
         return v
 
@@ -5660,7 +5889,7 @@ def einsum(fmt, *args, **dims):
     for s, arg in zip(sin, args):
         assert len(s) == arg.ndim
         for c, sh in zip(s, arg.shape):
-            if not _equals_simplified(shapes.setdefault(c, sh), sh):
+            if _certainly_different(shapes.setdefault(c, sh), sh):
                 raise ValueError('shapes do not match for axis {0[0]}{0[1]}'.format(c))
 
     ret = None
@@ -5711,7 +5940,28 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
         yield data
 
 
+@util.single_or_multiple
+def eval_coo(funcs: AsEvaluableArray, arguments: typing.Mapping[str, numpy.ndarray] = {}) -> typing.Tuple[numpy.ndarray, ...]:
+    '''Evaluate one or several Array objects as COO sparse data.
+
+    Args
+    ----
+    funcs : :class:`tuple` of Array objects
+        Arrays to be evaluated.
+    arguments : :class:`dict` (default: None)
+        Optional arguments for function evaluation.
+
+    Returns
+    -------
+    results : :class:`tuple` of (values, indices, shape) triplets
+    '''
+
+    f = compile(tuple(func.as_evaluable_array.simplified.assparse for func in funcs))
+    return f(**arguments)
+
+
 @functools.lru_cache(32)
+@log.withcontext
 def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = None, cache_const_intermediates: bool = True):
     '''Returns a callable that evaluates ``func``.
 
@@ -6032,7 +6282,9 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
 
     # Compile.
     eval(builtins.compile(script, name, 'exec'), globals)
-    return globals['compiled']
+    compiled = globals['compiled']
+    compiled.__nutils_hash__ = types.nutils_hash(script)
+    return compiled
 
 
 def _define_loop_block_structure(targets: typing.Tuple[Evaluable, ...]) -> typing.Tuple[Evaluable, ...]:

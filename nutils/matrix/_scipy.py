@@ -8,8 +8,8 @@ except ImportError:
     raise BackendNotAvailable('the Scipy matrix backend requires scipy to be installed (try: pip install scipy)')
 
 
-def assemble(data, index, shape):
-    return ScipyMatrix(scipy.sparse.csr_matrix((data, index), shape))
+def assemble(data, rowptr, colidx, ncols):
+    return ScipyMatrix(scipy.sparse.csr_matrix((data, colidx, rowptr), (len(rowptr)-1, ncols)))
 
 
 class ScipyMatrix(Matrix):
@@ -82,7 +82,8 @@ class ScipyMatrix(Matrix):
                 if callback:
                     callback(res)
                 reformat(100 * numpy.log10(max(atol, res)) / numpy.log10(atol))
-            lhs, status = solverfun(self.core, rhs, M=precon, tol=0., atol=atol, callback=mycallback, **solverargs)
+            solverargs['rtol' if scipy.__version__ >= '1.12' else 'tol'] = 0
+            lhs, status = solverfun(self.core, rhs, M=precon, atol=atol, callback=mycallback, **solverargs)
         if status != 0:
             raise Exception('status {}'.format(status))
         return lhs

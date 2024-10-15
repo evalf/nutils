@@ -45,19 +45,21 @@ def _test_recursion_cache(testcase, solver_iter):
         with tmpcache():
             for i, length in enumerate(lengths):
                 with testcase.subTest(lengths=lengths, step=i):
-                    if length == 0: # treated as special case because assertLogs would fail
-                        read(0)
-                        continue
-                    with testcase.assertLogs('nutils', 'DEBUG') as cm:
-                        v = read(length)
+                    if length <= 1:
+                        if hasattr(testcase, 'assertNoLogs'): # Python >= 3.10
+                            with testcase.assertNoLogs('nutils', 'DEBUG'):
+                                v = read(length)
+                        else:
+                            v = read(length)
+                    else:
+                        with testcase.assertLogs('nutils', 'DEBUG') as cm:
+                            v = read(length)
+                        testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.function [0-9a-f]{40}\\] '
+                            + ('load' if i and max(lengths[:i]) > 1 else 'failed to load'))
                     _assert_almost_equal(testcase, v, reference[:length])
-                    testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.Recursion [0-9a-f]{40}\\] start iterating')
-                    testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.Recursion [0-9a-f]{40}\\.0000\\] load' if i and max(lengths[:i]) > 0
-                                                          else '\\[cache\\.Recursion [0-9a-f]{40}\\.0000\\] cache exhausted')
 
 
 def _test_solve_cache(testcase, solver_gen):
-    _test_recursion_cache(testcase, solver_gen)
     with testcase.subTest('solve'), tmpcache():
         v1 = _edit(solver_gen().solve(1e-5))
         with testcase.assertLogs('nutils', 'DEBUG') as cm:
@@ -263,16 +265,6 @@ class optimize(TestCase):
         cons = solver.optimize('dofs', err, droptol=1e-15)
         numpy.testing.assert_almost_equal(cons, numpy.take([1, numpy.nan], [0, 1, 1, 0, 1, 1, 0, 1, 1]), decimal=15)
 
-    def test_nonlinear(self):
-        err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2' @ self.ns, degree=6)
-        cons = solver.optimize('dofs', err, droptol=1e-15, tol=1e-15)
-        numpy.testing.assert_almost_equal(cons, numpy.take([1, numpy.nan], [0, 1, 1, 0, 1, 1, 0, 1, 1]), decimal=15)
-
-    def test_nonlinear_multipleroots(self):
-        err = self.domain.boundary['bottom'].integral('(u + u^2 - .75)^2' @ self.ns, degree=2)
-        cons = solver.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(self.ubasis)), tol=1e-10)
-        numpy.testing.assert_almost_equal(cons, numpy.take([.5, numpy.nan], [0, 1, 1, 0, 1, 1, 0, 1, 1]), decimal=15)
-
     def test_nanres(self):
         err = self.domain.integral('(sqrt(1 - u) - .5)^2' @ self.ns, degree=2)
         dofs = solver.optimize('dofs', err, tol=1e-10)
@@ -280,12 +272,8 @@ class optimize(TestCase):
 
     def test_unknowntarget(self):
         err = self.domain.integral('(sqrt(1 - u) - .5)^2' @ self.ns, degree=2)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(KeyError):
             dofs = solver.optimize(['dofs', 'other'], err, tol=1e-10)
-        dofs = solver.optimize(['dofs', 'other'], err, tol=1e-10, droptol=1e-10)
-        self.assertEqual(list(dofs), ['dofs'])
-        dofs = solver.optimize(['other'], err, tol=1e-10, droptol=1e-10)
-        self.assertEqual(dofs, {})
         with self.assertRaises(KeyError):
             dofs = solver.optimize('other', err, tol=1e-10, droptol=1e-10)
 
@@ -331,7 +319,7 @@ class theta_time(TestCase):
         residual = topo.integral('-e_n sin(t) dV' @ ns, degree=0)
         timestep = 0.1
         udesired = numpy.array([0.])
-        uactualiter = iter(method(target='u', residual=residual, inertia=inertia, timestep=timestep, lhs0=udesired, timetarget='t'))
+        uactualiter = iter(method(target='u', residual=residual, inertia=inertia, timestep=timestep, lhs0=udesired.copy(), timetarget='t'))
         for i in range(5):
             with self.subTest(i=i):
                 uactual = next(uactualiter)
@@ -343,3 +331,117 @@ class theta_time(TestCase):
 
     def test_cranknicolson(self):
         self.check(solver.cranknicolson, theta=0.5)
+
+
+class system_finitestrain(TestCase):
+
+    def setUp(self):
+        super().setUp()
+        domain, geom = mesh.rectilinear([numpy.linspace(0, 1, 9)] * 2)
+        u = function.dotarg('u', domain.basis('std', degree=2), shape=(2,))
+        Geom = geom * [1.1, 1] + u
+        self.cons = solver.optimize('u,', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
+        strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
+        energy = domain.integral(((strain**2).sum([0, 1]) + 20*(numpy.linalg.det(Geom.grad(geom))-1)**2)*function.J(geom), degree=6)
+        self.system = solver.System(energy, trial='u')
+        self.residual = evaluable.compile(energy.derivative('u').as_evaluable_array)
+
+    def assert_resnorm(self, args, tol):
+        resnorm = numpy.linalg.norm(self.residual(**args)[numpy.isnan(self.cons['u'])])
+        self.assertLess(resnorm, tol)
+
+    def test_direct(self):
+        with self.assertRaises(ValueError):
+            self.system.solve(constrain=self.cons)
+
+    def test_newton(self):
+        args = self.system.solve(constrain=self.cons, method=solver.Newton(), tol=1e-10, maxiter=7)
+        self.assert_resnorm(args, tol=1e-10)
+
+    def test_newton_linesearch(self):
+        args = self.system.solve(constrain=self.cons, method=solver.LinesearchNewton(), tol=1e-10, maxiter=7)
+        self.assert_resnorm(args, tol=1e-10)
+
+    def test_minimize(self):
+        args = self.system.solve(constrain=self.cons, method=solver.Minimize(), tol=1e-10, maxiter=13)
+        self.assert_resnorm(args, tol=1e-10)
+
+
+class system_navierstokes(TestCase):
+
+    def setUp(self):
+        super().setUp()
+        viscosity = 1e-3
+        domain, geom = mesh.rectilinear([numpy.linspace(0, 1, 9)] * 2)
+        gauss = domain.sample('gauss', 5)
+        uin = geom[1] * (1-geom[1])
+        dx = function.J(geom)
+        ubasis = domain.basis('std', degree=2)
+        pbasis = domain.basis('std', degree=1)
+        u = function.dotarg('u', ubasis, shape=(2,))
+        v = function.dotarg('v', ubasis, shape=(2,))
+        p = function.dotarg('p', pbasis)
+        q = function.dotarg('q', pbasis)
+        self.cons = solver.optimize('u,', domain.boundary['top,bottom'].integral((u**2).sum(), degree=4), droptol=1e-10)
+        self.cons = solver.optimize('u,', domain.boundary['left'].integral((u[0]-uin)**2 + u[1]**2, degree=4), droptol=1e-10, constrain=self.cons)
+        res = gauss.integral((viscosity * numpy.einsum('ij,ij', v.grad(geom), u.grad(geom) + u.grad(geom).T) - v.div(geom) * p + q * u.div(geom)) * dx)
+        self.arguments = solver.solve_linear('u:v,p:q', residual=res, constrain=self.cons)
+        res += gauss.integral(numpy.einsum('i,ij,j', v, u.grad(geom), u) * dx)
+        self.system = solver.System(res, trial='u,p', test='v,q')
+        self.inertia = gauss.integral(.5 * (u**2).sum(-1) * dx).derivative('u'), numpy.zeros(pbasis.shape)
+        self.residuals = evaluable.compile((res.derivative('v').as_evaluable_array, res.derivative('q').as_evaluable_array))
+
+    def assert_resnorm(self, args, tol):
+        ures, pres = self.residuals(**args)
+        resnorm = numpy.linalg.norm(numpy.concatenate([ures[numpy.isnan(self.cons['u'])], pres]))
+        self.assertLess(resnorm, tol)
+
+    def test_direct(self):
+        with self.assertRaises(ValueError):
+            self.system.solve(constrain=self.cons)
+
+    def test_newton(self):
+        args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.Newton(), tol=1e-10, maxiter=3)
+        self.assert_resnorm(args, tol=1e-10)
+
+    def test_newton_linesearch_normbased(self):
+        args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.LinesearchNewton(strategy=solver.NormBased()), tol=1e-10, maxiter=3)
+        self.assert_resnorm(args, tol=1e-10)
+
+    def test_newton_linesearch_medianbased(self):
+        args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.LinesearchNewton(strategy=solver.MedianBased()), tol=1e-10, maxiter=3)
+        self.assert_resnorm(args, tol=1e-10)
+
+    def test_newton_tolnotreached(self):
+        with self.assertLogs('nutils', logging.WARNING) as cm:
+            args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.Newton(), tol=1e-10, maxiter=3, linargs=dict(rtol=1e-99))
+        for msg in cm.output:
+            self.assertIn('solver failed to reach tolerance', msg)
+        self.assert_resnorm(args, tol=1e-10)
+
+    def test_pseudotime(self):
+        args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.Pseudotime(inertia=self.inertia, timestep=1), tol=1e-10, maxiter=6)
+        self.assert_resnorm(args, tol=1e-10)
+
+
+class system_burgers(TestCase):
+
+    def setUp(self):
+        super().setUp()
+        domain, geom = mesh.rectilinear([10], periodic=(0,))
+        basis = domain.basis('discont', degree=1)
+        ns = Namespace()
+        ns.x = geom
+        ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+        ns.add_field(('u', 'u0', 'v'), basis)
+        ns.add_field(('t', 't0'))
+        ns.dudt = '(u - u0) / (t - t0)'
+        ns.f = '.5 u^2'
+        residual = domain.integral('(v dudt - ∇_0(v) f) dV' @ ns, degree=2)
+        residual += domain.interfaces.integral('-[v] n_0 ({f} - .5 [u] n_0) dS' @ ns, degree=4)
+        self.arguments = {'u': numpy.sin(numpy.arange(len(basis)))}  # "random" initial vector
+        self.system = solver.System(residual, trial='u', test='v')
+
+    def test_step(self):
+        args = self.system.step(timestep=100, timetarget='t', historysuffix='0', arguments=self.arguments, method=solver.LinesearchNewton(), tol=1e-10)
+        self.assertAlmostEqual64(args['u'], 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')

@@ -1,4 +1,5 @@
-from nutils import mesh, function, solver, export, testing
+from nutils import mesh, function, export, testing
+from nutils.solver import System
 from nutils.expression_v2 import Namespace
 from dataclasses import dataclass
 from typing import Union
@@ -75,7 +76,7 @@ class NURBS:
             topo = topo.refine(self.nrefine)
             bsplinebasis = topo.basis('spline', degree=2)
             sqr = topo.integral((function.dotarg('w', bsplinebasis) - weightfunc)**2, degree=9)
-            controlweights = solver.optimize('w', sqr)
+            controlweights = System(sqr, trial='w').solve()['w']
             nurbsbasis = bsplinebasis * controlweights / weightfunc
         return topo.withboundary(hole='left', sym='top,bottom', far='right'), geom, nurbsbasis, 5
 
@@ -136,13 +137,13 @@ def main(mode: Union[FCM, NURBS] = NURBS(),
     log.info('hole radius exact up to L2 error {:.2e}'.format(radiuserr))
 
     sqr = topo.boundary['sym'].integral('(u_i n_i)^2 dS' @ ns, degree=degree*2)
-    cons = solver.optimize(('u',), sqr, droptol=1e-15)
+    cons = System(sqr, trial='u').optimize(droptol=1e-15)
 
     sqr = topo.boundary['far'].integral('du_k du_k dS' @ ns, degree=20)
-    cons = solver.optimize(('u',), sqr, droptol=1e-15, constrain=cons)
+    cons = System(sqr, trial='u').optimize(droptol=1e-15, constrain=cons)
 
     res = topo.integral('∇_j(v_i) σ_ij dV' @ ns, degree=degree*2)
-    args = solver.solve_linear('u:v', res, constrain=cons)
+    args = System(res, trial='u', test='v').solve(constrain=cons)
 
     bezier = topo.sample('bezier', 5)
     X, σxx = bezier.eval(['X_i', 'σ_00'] @ ns, **args)
