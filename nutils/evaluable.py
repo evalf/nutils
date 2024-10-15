@@ -6282,8 +6282,9 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
         print('    ' + line, file=script)
     print('    return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]), file=script)
     script = script.getvalue()
+    script_hash = hashlib.sha1(script.encode('utf-8')).digest()
 
-    name = 'compiled_{}'.format(hashlib.sha256(script.encode('utf-8')).hexdigest())
+    name = f'compiled_{script_hash.hex()}'
 
     if debug_flags.compile:
         print(script)
@@ -6295,7 +6296,7 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     # Compile.
     eval(builtins.compile(script, name, 'exec'), globals)
     compiled = globals['compiled']
-    compiled.__nutils_hash__ = types.nutils_hash(script)
+    compiled.__nutils_hash__ = script_hash
     return compiled
 
 
