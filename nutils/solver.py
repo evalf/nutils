@@ -365,7 +365,7 @@ class System:
             log.info(f'optimal value: {val:.1e}')
         return arguments
 
-    def step(self, *, timestep: float, timetarget: str, historysuffix: str, arguments: Dict[str, numpy.ndarray], **solveargs) -> Dict[str, numpy.ndarray]:
+    def step(self, *, timestep: float, historysuffix: str, arguments: Dict[str, numpy.ndarray], timetarget: Optional[str] = None, timesteptarget: Optional[str] = None, **solveargs) -> Dict[str, numpy.ndarray]:
         '''Advance a time step.
 
         This method is best described by an example. Let ``timetarget`` equal
@@ -393,17 +393,22 @@ class System:
         for trial in self.trials:
             if trial in arguments:
                 arguments[trial + historysuffix] = arguments[trial]
-        time = arguments.get(timetarget, 0.)
-        arguments[timetarget + historysuffix] = time
-        arguments[timetarget] = time + timestep
+        if timesteptarget:
+            arguments[timesteptarget] = timestep
+        if timetarget:
+            time = arguments.get(timetarget, 0.)
+            arguments[timetarget + historysuffix] = time
+            arguments[timetarget] = time + timestep
+        elif not timesteptarget:
+            raise ValueError('either timetarget or timesteptarget should be specified')
         try:
             return self.solve(arguments=arguments, **solveargs)
         except (SolverError, matrix.MatrixError) as e:
             log.error(f'error: {e}; retrying with timestep {timestep/2}')
             with log.context('tic'):
-                halfway_arguments = self.step(timestep=timestep/2, timetarget=timetarget, historysuffix=historysuffix, arguments=arguments, **solveargs)
+                halfway_arguments = self.step(timestep=timestep/2, timetarget=timetarget, timesteptarget=timesteptarget, historysuffix=historysuffix, arguments=arguments, **solveargs)
             with log.context('toc'):
-                return self.step(timestep=timestep/2, timetarget=timetarget, historysuffix=historysuffix, arguments=halfway_arguments, **solveargs)
+                return self.step(timestep=timestep/2, timetarget=timetarget, timesteptarget=timesteptarget, historysuffix=historysuffix, arguments=halfway_arguments, **solveargs)
 
     @cache.function
     @log.withcontext
