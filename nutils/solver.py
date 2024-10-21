@@ -240,9 +240,16 @@ class System:
         value = functional if self.is_symmetric else ()
         block_vector = [evaluable._flat(res) for res in residuals]
         block_matrix = [[evaluable._flat(evaluable.derivative(res, argobjects[t]).simplified, 2) for t in self.trials] for res in block_vector]
-        self.__eval = evaluable.compile((tuple(tuple(map(evaluable.as_csr, row)) for row in block_matrix), tuple(block_vector), value))
 
         self.is_linear = not any(arg.name in self.trials for row in block_matrix for col in row for arg in col.arguments)
+        if self.is_linear:
+            z = {t: evaluable.zeros_like(argobjects[t]) for t in self.trials}
+            block_vector = [evaluable.replace_arguments(vector, z).simplified for vector in block_vector]
+            if self.is_symmetric:
+                value = evaluable.replace_arguments(value, z).simplified
+
+        self.__eval = evaluable.compile((tuple(tuple(map(evaluable.as_csr, row)) for row in block_matrix), tuple(block_vector), value))
+
         self.is_constant = self.is_linear and not any(col.arguments for row in block_matrix for col in row)
         self.__matrix_cache = None
 
@@ -261,6 +268,12 @@ class System:
             mat = matrix.assemble_block_csr(mat_blocks)
             if self.is_constant:
                 self.__matrix_cache = mat
+        if self.is_linear:
+            x = numpy.concatenate([arguments[t].ravel() for t in self.trials])
+            matx = mat @ x
+            if self.is_symmetric:
+                val += vec @ x + .5 * (x @ matx) # val(x) = val(0) + vec(0) x + .5 x mat x
+            vec = vec + matx # vec(x) = vec(0) + mat x
         return mat, vec, val
 
     def prepare_solution_vector(self, arguments: Dict[str, numpy.ndarray], constrain: Dict[str, numpy.ndarray]):
