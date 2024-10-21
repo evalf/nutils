@@ -434,9 +434,9 @@ class System:
 
         log.info(f'optimizing for argument {self._trial_info} with drop tolerance {droptol:.0e}')
         if not self.is_linear:
-            raise SolverError('system is not linear')
+            raise ValueError('system is not linear')
         if not self.is_symmetric:
-            raise SolverError('system is not symmetric')
+            raise ValueError('system is not symmetric')
         x, iscons, arguments = self.prepare_solution_vector(arguments, constrain)
         jac, res, val = self.assemble(arguments)
         nosupp = ~jac.rowsupp(droptol)
@@ -514,7 +514,7 @@ class Minimize:
 
     def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         if not system.is_symmetric:
-            raise SolverError('problem is not symmetric')
+            raise ValueError('problem is not symmetric')
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
         jac, res, val = system.assemble(arguments)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
