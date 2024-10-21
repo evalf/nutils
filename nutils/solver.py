@@ -250,8 +250,9 @@ class System:
 
         self.__eval = evaluable.compile((tuple(tuple(map(evaluable.as_csr, row)) for row in block_matrix), tuple(block_vector), value))
 
-        self.is_constant = self.is_linear and not any(col.arguments for row in block_matrix for col in row)
-        self.__matrix_cache = None
+        self.is_constant_matrix = self.is_linear and not any(col.arguments for row in block_matrix for col in row)
+        self.is_constant = self.is_constant_matrix and not any(vec.arguments for vec in block_vector) and not (self.is_symmetric and value.arguments)
+        self.__mat_vec_val = None, None, None
 
     @property
     def __nutils_hash__(self):
@@ -259,15 +260,18 @@ class System:
 
     @log.withcontext
     def assemble(self, arguments: Dict[str, numpy.ndarray]):
-        mat_blocks, vec_blocks, val = self.__eval(**arguments)
-        vec = numpy.concatenate(vec_blocks)
-        val = self.dtype(val) if self.is_symmetric else None
-        if self.__matrix_cache is not None:
-            mat = self.__matrix_cache
-        else:
-            mat = matrix.assemble_block_csr(mat_blocks)
+        mat, vec, val = self.__mat_vec_val
+        if vec is None:
+            mat_blocks, vec_blocks, maybe_val = self.__eval(**arguments)
+            if mat is None:
+                mat = matrix.assemble_block_csr(mat_blocks)
+            vec = numpy.concatenate(vec_blocks)
+            val = self.dtype(maybe_val) if self.is_symmetric else None
             if self.is_constant:
-                self.__matrix_cache = mat
+                vec.flags.writeable = False
+                self.__mat_vec_val = mat, vec, val
+            elif self.is_constant_matrix:
+                self.__mat_vec_val = mat, None, None
         if self.is_linear:
             x = numpy.concatenate([arguments[t].ravel() for t in self.trials])
             matx = mat @ x
