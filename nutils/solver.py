@@ -237,7 +237,7 @@ class System:
         self.trialshapes = dict(zip(self.trials, evaluable.compile(tuple(argobjects[t].shape for t in self.trials))()))
         self.__trial_offsets = numpy.cumsum([0] + [numpy.prod(self.trialshapes[t], dtype=int) for t in self.trials])
 
-        value = functional if self.is_symmetric else evaluable.constant(numpy.nan)
+        value = functional if self.is_symmetric else ()
         block_vector = [evaluable._flat(res) for res in residuals]
         block_matrix = [[evaluable._flat(evaluable.derivative(res, argobjects[t]).simplified, 2) for t in self.trials] for res in block_vector]
         self.__eval = evaluable.compile((tuple(tuple(map(evaluable.as_csr, row)) for row in block_matrix), tuple(block_vector), value))
@@ -254,6 +254,7 @@ class System:
     def assemble(self, arguments: Dict[str, numpy.ndarray]):
         mat_blocks, vec_blocks, val = self.__eval(**arguments)
         vec = numpy.concatenate(vec_blocks)
+        val = self.dtype(val) if self.is_symmetric else None
         if self.__matrix_cache is not None:
             mat = self.__matrix_cache
         else:
