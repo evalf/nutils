@@ -444,7 +444,7 @@ class System:
         log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
         x += dx
         x[nosupp & ~iscons] = numpy.nan
-        return arguments
+        return dict(constrain, **{t: arguments[t] for t in self.trials})
 
 
 @dataclass(eq=True, frozen=True)
