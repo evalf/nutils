@@ -5389,6 +5389,40 @@ def zero_all_arguments(value):
 def factor(array):
     '''Convert functional to a sparse polynomial.'''
 
+    # Let `array` be a quadratic function of arg. The factor function then
+    # evaluates the 0th, 1st and 2nd derivatives in `arg` = 0 to produce the
+    # equivalent Taylor series:
+    #
+    #   array(arg) == array(0) + darray_darg(0) arg + .5 arg d2array_darg2 arg.
+    #
+    # The factors (`darray_darg`, `d2array_darg2`) are evaluated as sparse
+    # arrays, and contracted with the arguments using Take and Inflate
+    # operations. This interior sparsity re-emerges by taking derivatives of
+    # the factored function to the relevant arguments.
+    #
+    # Note that, because derivatives commute, `d2array_darg2` is symmetric.
+    # However, unless the evaluable machinery is made aware of this property,
+    # derivative will naively generate an evaluable of the form:
+    #
+    #   array'(arg) == darray_darg(0) darg + .5 arg d2array_darg2 darg + .5 darg d2array_darg2 arg.
+    #
+    # Since the row and column indices of `d2array_darg2` differ, simplify
+    # cannot detect that `arg d2array_darg2 darg` and `darg d2array_darg2 arg`
+    # are equal, so the suboptimal structure is preserved. To avoid this,
+    # factor produces evaluables of the form:
+    #
+    #   array(arg) == array(0) + darray_darg(0) arg + .5 SymProd(arg, d2array_darg2 arg),
+    #
+    # which does produce the desired derivative:
+    #
+    #   array'(arg) == darray_darg(0) darg + arg d2array_darg2 darg.
+    #
+    # The `SymProd(a, b)` operation behaves like `Multiply(a, b)` except that
+    # its derivative is `2 a db` rather than `a db + da b`, effectively
+    # encoding the information that the two terms are equal. Care should be
+    # taken that the `SymProd` operation is used only where this property
+    # applies.
+
     array = array.as_evaluable_array.simplified
     degree = {arg: array.argument_degree(arg) for arg in array.arguments}
     log.info(f'analysing function of {", ".join(arg.name for arg in degree)} with highest power {max(degree.values())}')
