@@ -492,7 +492,7 @@ class Minimize:
     failrelax: float = -10.
 
     def __str__(self):
-        return 'newton'
+        return 'minimize'
 
     def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         if not system.is_symmetric:
