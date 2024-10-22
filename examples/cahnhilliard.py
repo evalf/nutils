@@ -114,7 +114,7 @@ def main(size: Length = parse('10cm'),
 
     For this reason, the `stab` enum in this script defines the stabilizing term
     `δψ`, rather than `f`, allowing Nutils to construct the residuals through
-    automatic differentiation using the `optimize` method.
+    symbolic differentiation.
 
     Parameters
     ----------
