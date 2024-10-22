@@ -723,8 +723,15 @@ class AssertEqual(Array):
         return max(lowera, lowerb), min(uppera, upperb)
 
     def _simplified(self):
-        if self.a == self.b:
-            return self.a
+        unique = []
+        queue = [self.a, self.b]
+        for item in queue:
+            if isinstance(item, AssertEqual):
+                queue.append(item.a)
+                queue.append(item.b)
+            elif item not in unique:
+                unique.append(item)
+        return functools.reduce(AssertEqual, unique)
 
     @property
     def dependencies(self):
