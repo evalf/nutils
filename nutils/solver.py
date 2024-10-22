@@ -439,11 +439,13 @@ class System:
             raise ValueError('system is not symmetric')
         x, iscons, arguments = self.prepare_solution_vector(arguments, constrain)
         jac, res, val = self.assemble(arguments)
-        nosupp = ~jac.rowsupp(droptol)
-        dx = -jac.solve(res, constrain=iscons | nosupp, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
+        mycons = iscons | ~jac.rowsupp(droptol)
+        dx = -jac.solve(res, constrain=mycons, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
         log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
         x += dx
-        x[nosupp & ~iscons] = numpy.nan
+        for trial, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:]):
+            log.info(f'constrained {j-i-mycons[i:j].sum()} degrees of freedom of {trial}')
+        x[mycons & ~iscons] = numpy.nan
         return dict(constrain, **{t: arguments[t] for t in self.trials})
 
 
