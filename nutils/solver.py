@@ -445,7 +445,10 @@ class System:
             raise ValueError('system is not linear')
         x, iscons, arguments = self.prepare_solution_vector(arguments, constrain)
         jac, res, val = self.assemble(arguments)
-        mycons = iscons | ~jac.rowsupp(droptol)
+        data, colidx, _ = jac.export('csr')
+        mycons = numpy.ones_like(iscons)
+        mycons[colidx[abs(data) > droptol]] = False # unconstrain dofs with nonzero columns
+        mycons |= iscons
         dx = -jac.solve(res, constrain=mycons, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
         if self.is_symmetric:
             log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
