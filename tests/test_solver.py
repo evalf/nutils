@@ -333,6 +333,125 @@ class theta_time(TestCase):
         self.check(solver.cranknicolson, theta=0.5)
 
 
+class System(TestCase):
+
+    def test_constant(self):
+        domain, geom = mesh.rectilinear([9])
+        u = function.dotarg('u', domain.basis('std', 1))
+        v = function.dotarg('v', domain.basis('std', 1))
+        f = domain.integral(v * (1 + u) * function.J(geom), degree=2)
+        sys = solver.System(f, trial='u', test='v')
+        self.assertTrue(sys.is_linear)
+        self.assertFalse(sys.is_symmetric)
+        self.assertTrue(sys.is_constant)
+        self.assertTrue(sys.is_constant_matrix)
+        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        args = {'u': numpy.arange(10, dtype=float)}
+        mat, vec, val = sys.assemble(arguments=args)
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
+        self.assertAllAlmostEqual(vec, f.derivative('v').eval(**args))
+        self.assertAlmostEqual(val, None)
+        newargs = {'u': numpy.ones(10)}
+        mat_, vec_, val_ = sys.assemble(arguments=newargs)
+        self.assertIs(mat_, mat)
+        self.assertAllAlmostEqual(vec_, f.derivative('v').eval(**newargs))
+
+    def test_constant_symmetric(self):
+        domain, geom = mesh.rectilinear([9])
+        u = function.dotarg('u', domain.basis('std', 1))
+        f = domain.integral((1 + u - u**2) * function.J(geom), degree=2)
+        sys = solver.System(f, trial='u')
+        self.assertTrue(sys.is_linear)
+        self.assertTrue(sys.is_symmetric)
+        self.assertTrue(sys.is_constant)
+        self.assertTrue(sys.is_constant_matrix)
+        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        args = {'u': numpy.arange(10, dtype=float)}
+        mat, vec, val = sys.assemble(arguments=args)
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), **args))
+        self.assertAllAlmostEqual(vec, f.derivative('u').eval(**args))
+        self.assertAlmostEqual(val, f.eval(**args))
+        newargs = {'u': numpy.ones(10)}
+        mat_, vec_, val_ = sys.assemble(arguments=newargs)
+        self.assertIs(mat_, mat)
+        self.assertAllAlmostEqual(vec_, f.derivative('u').eval(**newargs))
+        self.assertAlmostEqual(val_, f.eval(**newargs))
+
+    def test_constant_matrix(self):
+        domain, geom = mesh.rectilinear([9])
+        u = function.dotarg('u', domain.basis('std', 1))
+        v = function.dotarg('v', domain.basis('std', 1))
+        t = function.dotarg('t')
+        f = domain.integral(v * (t + u) * function.J(geom), degree=2)
+        sys = solver.System(f, trial='u', test='v')
+        self.assertTrue(sys.is_linear)
+        self.assertFalse(sys.is_symmetric)
+        self.assertFalse(sys.is_constant)
+        self.assertTrue(sys.is_constant_matrix)
+        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        args = {'u': numpy.arange(10, dtype=float), 't': 5}
+        mat, vec, val = sys.assemble(arguments=args)
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
+        self.assertAllAlmostEqual(vec, f.derivative('v').eval(**args))
+        self.assertAlmostEqual(val, None)
+        newargs = {'u': numpy.ones(10), 't': -1}
+        mat_, vec_, val_ = sys.assemble(arguments=newargs)
+        self.assertIs(mat_, mat)
+        self.assertAllAlmostEqual(vec_, f.derivative('v').eval(**newargs))
+
+    def test_linear(self):
+        domain, geom = mesh.rectilinear([9])
+        u = function.dotarg('u', domain.basis('std', 1))
+        v = function.dotarg('v', domain.basis('std', 1))
+        t = function.dotarg('t')
+        f = domain.integral(v * (u * t + 1) * function.J(geom), degree=2)
+        sys = solver.System(f, trial='u', test='v')
+        self.assertTrue(sys.is_linear)
+        self.assertFalse(sys.is_symmetric)
+        self.assertFalse(sys.is_constant)
+        self.assertFalse(sys.is_constant_matrix)
+        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        args = {'u': numpy.arange(10, dtype=float), 't': 5}
+        mat, vec, val = sys.assemble(arguments=args)
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
+        self.assertAllAlmostEqual(vec, f.derivative('v').eval(**args))
+        self.assertAlmostEqual(val, None)
+
+    def test_nonlinear(self):
+        domain, geom = mesh.rectilinear([9])
+        u = function.dotarg('u', domain.basis('std', 1))
+        v = function.dotarg('v', domain.basis('std', 1))
+        t = function.dotarg('t')
+        f = domain.integral(v * (u**2 + t) * function.J(geom), degree=2)
+        sys = solver.System(f, trial='u', test='v')
+        self.assertFalse(sys.is_linear)
+        self.assertFalse(sys.is_symmetric)
+        self.assertFalse(sys.is_constant)
+        self.assertFalse(sys.is_constant_matrix)
+        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        args = {'u': numpy.arange(10, dtype=float), 't': 5}
+        mat, vec, val = sys.assemble(arguments=args)
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
+        self.assertAllAlmostEqual(vec, f.derivative('v').eval(**args))
+        self.assertAlmostEqual(val, None)
+
+    def test_nonlinear_symmetric(self):
+        domain, geom = mesh.rectilinear([9])
+        u = function.dotarg('u', domain.basis('std', 1))
+        f = domain.integral(numpy.exp(u) * function.J(geom), degree=2)
+        sys = solver.System(f, trial='u')
+        self.assertFalse(sys.is_linear)
+        self.assertTrue(sys.is_symmetric)
+        self.assertFalse(sys.is_constant)
+        self.assertFalse(sys.is_constant_matrix)
+        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        args = {'u': numpy.arange(10, dtype=float)}
+        mat, vec, val = sys.assemble(arguments=args)
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), **args))
+        self.assertAllAlmostEqual(vec, f.derivative('u').eval(**args))
+        self.assertAlmostEqual(val, f.eval(**args))
+
+
 class system_finitestrain(TestCase):
 
     def setUp(self):
