@@ -432,16 +432,15 @@ class System:
             participate in the optimization problem.
         '''
 
-        log.info(f'optimizing for argument {self._trial_info} with drop tolerance {droptol:.0e}')
+        log.info(f'{"optimizing" if self.is_symmetric else "solving"} for argument {self._trial_info} with drop tolerance {droptol:.0e}')
         if not self.is_linear:
             raise ValueError('system is not linear')
-        if not self.is_symmetric:
-            raise ValueError('system is not symmetric')
         x, iscons, arguments = self.prepare_solution_vector(arguments, constrain)
         jac, res, val = self.assemble(arguments)
         mycons = iscons | ~jac.rowsupp(droptol)
         dx = -jac.solve(res, constrain=mycons, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
-        log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
+        if self.is_symmetric:
+            log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
         x += dx
         for trial, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:]):
             log.info(f'constrained {j-i-mycons[i:j].sum()} degrees of freedom of {trial}')
