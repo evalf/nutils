@@ -129,7 +129,7 @@ def main(nelems: int = 99,
     ns.uwall_i = 'rotation ε_ij x_j' # clockwise positive rotation
 
     sqr = domain.boundary['inflow'].integral('Σ_i (u_i - uinf_i)^2 dS' @ ns, degree=degree*2)
-    cons = System(sqr, trial='u').optimize(droptol=1e-15) # constrain inflow boundary to unit horizontal flow
+    cons = System(sqr, trial='u').solve_constraints(droptol=1e-15) # constrain inflow boundary to unit horizontal flow
 
     sqr = domain.integral('(.5 Σ_i (u_i - uinf_i)^2 - ∇_k(u_k) p) dV' @ ns, degree=degree*2)
     args = System(sqr, trial='u,p').solve(constrain=cons) # set initial condition to potential flow

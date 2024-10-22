@@ -118,12 +118,12 @@ def main(nelems: int = 32,
 
     # strong enforcement of non-penetrating boundary conditions
     sqr = domain.boundary.integral('(u_k n_k)^2 dS' @ ns, degree=degree*2)
-    cons = System(sqr, trial='u').optimize(droptol=1e-15)
+    cons = System(sqr, trial='u').solve_constraints(droptol=1e-15)
 
     if strongbc:
         # strong enforcement of tangential boundary conditions
         sqr = domain.boundary.integral('(ε_ij n_i (u_j - uwall_j))^2 dS' @ ns, degree=degree*2)
-        tcons = System(sqr, trial='u').optimize(droptol=1e-15)
+        tcons = System(sqr, trial='u').solve_constraints(droptol=1e-15)
         cons['u'] = numpy.choose(numpy.isnan(cons['u']), [cons['u'], tcons['u']])
     else:
         # weak enforcement of tangential boundary conditions via Nitsche's method

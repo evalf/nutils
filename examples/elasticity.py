@@ -51,7 +51,7 @@ def main(nelems: int = 24,
     ns.q_i = '-δ_i1'
 
     sqr = domain.boundary['top'].integral('u_k u_k dS' @ ns, degree=degree*2)
-    cons = System(sqr, trial='u').optimize(droptol=1e-15)
+    cons = System(sqr, trial='u').solve_constraints(droptol=1e-15)
 
     # solve for equilibrium configuration
     energy = domain.integral('(E - u_i q_i) dV' @ ns, degree=degree*2)

@@ -137,10 +137,10 @@ def main(mode: Union[FCM, NURBS] = NURBS(),
     log.info('hole radius exact up to L2 error {:.2e}'.format(radiuserr))
 
     sqr = topo.boundary['sym'].integral('(u_i n_i)^2 dS' @ ns, degree=degree*2)
-    cons = System(sqr, trial='u').optimize(droptol=1e-15)
+    cons = System(sqr, trial='u').solve_constraints(droptol=1e-15)
 
     sqr = topo.boundary['far'].integral('du_k du_k dS' @ ns, degree=20)
-    cons = System(sqr, trial='u').optimize(droptol=1e-15, constrain=cons)
+    cons = System(sqr, trial='u').solve_constraints(droptol=1e-15, constrain=cons)
 
     res = topo.integral('∇_j(v_i) σ_ij dV' @ ns, degree=degree*2)
     args = System(res, trial='u', test='v').solve(constrain=cons)

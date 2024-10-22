@@ -58,7 +58,7 @@ def main(nelems: int = 20,
 
     sqr = domain.boundary['left'].integral('u_k u_k dS' @ ns, degree=degree*2)
     sqr += domain.boundary['right'].integral('((u_0 - X_1 sin(2 angle) - cos(angle) + 1)^2 + (u_1 - X_1 (cos(2 angle) - 1) + sin(angle))^2) dS' @ ns, degree=degree*2)
-    cons = System(sqr, trial='u').optimize(droptol=1e-15)
+    cons = System(sqr, trial='u').solve_constraints(droptol=1e-15)
 
     energy = domain.integral('energy dV' @ ns, degree=degree*2)
     args0 = System(energy, trial='u').solve(constrain=cons)

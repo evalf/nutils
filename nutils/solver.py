@@ -407,14 +407,22 @@ class System:
 
     @cache.function
     @log.withcontext
-    def optimize(self, *, droptol: Optional[float], arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> Tuple[Dict[str, numpy.ndarray], float]:
-        '''Optimize singular system.
+    def solve_constraints(self, *, droptol: Optional[float], arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> Tuple[Dict[str, numpy.ndarray], float]:
+        '''Solve for Dirichlet constraints.
 
-        This method is similar to ``solve``, but specific to symmetric linear
-        systems, with the added ability to solve a limited class of singular
-        systems. It does so by isolating the subset of arguments that
-        contribute to the functional and solving the corresponding submatrix.
-        The remaining argument values are returned as NaN (not a number).
+        This method is similar to ``solve``, but with two key differences.
+
+        The method is limited to linear systems, but adds the ability to solve
+        a limited class of singular systems. It does so by isolating the subset
+        of arguments that contribute (up to droptol) to the residual, and
+        solving the corresponding submatrix. The remaining argument values are
+        returned as NaN (not a number).
+
+        The second key difference with solve is that the returned dictionary
+        is augmented with the remaining _constrain_ items, rather than those
+        from _arguments_, reflecting the method's main utility of forming
+        Dirichlet constraints. This allows for the aggregation of constraints
+        by calling the method multiple times in series.
 
         Parameters
         ----------
@@ -908,7 +916,7 @@ def optimize(target, functional: evaluable.asarray, *, tol: float = 0., argument
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
     system = System(functional, *_split_trial_test(target))
     if droptol is not None:
-        return system.optimize(arguments=arguments, constrain=constrain or {}, linargs=linargs, droptol=droptol)
+        return system.solve_constraints(arguments=arguments, constrain=constrain or {}, linargs=linargs, droptol=droptol)
     method = None if system.is_linear else Newton() if linesearch is None else LinesearchNewton(strategy=linesearch, relax0=relax0, failrelax=failrelax)
     return system.solve(arguments=arguments, constrain=constrain or {}, linargs=linargs, method=method, tol=tol)
 
