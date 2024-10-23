@@ -114,6 +114,11 @@ class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning):
     pass
 
 
+class NotPolynomal(Exception):
+    def __init__(self, argument):
+        super().__init__(f'evaluable is not polynomial in argument {argument.name!r}')
+
+
 class Evaluable(types.DataClass):
     'Base class'
 
@@ -216,6 +221,18 @@ class Evaluable(types.DataClass):
             raise NotImplementedError
 
         return py_self.get_attr('evalf').call(*args)
+
+    def argument_degree(self, argument):
+        '''return the heighest power of argument of self is polynomial,
+        or raise NotPolynomal otherwise.'''
+        # IMPORTANT: since we are tracking only the highest power, we cannot
+        # ever lower a power, e.g. via division. To see this, consider the sum
+        # of a 0th and 1st power, registered as degree 1. This would be lowered
+        # via division to 0, thereby suggesting that the evaluable is constant
+        # while in reality it is not polynomial.
+        if argument in self.arguments:
+            raise NotPolynomal(argument)
+        return 0
 
 
 class Tuple(Evaluable):
@@ -1093,6 +1110,11 @@ class InsertAxis(Array):
     def _const_uniform(self):
         return self.func._const_uniform
 
+    def argument_degree(self, argument):
+        if argument in self.length.arguments:
+            raise NotPolynomal(argument)
+        return self.func.argument_degree(argument)
+
 
 class Transpose(Array):
 
@@ -1294,6 +1316,9 @@ class Transpose(Array):
             offsets = numpy.cumsum([0] + [index.ndim for index in self.func.indices])
             axes = [n for axis in self.axes for n in range(offsets[axis], offsets[axis+1])]
             return Assemble(transpose(self.func.func, axes), tuple(self.func.indices[i] for i in self.axes), self.shape)
+
+    def argument_degree(self, argument):
+        return self.func.argument_degree(argument)
 
 
 class Product(Array):
@@ -1618,6 +1643,10 @@ class Multiply(Array):
         extrema = [b1 and b2 and b1 * b2 for b1 in func1._intbounds for b2 in func2._intbounds]
         return min(extrema), max(extrema)
 
+    def argument_degree(self, argument):
+        func1, func2 = self.funcs
+        return func1.argument_degree(argument) + func2.argument_degree(argument)
+
 
 class Add(Array):
 
@@ -1768,6 +1797,10 @@ class Add(Array):
         lowers, uppers = zip(*[f._intbounds for f in self._terms])
         return builtins.sum(lowers), builtins.sum(uppers)
 
+    def argument_degree(self, argument):
+        func1, func2 = self.funcs
+        return max(func1.argument_degree(argument), func2.argument_degree(argument))
+
 
 class Einsum(Array):
 
@@ -1907,6 +1940,9 @@ class Sum(Array):
     def _takediag(self, axis1, axis2):
         return sum(_takediag(self.func, axis1, axis2), -2)
 
+    def argument_degree(self, argument):
+        return self.func.argument_degree(argument)
+
 
 class TakeDiag(Array):
 
@@ -2025,6 +2061,11 @@ class Take(Array):
 
     def _intbounds_impl(self):
         return self.func._intbounds
+
+    def argument_degree(self, argument):
+        if argument in self.indices.arguments:
+            raise NotPolynomal(argument)
+        return self.func.argument_degree(argument)
 
 
 class Power(Array):
@@ -3263,6 +3304,11 @@ class Inflate(Array):
         lower, upper = self.func._intbounds
         return min(lower, 0), max(upper, 0)
 
+    def argument_degree(self, argument):
+        if argument in self.dofmap.arguments or argument in self.length.arguments:
+            return NotPolynomal(argument)
+        return self.func.argument_degree(argument)
+
 
 class SwapInflateTake(Evaluable):
 
@@ -3497,6 +3543,9 @@ class Diagonalize(Array):
     def _assparse(self):
         return tuple((*indices, indices[-1], values) for *indices, values in self.func._assparse)
 
+    def argument_degree(self, argument):
+        return self.func.argument_degree(argument)
+
 
 class Guard(Array):
     'bar all simplifications'
@@ -3694,6 +3743,9 @@ class Argument(DerivativeTargetBase):
     @property
     def arguments(self):
         return frozenset({self})
+
+    def argument_degree(self, argument):
+        return 1 if self == argument else 0
 
 
 class IdentifierDerivativeTarget(DerivativeTargetBase):
@@ -3900,6 +3952,11 @@ class Unravel(Array):
     @verify_sparse_chunks
     def _assparse(self):
         return tuple((*indices[:-1], *divmod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
+
+    def argument_degree(self, argument):
+        if argument in self.sh1.arguments or argument in self.sh2.arguments:
+            raise NotPolynomal(argument)
+        return self.func.argument_degree(argument)
 
 
 class RavelIndex(Array):
@@ -4935,6 +4992,9 @@ class LoopSum(Loop):
             return zeros_like(self)
         elif self.index not in self.func.arguments:
             return self.func * astype(self.index.length, self.func.dtype)
+        for axis, parts in self.func._inflations:
+            if not any(self.index in dofmap.arguments for dofmap in parts):
+                return util.sum(_inflate(loop_sum(func, self.index), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
         return self.func._loopsum(self.index)
 
     def _takediag(self, axis1, axis2):
@@ -4982,6 +5042,9 @@ class LoopSum(Loop):
                     assert all(self.index not in n.arguments for n in elem_values.shape[:-1])
                 chunks.append(tuple(loop_concatenate(arr, self.index) for arr in (*elem_indices, elem_values)))
         return tuple(chunks)
+
+    def argument_degree(self, argument):
+        return self.func.argument_degree(argument)
 
 
 class _SizesToOffsets(Array):
@@ -5140,6 +5203,11 @@ class LoopConcatenate(Loop):
 
     def _intbounds_impl(self):
         return self.func._intbounds
+
+    def argument_degree(self, argument):
+        if argument in self.start.arguments or argument in self.stop.arguments or argument in self.concat_length.arguments:
+            raise NotPolynomal(argument)
+        return self.func.argument_degree(argument)
 
 
 class SearchSorted(Array):
@@ -5309,6 +5377,145 @@ def as_csr(array):
     return values, rowptr, colidx, ncols
 
 
+@util.shallow_replace
+def zero_all_arguments(value):
+    '''Replace all function arguments by zeros.'''
+
+    if isinstance(value, Argument):
+        return zeros_like(value)
+
+
+@log.withcontext
+def factor(array):
+    '''Convert functional to a sparse polynomial.'''
+
+    # Let `array` be a quadratic function of arg. The factor function then
+    # evaluates the 0th, 1st and 2nd derivatives in `arg` = 0 to produce the
+    # equivalent Taylor series:
+    #
+    #   array(arg) == array(0) + darray_darg(0) arg + .5 arg d2array_darg2 arg.
+    #
+    # The factors (`darray_darg`, `d2array_darg2`) are evaluated as sparse
+    # arrays, and contracted with the arguments using Take and Inflate
+    # operations. This interior sparsity re-emerges by taking derivatives of
+    # the factored function to the relevant arguments.
+    #
+    # Note that, because derivatives commute, `d2array_darg2` is symmetric.
+    # However, unless the evaluable machinery is made aware of this property,
+    # derivative will naively generate an evaluable of the form:
+    #
+    #   array'(arg) == darray_darg(0) darg + .5 arg d2array_darg2 darg + .5 darg d2array_darg2 arg.
+    #
+    # Since the row and column indices of `d2array_darg2` differ, simplify
+    # cannot detect that `arg d2array_darg2 darg` and `darg d2array_darg2 arg`
+    # are equal, so the suboptimal structure is preserved. To avoid this,
+    # factor produces evaluables of the form:
+    #
+    #   array(arg) == array(0) + darray_darg(0) arg + .5 SymProd(arg, d2array_darg2 arg),
+    #
+    # which does produce the desired derivative:
+    #
+    #   array'(arg) == darray_darg(0) darg + arg d2array_darg2 darg.
+    #
+    # The `SymProd(a, b)` operation behaves like `Multiply(a, b)` except that
+    # its derivative is `2 a db` rather than `a db + da b`, effectively
+    # encoding the information that the two terms are equal. Care should be
+    # taken that the `SymProd` operation is used only where this property
+    # applies.
+
+    array = array.as_evaluable_array.simplified
+    degree = {arg: array.argument_degree(arg) for arg in array.arguments}
+    log.info(f'analysing function of {", ".join(arg.name for arg in degree)} with highest power {max(degree.values())}')
+    queue = [((), array)]
+    factor_args = []
+    coeffs = []
+    for args, func in queue:
+        func = func.simplified
+        factor_args.append(args)
+        coeffs.append(zero_all_arguments(func).simplified)
+        for arg in func.arguments:
+            if not args or arg.name >= args[-1].name:
+                n = args.count(arg) + 1
+                assert n <= degree[arg]
+                queue.append(((*args, arg), derivative(func, arg) / float(n)))
+    log.info(f'constructing sparse polynomial of degree {max(len(args) for args in factor_args)} with {len(factor_args)} monomials:',
+        ', '.join('*'.join(f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()) or '1' for args in factor_args))
+    monomials = []
+    ncoeffs = 0
+    for args, (values, indices, shape) in zip(factor_args, eval_coo(coeffs)):
+        indices, values = _sort_and_prune(shape, indices, values)
+        if not len(values):
+            continue
+        ncoeffs += len(values)
+        factors = [constant(values)]
+        i = array.ndim
+        for arg, repeated in _iter_repeated(args):
+            if arg.ndim == 0:
+                factor = arg
+            else:
+                j = i + arg.ndim
+                factor = Take(_flat(arg), constant(numpy.ravel_multi_index(indices[i:j], shape[i:j])))
+                i = j
+            if repeated:
+                factor = SymProd(factors.pop(), factor)
+            factors.append(factor)
+        term = util.product(factors)
+        assert i == len(indices)
+        if array.ndim == 0:
+            monomial = Sum(term)
+        else:
+            index = constant(numpy.ravel_multi_index(indices[:array.ndim], shape[:array.ndim]))
+            size = constant(numpy.prod(shape[:array.ndim], dtype=int))
+            monomial = Inflate(term, index, size)
+            while monomial.ndim < array.ndim:
+                monomial = Unravel(monomial, constant(shape[monomial.ndim-1]), constant(numpy.prod(shape[monomial.ndim:array.ndim], dtype=int)))
+        monomials.append(monomial)
+    log.info(f'factored function contains {ncoeffs:,} doubles ({ncoeffs>>17:,}MB)')
+    if not monomials:
+        return zeros_like(array)
+    return util.sum(monomials)
+
+
+class SymProd(Array):
+
+    a: Array
+    b: Array
+
+    def __post_init__(self):
+        assert not _any_certainly_different(self.a.shape, self.b.shape)
+        assert self.a.dtype == self.b.dtype
+        assert self.a.dtype != bool
+        assert not isinstance(self.b, SymProd)
+
+    @property
+    def shape(self):
+        return self.a.shape
+
+    @property
+    def dtype(self):
+        return self.a.dtype
+
+    @property
+    def dependencies(self):
+        return self.a, self.b
+
+    @property
+    def power(self):
+        return self.a.power + 1 if isinstance(self.a, SymProd) else 2
+
+    def evalf(self, a, b):
+        return a * b
+
+    def _derivative(self, var, seen):
+        return self.dtype(self.power) * appendaxes(self.a, var.shape) * self.b._derivative(var, seen)
+
+    def _optimized_for_numpy(self):
+        return self.a * self.b
+
+    def argument_degree(self, argument):
+        return self.a.argument_degree(argument) + self.b.argument_degree(argument)
+
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 
@@ -5380,6 +5587,26 @@ def _make_loop_ids_unique(funcs: typing.Tuple[Evaluable, ...]) -> typing.Tuple[E
         return new_obj
 
     return tuple(map(replace_inner, funcs))
+
+
+def _sort_and_prune(shape, indices, values):
+    assert len(shape) == len(indices)
+    if not shape:
+        v = values.sum()
+        return (), v[None] if v else numpy.zeros(0, int)
+    flat_index, inverse = numpy.unique(numpy.ravel_multi_index(indices, shape), return_inverse=True)
+    values = numeric.accumulate(values, [inverse], flat_index.shape)
+    nonzero = values != 0
+    if nonzero.all():
+        nonzero = slice(None)
+    return numpy.unravel_index(flat_index[nonzero], shape), values[nonzero]
+
+
+def _iter_repeated(iterator):
+    last = object()
+    for item in iterator:
+        yield item, item == last
+        last = item
 
 
 class _Stats:
@@ -6282,8 +6509,9 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
         print('    ' + line, file=script)
     print('    return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]), file=script)
     script = script.getvalue()
+    script_hash = hashlib.sha1(script.encode('utf-8')).digest()
 
-    name = 'compiled_{}'.format(hashlib.sha256(script.encode('utf-8')).hexdigest())
+    name = f'compiled_{script_hash.hex()}'
 
     if debug_flags.compile:
         print(script)
@@ -6295,7 +6523,7 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     # Compile.
     eval(builtins.compile(script, name, 'exec'), globals)
     compiled = globals['compiled']
-    compiled.__nutils_hash__ = types.nutils_hash(script)
+    compiled.__nutils_hash__ = script_hash
     return compiled
 
 
@@ -6361,7 +6589,7 @@ def _log_stats(func, stats):
     maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
     tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
     aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata for n in node.walk(set())))
-    fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
+    fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime) if node.metadata[1].ncalls else None) if maxtime else None
     if graphviz:
         node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
     log.info('total time: {:.0f}ms\n'.format(tottime/1e6) + '\n'.join('{:4.0f} {} ({} calls, avg {:.3f} per call)'.format(t / 1e6, k, n, t / (1e6*n))
