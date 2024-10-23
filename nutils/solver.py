@@ -237,14 +237,22 @@ class System:
         self.trialshapes = dict(zip(self.trials, evaluable.compile(tuple(argobjects[t].shape for t in self.trials))()))
         self.__trial_offsets = numpy.cumsum([0] + [numpy.prod(self.trialshapes[t], dtype=int) for t in self.trials])
 
-        value = functional if self.is_symmetric else evaluable.constant(numpy.nan)
+        value = functional if self.is_symmetric else ()
         block_vector = [evaluable._flat(res) for res in residuals]
         block_matrix = [[evaluable._flat(evaluable.derivative(res, argobjects[t]).simplified, 2) for t in self.trials] for res in block_vector]
-        self.__eval = evaluable.compile((tuple(tuple(map(evaluable.as_csr, row)) for row in block_matrix), tuple(block_vector), value))
 
         self.is_linear = not any(arg.name in self.trials for row in block_matrix for col in row for arg in col.arguments)
-        self.is_constant = self.is_linear and not any(col.arguments for row in block_matrix for col in row)
-        self.__matrix_cache = None
+        if self.is_linear:
+            z = {t: evaluable.zeros_like(argobjects[t]) for t in self.trials}
+            block_vector = [evaluable.replace_arguments(vector, z).simplified for vector in block_vector]
+            if self.is_symmetric:
+                value = evaluable.replace_arguments(value, z).simplified
+
+        self.__eval = evaluable.compile((tuple(tuple(map(evaluable.as_csr, row)) for row in block_matrix), tuple(block_vector), value))
+
+        self.is_constant_matrix = self.is_linear and not any(col.arguments for row in block_matrix for col in row)
+        self.is_constant = self.is_constant_matrix and not any(vec.arguments for vec in block_vector) and not (self.is_symmetric and value.arguments)
+        self.__mat_vec_val = None, None, None
 
     @property
     def __nutils_hash__(self):
@@ -252,14 +260,24 @@ class System:
 
     @log.withcontext
     def assemble(self, arguments: Dict[str, numpy.ndarray]):
-        mat_blocks, vec_blocks, val = self.__eval(**arguments)
-        vec = numpy.concatenate(vec_blocks)
-        if self.__matrix_cache is not None:
-            mat = self.__matrix_cache
-        else:
-            mat = matrix.assemble_block_csr(mat_blocks)
+        mat, vec, val = self.__mat_vec_val
+        if vec is None:
+            mat_blocks, vec_blocks, maybe_val = self.__eval(**arguments)
+            if mat is None:
+                mat = matrix.assemble_block_csr(mat_blocks)
+            vec = numpy.concatenate(vec_blocks)
+            val = self.dtype(maybe_val) if self.is_symmetric else None
             if self.is_constant:
-                self.__matrix_cache = mat
+                vec.flags.writeable = False
+                self.__mat_vec_val = mat, vec, val
+            elif self.is_constant_matrix:
+                self.__mat_vec_val = mat, None, None
+        if self.is_linear:
+            x = numpy.concatenate([arguments[t].ravel() for t in self.trials])
+            matx = mat @ x
+            if self.is_symmetric:
+                val += vec @ x + .5 * (x @ matx) # val(x) = val(0) + vec(0) x + .5 x mat x
+            vec = vec + matx # vec(x) = vec(0) + mat x
         return mat, vec, val
 
     def prepare_solution_vector(self, arguments: Dict[str, numpy.ndarray], constrain: Dict[str, numpy.ndarray]):
@@ -389,14 +407,22 @@ class System:
 
     @cache.function
     @log.withcontext
-    def optimize(self, *, droptol: Optional[float], arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> Tuple[Dict[str, numpy.ndarray], float]:
-        '''Optimize singular system.
+    def solve_constraints(self, *, droptol: Optional[float], arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> Tuple[Dict[str, numpy.ndarray], float]:
+        '''Solve for Dirichlet constraints.
 
-        This method is similar to ``solve``, but specific to symmetric linear
-        systems, with the added ability to solve a limited class of singular
-        systems. It does so by isolating the subset of arguments that
-        contribute to the functional and solving the corresponding submatrix.
-        The remaining argument values are returned as NaN (not a number).
+        This method is similar to ``solve``, but with two key differences.
+
+        The method is limited to linear systems, but adds the ability to solve
+        a limited class of singular systems. It does so by isolating the subset
+        of arguments that contribute (up to droptol) to the residual, and
+        solving the corresponding submatrix. The remaining argument values are
+        returned as NaN (not a number).
+
+        The second key difference with solve is that the returned dictionary
+        is augmented with the remaining _constrain_ items, rather than those
+        from _arguments_, reflecting the method's main utility of forming
+        Dirichlet constraints. This allows for the aggregation of constraints
+        by calling the method multiple times in series.
 
         Parameters
         ----------
@@ -414,19 +440,23 @@ class System:
             participate in the optimization problem.
         '''
 
-        log.info(f'optimizing for argument {self._trial_info} with drop tolerance {droptol:.0e}')
+        log.info(f'{"optimizing" if self.is_symmetric else "solving"} for argument {self._trial_info} with drop tolerance {droptol:.0e}')
         if not self.is_linear:
-            raise SolverError('system is not linear')
-        if not self.is_symmetric:
-            raise SolverError('system is not symmetric')
+            raise ValueError('system is not linear')
         x, iscons, arguments = self.prepare_solution_vector(arguments, constrain)
         jac, res, val = self.assemble(arguments)
-        nosupp = ~jac.rowsupp(droptol)
-        dx = -jac.solve(res, constrain=iscons | nosupp, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
-        log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
+        data, colidx, _ = jac.export('csr')
+        mycons = numpy.ones_like(iscons)
+        mycons[colidx[abs(data) > droptol]] = False # unconstrain dofs with nonzero columns
+        mycons |= iscons
+        dx = -jac.solve(res, constrain=mycons, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
+        if self.is_symmetric:
+            log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
         x += dx
-        x[nosupp & ~iscons] = numpy.nan
-        return arguments
+        for trial, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:]):
+            log.info(f'constrained {j-i-mycons[i:j].sum()} degrees of freedom of {trial}')
+        x[mycons & ~iscons] = numpy.nan
+        return dict(constrain, **{t: arguments[t] for t in self.trials})
 
 
 @dataclass(eq=True, frozen=True)
@@ -492,11 +522,11 @@ class Minimize:
     failrelax: float = -10.
 
     def __str__(self):
-        return 'newton'
+        return 'minimize'
 
     def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         if not system.is_symmetric:
-            raise SolverError('problem is not symmetric')
+            raise ValueError('problem is not symmetric')
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
         jac, res, val = system.assemble(arguments)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
@@ -889,7 +919,7 @@ def optimize(target, functional: evaluable.asarray, *, tol: float = 0., argument
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
     system = System(functional, *_split_trial_test(target))
     if droptol is not None:
-        return system.optimize(arguments=arguments, constrain=constrain or {}, linargs=linargs, droptol=droptol)
+        return system.solve_constraints(arguments=arguments, constrain=constrain or {}, linargs=linargs, droptol=droptol)
     method = None if system.is_linear else Newton() if linesearch is None else LinesearchNewton(strategy=linesearch, relax0=relax0, failrelax=failrelax)
     return system.solve(arguments=arguments, constrain=constrain or {}, linargs=linargs, method=method, tol=tol)
 

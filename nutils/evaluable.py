@@ -691,15 +691,20 @@ class Array(Evaluable):
         return NotImplemented
 
 
+def assert_equal(a, b):
+    return a if a == b else AssertEqual(a, b)
+
+
+def assert_equal_tuple(A, B):
+    assert len(A) == len(B)
+    return tuple(map(assert_equal, A, B))
+
+
 class AssertEqual(Array):
     'Confirm arrays equality at runtime'
 
     a: Array
     b: Array
-
-    @classmethod
-    def map(cls, A, B):
-        return tuple(map(cls, A, B))
 
     def __post_init__(self):
         assert not _certainly_different(self.a, self.b)
@@ -710,7 +715,7 @@ class AssertEqual(Array):
 
     @cached_property
     def shape(self):
-        return self.map(self.a.shape, self.b.shape)
+        return assert_equal_tuple(self.a.shape, self.b.shape)
 
     def _intbounds_impl(self):
         lowera, uppera = self.a._intbounds_impl()
@@ -718,8 +723,15 @@ class AssertEqual(Array):
         return max(lowera, lowerb), min(uppera, upperb)
 
     def _simplified(self):
-        if self.a == self.b:
-            return self.a
+        unique = []
+        queue = [self.a, self.b]
+        for item in queue:
+            if isinstance(item, AssertEqual):
+                queue.append(item.a)
+                queue.append(item.b)
+            elif item not in unique:
+                unique.append(item)
+        return functools.reduce(AssertEqual, unique)
 
     @property
     def dependencies(self):
@@ -1442,7 +1454,7 @@ class Multiply(Array):
     @cached_property
     def shape(self):
         func1, func2 = self.funcs
-        return AssertEqual.map(func1.shape, func2.shape)
+        return assert_equal_tuple(func1.shape, func2.shape)
 
     @property
     def _factors(self):
@@ -1629,7 +1641,7 @@ class Add(Array):
     @cached_property
     def shape(self):
         func1, func2 = self.funcs
-        return AssertEqual.map(func1.shape, func2.shape)
+        return assert_equal_tuple(func1.shape, func2.shape)
 
     @cached_property
     def _inflations(self):
@@ -1775,7 +1787,7 @@ class Einsum(Array):
         for idx, arg in zip(self.args_idx, self.args):
             for i, length in zip(idx, arg.shape):
                 n = lengths.get(i)
-                lengths[i] = length if n is None else AssertEqual(length, n)
+                lengths[i] = length if n is None else assert_equal(length, n)
         try:
             self.shape = tuple(lengths[i] for i in self.out_idx)
         except KeyError(e):
@@ -2101,7 +2113,7 @@ class Pointwise(Array):
     def __post_init__(self):
         self.shape = self.dependencies[0].shape
         for dep in self.dependencies[1:]:
-            self.shape = AssertEqual.map(self.shape, dep.shape)
+            self.shape = assert_equal_tuple(self.shape, dep.shape)
 
     def _newargs(self, *args):
         '''

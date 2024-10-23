@@ -25,7 +25,7 @@ def main(nelems: int = 32):
     J = function.J(x)
 
     sqr = topo.boundary.integral(u**2 * J, degree=2)
-    cons = System(sqr, trial='u').optimize(droptol=1e-12)
+    cons = System(sqr, trial='u').solve_constraints(droptol=1e-12)
 
     energy = topo.integral((g @ g / 2 - u) * J, degree=1)
     args = System(energy, trial='u').solve(constrain=cons)

@@ -19,15 +19,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Install build dependencies
-        run: python3 -m pip install --break-system-packages flit
+        run: python -um pip install flit
       - name: Build package
         id: build
         run: |
           # To make the wheels reproducible, set the timestamp of the (files in
           # the) generated wheels to the date of the commit.
           export SOURCE_DATE_EPOCH=`git show -s --format=%ct`
-          python3 -m flit build
+          python -um flit build
           echo wheel=`echo dist/*.whl` >> $GITHUB_OUTPUT
       - name: Upload package artifacts
         uses: actions/upload-artifact@v4
@@ -181,12 +185,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Install dependencies
         run: |
-          python3 -um pip install --break-system-packages setuptools wheel
-          python3 -um pip install --break-system-packages --upgrade --upgrade-strategy eager .[docs]
+          python -um pip install setuptools wheel
+          python -um pip install --upgrade --upgrade-strategy eager .[docs]
       - name: Build docs
-        run: python3 -m sphinx -n -W --keep-going docs build/sphinx/html
+        run: python -um sphinx -n -W --keep-going docs build/sphinx/html
   build-and-test-container-image:
     name: Build container image
     needs: build-python-package

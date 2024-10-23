@@ -72,7 +72,7 @@ def main(nelems: int = 10,
 
     sqr = domain.boundary['left'].integral('u^2 dS' @ ns, degree=degree*2)
     sqr += domain.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 dS' @ ns, degree=degree*2)
-    cons = System(sqr, trial='u').optimize(droptol=1e-15)
+    cons = System(sqr, trial='u').solve_constraints(droptol=1e-15)
 
     # The unconstrained entries of `u` are to be such that the residual
     # evaluates to zero for all possible values of `v`. The resulting array `u`

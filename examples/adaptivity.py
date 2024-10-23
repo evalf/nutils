@@ -69,10 +69,10 @@ def main(etype: str = 'square',
         ns.du = 'u - uexact'
 
         sqr = domain.boundary['corner'].integral('u^2 dS' @ ns, degree=degree*2)
-        cons = System(sqr, trial='u').optimize(droptol=1e-15)
+        cons = System(sqr, trial='u').solve_constraints(droptol=1e-15)
 
         sqr = domain.boundary.integral('du^2 dS' @ ns, degree=7)
-        cons = System(sqr, trial='u').optimize(droptol=1e-15, constrain=cons)
+        cons = System(sqr, trial='u').solve_constraints(droptol=1e-15, constrain=cons)
 
         res = domain.integral('∇_k(v) ∇_k(u) dV' @ ns, degree=degree*2)
         args = System(res, trial='u', test='v').solve(constrain=cons)
