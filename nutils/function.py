@@ -3135,7 +3135,7 @@ class __implementations__:
         return summed
 
     @implements(numpy.product)
-    def product(arg: IntoArray, axis: int) -> Array:
+    def product(arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> Array:
         arg = Array.cast(arg)
         if arg.dtype == bool:
             arg = arg.astype(int)
