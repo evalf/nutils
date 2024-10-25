@@ -234,8 +234,8 @@ class System:
             residuals = [evaluable.derivative(functional, argobjects[t]) for t in tests]
             self.is_symmetric = self.trials == tests
 
-        self.trialshapes = dict(zip(self.trials, evaluable.compile(tuple(argobjects[t].shape for t in self.trials))()))
-        self.__trial_offsets = numpy.cumsum([0] + [numpy.prod(self.trialshapes[t], dtype=int) for t in self.trials])
+        self.argshapes = dict(zip(argobjects.keys(), evaluable.compile(tuple(arg.shape for arg in argobjects.values()))()))
+        self.__trial_offsets = numpy.cumsum([0] + [numpy.prod(self.argshapes[t], dtype=int) for t in self.trials])
 
         value = functional if self.is_symmetric else ()
         block_vector = [evaluable._flat(res) for res in residuals]
@@ -285,7 +285,7 @@ class System:
         x = numpy.empty(self.__trial_offsets[-1], self.dtype)
         iscons = numpy.empty(self.__trial_offsets[-1], dtype=bool)
         for trial, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:]):
-            trialshape = self.trialshapes[trial]
+            trialshape = self.argshapes[trial]
             trialarg = x[i:j].reshape(trialshape)
             trialarg[...] = arguments.get(trial, 0)
             c = constrain.get(trial, False)
@@ -301,7 +301,7 @@ class System:
 
     @property
     def _trial_info(self):
-        return ' and '.join(t + ' (' + ','.join(map(str, shape)) + ')' for t, shape in self.trialshapes.items())
+        return ' and '.join(t + ' (' + ','.join(map(str, self.argshapes[t])) + ')' for t in self.trials)
 
     MethodIter = Iterator[Tuple[Dict[str, numpy.ndarray], float, float]]
 
@@ -580,7 +580,7 @@ class Pseudotime:
     def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3)
-        djac = self._assemble_inertia_matrix(system.trialshapes, arguments)
+        djac = self._assemble_inertia_matrix([(t, system.argshapes[t]) for t in system.trials], arguments)
 
         first = _First()
         while True:
@@ -592,7 +592,7 @@ class Pseudotime:
             x -= (jac + djac / timestep).solve_leniently(res, constrain=iscons, **linargs)
 
     def _assemble_inertia_matrix(self, trialshapes, arguments):
-        argobjs = [evaluable.Argument(t, tuple(map(evaluable.constant, shape)), float) for t, shape in trialshapes.items()]
+        argobjs = [evaluable.Argument(t, tuple(map(evaluable.constant, shape)), float) for t, shape in trialshapes]
         djacobians = [[evaluable._flat(evaluable.derivative(evaluable._flat(res), argobj).simplified, 2) for argobj in argobjs] for res in self.inertia]
         djac_blocks = evaluable.compile(tuple(tuple(map(evaluable.as_csr, row)) for row in djacobians))
         return matrix.assemble_block_csr(djac_blocks(**arguments))
