@@ -147,7 +147,7 @@ def main(nelems: int = 99,
 
     for _ in steps:
         treelog.info(f'velocity divergence: {div.eval(**args):.0e}')
-        args = system.step(timestep=timestep, timetarget='t', historysuffix='0', arguments=args, constrain=cons, tol=1e-10)
+        args = system.step(timestep=timestep, timearg='t', suffix='0', arguments=args, constrain=cons, tol=1e-10)
         postprocess(args)
 
     return args, numpy.sqrt(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2))

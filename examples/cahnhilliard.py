@@ -210,7 +210,7 @@ def main(size: Length = parse('10cm'),
             E = numpy.stack(function.eval([nrg_mix, nrg_iface, nrg_wall], **args))
             log.user('energy: {0:,.0μJ/m} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(numpy.sum(E), 100*E/numpy.sum(E)))
 
-            args = system.step(timestep=1., timetarget='t', historysuffix='0', arguments=args, tol=1, maxiter=5)
+            args = system.step(timestep=1., timearg='t', suffix='0', arguments=args, tol=1, maxiter=5)
 
             with export.mplfigure('phase.png') as fig:
                 ax = fig.add_subplot(aspect='equal', xlabel='[mm]', ylabel='[mm]')

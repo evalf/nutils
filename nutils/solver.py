@@ -365,21 +365,21 @@ class System:
             log.info(f'optimal value: {val:.1e}')
         return arguments
 
-    def step(self, *, timestep: float, timetarget: str, historysuffix: str, arguments: Dict[str, numpy.ndarray], **solveargs) -> Dict[str, numpy.ndarray]:
+    def step(self, *, timestep: float, timearg: str, suffix: str, arguments: Dict[str, numpy.ndarray], **solveargs) -> Dict[str, numpy.ndarray]:
         '''Advance a time step.
 
-        This method is best described by an example. Let ``timetarget`` equal
-        't' and ``historysuffix`` '0', and let our system's trial arguments be
-        'u' and 'v'. This method then creates argument copies 't0', 'u0', 'v0',
-        advances 't' by ``timestep``, and solves for the new 'u' and 'v'.
+        This method is best described by an example. Let ``timearg`` equal 't'
+        and ``suffix`` '0', and let our system's trial arguments be 'u' and 'v'.
+        This method then creates argument copies 't0', 'u0', 'v0', advances 't'
+        by ``timestep``, and solves for the new 'u' and 'v'.
 
         Parameters
         ----------
-        timetarget
+        timearg
             Name of the scalar argument that tracks the time.
         timestep
             Size of the time increment.
-        historysuffix
+        suffix
             String suffix to add to argument names to denote their value at the
             beginning of the time step.
         arguments
@@ -392,18 +392,18 @@ class System:
         arguments = arguments.copy()
         for trial in self.trials:
             if trial in arguments:
-                arguments[trial + historysuffix] = arguments[trial]
-        time = arguments.get(timetarget, 0.)
-        arguments[timetarget + historysuffix] = time
-        arguments[timetarget] = time + timestep
+                arguments[trial + suffix] = arguments[trial]
+        time = arguments.get(timearg, 0.)
+        arguments[timearg + suffix] = time
+        arguments[timearg] = time + timestep
         try:
             return self.solve(arguments=arguments, **solveargs)
         except (SolverError, matrix.MatrixError) as e:
             log.error(f'error: {e}; retrying with timestep {timestep/2}')
             with log.context('tic'):
-                halfway_arguments = self.step(timestep=timestep/2, timetarget=timetarget, historysuffix=historysuffix, arguments=arguments, **solveargs)
+                halfway_arguments = self.step(timestep=timestep/2, timearg=timearg, suffix=suffix, arguments=arguments, **solveargs)
             with log.context('toc'):
-                return self.step(timestep=timestep/2, timetarget=timetarget, historysuffix=historysuffix, arguments=halfway_arguments, **solveargs)
+                return self.step(timestep=timestep/2, timearg=timearg, suffix=suffix, arguments=halfway_arguments, **solveargs)
 
     @cache.function
     @log.withcontext
@@ -857,7 +857,7 @@ def thetamethod(target, residual, inertia, timestep: float, theta: float, *, lhs
     linesearch = newtonargs.pop('linesearch', NormBased())
     method = None if system.is_linear else Newton() if linesearch is None else LinesearchNewton(strategy=linesearch, **newtonargs)
     return _thetamethod(system, arguments,
-        timestep=timestep, timetarget=timetarget, historysuffix=historysuffix, constrain=constrain or {}, tol=newtontol, method=method)
+        timestep=timestep, timearg=timetarget, suffix=historysuffix, constrain=constrain or {}, tol=newtontol, method=method)
 
 
 def _thetamethod(system, arguments, **stepargs):

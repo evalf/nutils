@@ -64,7 +64,7 @@ def main(nelems: int = 40,
             export.triplot('solution.png', x[:,numpy.newaxis], u, tri=bezier.tri, hull=bezier.hull, clim=(0, 1))
             if args['t'] >= endtime:
                 break
-            args = system.step(timestep=timestep, arguments=args, timetarget='t', historysuffix='0', tol=newtontol)
+            args = system.step(timestep=timestep, arguments=args, timearg='t', suffix='0', tol=newtontol)
 
     return args
 

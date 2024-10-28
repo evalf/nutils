@@ -562,5 +562,5 @@ class system_burgers(TestCase):
         self.system = solver.System(residual, trial='u', test='v')
 
     def test_step(self):
-        args = self.system.step(timestep=100, timetarget='t', historysuffix='0', arguments=self.arguments, method=solver.LinesearchNewton(), tol=1e-10)
+        args = self.system.step(timestep=100, timearg='t', suffix='0', arguments=self.arguments, method=solver.LinesearchNewton(), tol=1e-10)
         self.assertAlmostEqual64(args['u'], 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')
