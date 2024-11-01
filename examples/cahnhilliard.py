@@ -3,18 +3,7 @@ from nutils.solver import System
 from nutils.expression_v2 import Namespace
 from nutils.SI import Length, Time, Density, Tension, Energy, Pressure, Velocity, parse
 import numpy
-import itertools
-import enum
 import treelog as log
-
-# NOTE: This script uses dimensional quantities and requires the nutils.SI
-# module, which is installed separate from the the core nutils.
-
-
-class stab(enum.Enum):
-    nonlinear = '.25 dφ^2 (1 - φ^2 + φ dφ (2 / 3) - dφ^2 / 6)'
-    linear = '.25 dφ^2 (2 + 2 abs(φ0) - (φ + φ0)^2)'
-    none = '0' # not unconditionally stable
 
 
 def main(size: Length = parse('10cm'),
@@ -26,12 +15,12 @@ def main(size: Length = parse('10cm'),
          nelems: int = 0,
          etype: str = 'rectilinear',
          degree: int = 1,
-         timestep: Time = parse('.5s'),
+         timestep: Time = parse('.1s'),
          tol: Energy/Length = parse('1nJ/m'),
          endtime: Time = parse('1min'),
          seed: int = 0,
          circle: bool = True,
-         stab: stab = stab.linear,
+         stable: bool = False,
          showflux: bool = True):
 
     '''Unmixing of immiscible fluids
@@ -78,7 +67,7 @@ def main(size: Length = parse('10cm'),
 
     For stability we wish for the perturbation `δψ` to be such that the time
     discrete system preserves the energy dissipation property `E(φ) ≤ E(φ0)` for
-    any timestep `dt`. To derive suitable perturbation terms to this effect, we
+    any timestep `dt`. To derive a suitable perturbation term to this effect, we
     define without loss of generality `δψ'(φ, φ0) = .5 (φ - φ0) f(φ, φ0)` and
     derive the following condition for unconditional stability:
 
@@ -88,20 +77,8 @@ def main(size: Length = parse('10cm'),
     The inequality holds true if the perturbation `f` is bounded from below such
     that `f(φ, φ0) ≥ 1 - φ² - .5 (φ + φ0)²`. To keep the energy minima at the
     pure phases we additionally impose that `f(±1, φ0) = 0`, and select `1 - φ²`
-    as a suitable upper bound which we will call "nonlinear".
-
-    We next observe that `η` is linear in `φ` if `f(φ, φ0) = g(φ0) - φ² - (φ +
-    φ0)²` for any function `g`, which dominates if `g(φ0) ≥ 1 + .5 (φ + φ0)²`.
-    While this cannot be made to hold true for all `φ`, we make it hold for `-√2
-    ≤ φ, φ0 ≤ √2` by defining `g(φ0) = 2 + 2 |φ0| + φ0²`, which we will call
-    "linear". This scheme further satisfies a weak minima preservation `f(±1,
-    ±|φ0|) = 0`.
-
-    We have thus arrived at the three stabilization schemes implemented here:
-
-    - nonlinear: `f(φ, φ0) = 1 - φ²`
-    - linear: `f(φ, φ0) = 2 + 2 |φ0| - 2 φ (φ + φ0)`
-    - none: `f(φ, φ0) = 0` (not unconditionally stable)
+    as a suitable upper bound. For unconditional stability we thus obtained the
+    perturbation gradient `δψ'(φ, φ0) = .5 (φ - φ0) (1 - φ²)`.
 
     Finally, we observe that the weak formulation:
 
@@ -112,8 +89,8 @@ def main(size: Length = parse('10cm'),
 
         F(φ, φ0, η) := E(φ) + ∫_Ω [ .5 dt J(η)·∇η + δψ(φ, φ0) σ / ε - η (φ - φ0) ]
 
-    For this reason, the `stab` enum in this script defines the stabilizing term
-    `δψ`, rather than `f`, allowing Nutils to construct the residuals through
+    For this reason, this script defines the stabilizing term `δψ`, rather than
+    its derivative `δψ'`, allowing Nutils to construct the residuals through
     symbolic differentiation.
 
     Parameters
@@ -148,10 +125,10 @@ def main(size: Length = parse('10cm'),
         Random seed for the initial condition.
     circle
         Select circular domain as opposed to a unit square.
-    stab
-        Stabilization method (linear/nonlinear/none).
+    stable
+        Enable unconditional stability at the expense of dissipation.
     showflux
-        Overlay flux vectors on phase plot
+        Overlay flux vectors on phase plot.
     '''
 
     nmin = round(size / epsilon)
@@ -169,19 +146,13 @@ def main(size: Length = parse('10cm'),
     else:
         domain, geom = mesh.unitsquare(nelems, etype)
 
-    basis = domain.basis('std', degree=degree)
-    bezier = domain.sample('bezier', 5)  # sample for surface plots
-    if showflux:
-        grid = domain.locate(geom, numeric.simplex_grid([1, 1], 1/40), maxdist=1/nelems, skip_missing=True, tol=1e-5)  # sample for quivers
-
     ns = Namespace()
     ns.x = size * geom
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-    ns.add_field(('φ', 'φ0'), basis)
-    ns.add_field('η', basis * stens / epsilon) # basis scaling to give η the required unit
-    ns.add_field(('t', 't0'))
-    ns.t *= timestep
-    ns.t0 *= timestep
+    ns.add_field(('φ', 'φ0'), domain.basis('std', degree=degree))
+    ns.add_field('η', domain.basis('std', degree=degree) * stens / epsilon) # basis scaling to give η the required unit
+    ns.add_field('dt')
+    ns.dt *= timestep
     ns.ε = epsilon
     ns.σ = stens
     ns.σmean = (wtensp + wtensn) / 2
@@ -189,20 +160,28 @@ def main(size: Length = parse('10cm'),
     ns.σwall = 'σmean + φ σdiff'
     ns.dφ = 'φ - φ0'
     ns.ψ = '.25 (φ^2 - 1)^2'
-    ns.δψ = stab.value
+    ns.δψ = '.25 dφ^2 (1 - φ0^2 / 6 - φ φ0 / 3 - φ^2 / 2)' if stable else '0'
     ns.M = mobility
     ns.J_i = '-M ∇_i(η)'
-    ns.dt = 't - t0'
+    ns.v_i = 'φ J_i'
 
-    nrg_mix = domain.integral('(ψ σ / ε) dV' @ ns, degree=degree*4)
-    nrg_iface = domain.integral('.5 σ ε ∇_k(φ) ∇_k(φ) dV' @ ns, degree=degree*4)
-    nrg_wall = domain.boundary.integral('σwall dS' @ ns, degree=degree*2)
-    nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(δψ σ / ε - η dφ + .5 dt J_k ∇_k(η)) dV' @ ns, degree=degree*4)
+    nrg_mix = function.factor(domain.integral('(ψ σ / ε) dV' @ ns, degree=degree*4))
+    nrg_iface = function.factor(domain.integral('.5 σ ε ∇_k(φ) ∇_k(φ) dV' @ ns, degree=degree*4))
+    nrg_wall = function.factor(domain.boundary.integral('σwall dS' @ ns, degree=degree*2))
+    nrg = nrg_mix + nrg_iface + nrg_wall + function.factor(domain.integral('(δψ σ / ε - η dφ + .5 dt J_k ∇_k(η)) dV' @ ns, degree=degree*4))
 
-    numpy.random.seed(seed)
-    args = dict(φ=numpy.random.normal(0, .5, basis.shape)) # initial condition
+    bezier = domain.sample('bezier', 5) # sample for surface plots
+    bezier_x = bezier.eval(ns.x)
+    bezier_φ = function.factor(bezier(ns.φ))
+    if showflux:
+        grid = domain.locate(geom, numeric.simplex_grid([1, 1], 1/40), maxdist=1/nelems, skip_missing=True, tol=1e-5) # sample for quivers
+        grid_x = grid.eval(ns.x)
+        grid_v = function.factor(grid(ns.v))
 
     system = System(nrg / tol, trial='φ,η')
+
+    numpy.random.seed(seed)
+    args = dict(φ=numpy.random.normal(0, .5, system.argshapes['φ'])) # initial condition
 
     with log.iter.fraction('timestep', range(round(endtime / timestep))) as steps:
         for istep in steps:
@@ -210,18 +189,17 @@ def main(size: Length = parse('10cm'),
             E = numpy.stack(function.eval([nrg_mix, nrg_iface, nrg_wall], **args))
             log.user('energy: {0:,.0μJ/m} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(numpy.sum(E), 100*E/numpy.sum(E)))
 
-            args = system.step(timestep=1., timetarget='t', historysuffix='0', arguments=args, tol=1, maxiter=5)
+            args = system.step(timestep=1., timesteparg='dt', suffix='0', arguments=args, tol=1, maxiter=5)
 
             with export.mplfigure('phase.png') as fig:
                 ax = fig.add_subplot(aspect='equal', xlabel='[mm]', ylabel='[mm]')
-                x, φ = bezier.eval(['x_i', 'φ'] @ ns, **args)
-                im = ax.tripcolor(*(x/'mm').T, bezier.tri, φ, shading='gouraud', cmap='coolwarm')
+                im = ax.tripcolor(*(bezier_x/'mm').T, bezier.tri, function.eval(bezier_φ, **args), shading='gouraud', cmap='coolwarm')
                 im.set_clim(-1, 1)
                 fig.colorbar(im)
                 if showflux:
-                    x, v = grid.eval(['x_i', 'φ J_i'] @ ns, **args)
+                    v = function.eval(grid_v, **args)
                     log.info('largest flux: {:.2mm/s}'.format(numpy.max(numpy.hypot(v[:, 0], v[:, 1]))))
-                    ax.quiver(*(x/'mm').T, *(v/'m/s').T)
+                    ax.quiver(*(grid_x/'mm').T, *(v/'m/s').T)
                 ax.autoscale(enable=True, axis='both', tight=True)
 
     return args
@@ -240,33 +218,33 @@ class test(testing.TestCase):
         args = main(epsilon=parse('5cm'), mobility=parse('1μL*s/kg'), nelems=3, degree=2, timestep=parse('1h'), endtime=parse('2h'), circle=False)
         with self.subTest('concentration'):
             self.assertAlmostEqual64(args['φ'], '''
-                eNoBYgCd/zE1EjX1NaA2+TXiMxkz0TS9NL01ajaRNZoxYNElNRM1LDUlNZQw0cqgysI1nTWcNN4xLsuk
-                ybDJvDWaNTQ07s7nysnJ6ckPNQY1CzNozKjK58kOysQ0zTQKM73M3coVyjfKR9cuPg==''')
+                eNoBYgCd/y41EjX2NZ829DXcMxUz0jTANL41ajaNNZox/9EoNRY1LDUkNZAw1cqnysI1njWdNNkxMMuk
+                ybDJuTWXNTE0587oysjJ58kSNQM1ATNqzKjK58kNytA00DQJM8bM38oTyjfKbwku0w==''')
         with self.subTest('chemical-potential'):
             self.assertAlmostEqual64(args['η'], '''
-                eNoBYgCd/3TIkccBNkQ6IDqIN4HMF8cSx9Y02DmdOVHLMcecxxLIEjQUOAHOa8a1xWw3izb1M9kzPMc0
-                xmnGpzibODY359ETyJHHp8hbyWU2xzZSydfIOsrNyo3GjMjAyyXIm8hkzD3K1ggxvA==''')
+                eNoBYgCd/1PIicccNko6IzqRNwzMEccMx/M05TmfOTTLMceexwzI1TMiOMLNZsa3xXU3rjZdNE4zO8cr
+                xlrGoziaOEA3os8VyJLHk8hlyTw2sDZXydPISMoPy5zGe8i7yzfIncgAzGLKwgYwXw==''')
 
     def test_multipatchcircle(self):
         args = main(epsilon=parse('5cm'), mobility=parse('1μL*s/kg'), nelems=3, etype='multipatch', degree=2, timestep=parse('1h'), endtime=parse('2h'))
         with self.subTest('concentration'):
             self.assertAlmostEqual64(args['φ'], '''
-                eNoNwk1I02EcB/AGnYQCQcvDBqYYVGz7P8/v93QIyhdYK8lyDktKx8ouQ0hz6EEdjOpWdIqCXrAONrAg
-                AhGGBSHhxe/v+f//8yVpWIGXgk5DSAjf+HzyZsKkTZv5xdf5PN01A8aYCndwgrKq2hw0bzjEtfTdmfIK
-                /JBX6Z2eiN6zz+Uf+bSt76g635WoFHVO59SfyFE3KxsIqU2nyZmMOF6rjclbeSTDcmNfv3RLFEEoXEIe
-                s/iKT3iMJ3iJaczgPUL2s4wISQVFvEBKG92oLkSSblGCEuezvEgnKKOueWXp46tczz/pMI2qW94DkzPt
-                5pDJ8yx16Sqzw/M8xt+orCvObb7IB7hAazql5laDtK4zuqSGnd3lTrcuHCid9pLumh20W7JQivkfXbFL
-                ckq+oDV6LHzTv+8esc0iOKOeOqlIjT9oe6SMBBE906/V35N52y9JjvMPukxLaqh03DasxN0tGZD/2JaU
-                /MYCpvABWZzDFaQxjl60YAgFdKMT7XiFgOwBQRG+vg==''')
+                eNoNz01IlFEUBmByEcVsWkiBoKHYoh9nvnvPOa5GcCE1gqNjDZOBBUM1iSYYEf2JEGZE0SoIokWMCCYk
+                0qZaJKE5Qvae+33XkUhwFi4iWhSKGEELc/vsnhG5IxekVSp8lk/SkPQLyQZ3cJbumwNSJUU+zLW019T5
+                Io/xV3pvvyc+uln9RSX6a++aCb+lKZ2yA3bQ/IgH4UP9g2rzMzgUPIhT1O4yOqlP9Lqe1169qFll1KMZ
+                GYziHUqYx1M8x0tM4y1m0Ojm9baKbuPDrp2zCVtjjsZPh7Nar60svEANlDc90brmuItreJX20zVzJRqV
+                YUlJTIb5DXXZmOzwHN9kT5FdD/o4zXu4SF9si8mv1FLFFuxnkwselZPh+ImSPxKlQ+8KblMXltv863DR
+                eW3SRXQmkk0t/lIYc0n1aDdTQUe8HOVdVis4Q0LP7Atz9diIK2iG23iN0lQ2Y8vH3Y1vneG29us/HHQD
+                +htLeIVPuIdTyOEyHqMPKdza/ebRg25MYJ/+BxBNvrM=''')
         with self.subTest('chemical-potential'):
             self.assertAlmostEqual64(args['η'], '''
-                eNoN0F8onWEcB/AjQ1pNoZb8u8Ki0HvO+zy/F4uJ2eTG7I9W1q602toOdS4pIXZSs+zUpJN2ywXJboTE
-                /H7f53lf08nalZqkJldGmXYzbj+Xn2X6StM0RKf6v0rtvKS3dI8yqFOd2W5k0i3K0MfhLPNeiuQ+NVC6
-                O4NK6ec33ESKYu4/PJdJjnGzJm0jIRvIT45zcnc19SVo9PPMX3FkClOYxBg+YxuMqmt5KsOyJ9UoQ1Jm
-                RORCbuI2DuQAh/iNfbxCCPOSr+v0kKp1e/yQKUSH99g7olZKKt8HHE956d4G/dLFasXGKUHvqIXiulnN
-                +7m6TEf1pm7TnaokcMMPw2nK1eeqVtUEp86WMxuei9REup1Rm/P9xk6j32XJ1tmPZs2kTML0mj6sSYVs
-                mxPzw6pgwNQjKgmzZKr8wVSBncaieOq1unSb3PLgkSnFChlqp096ws3y15GNdowgiif4w3fkhYzLkjzg
-                AV7kM74rz/gDf+M8iV0fLvAxt8mWXAGfucYq''')
+                eNoNzzFLW1EUAOAtDiLFB0ohggUVTG2i9HnvPS9DpkjAIg7WBG0GWxwEoRUqtkJQEETR4CKCSDsIYjEY                                                                                          
+                nIriYojlnHPvTSqablVBOgSpCCFQF8HK9wu+AziErzAHt+pOLhTH4TP0wIOKyr8myU+gEWpVxXX0KrVS                                                                                          
+                FMJQL76xoBR+xJcQgDHh06O0jtPoqoDa764zv+gCV3DgbDdULgzZRv2PumiZ07zE87zOyDlup04apHkq                                                                                          
+                UQc38xfaoB9UpRp2+JzO+fLRKY/wPWWoRcVUWoKI23v2c7+X8K6hD7blsUUWHng+D6GsgjJvVh8HkxCD                                                                                          
+                BdUhP9iAiqgZlVdCPZPb9rd75zbJoCrJG7FhX7iO+9Pd7a641a7XZrG4UwjZpAmbkJnVZ7qs1/SATnKG                                                                                          
+                muiP9pmsGbVh7ed39F2XdIPdKp7oT7xJw3JROvKNeF6I6aecgxOIw47aFwGb4xqO8Ht+y6+4im0Upzna                                                                                          
+                o15MYRYrGKEEpvEIHZqiCczgFUYpT/8Bk47KLA==''')
 
 
 if __name__ == '__main__':

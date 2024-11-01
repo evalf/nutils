@@ -345,7 +345,7 @@ class System(TestCase):
         self.assertFalse(sys.is_symmetric)
         self.assertTrue(sys.is_constant)
         self.assertTrue(sys.is_constant_matrix)
-        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,)})
         args = {'u': numpy.arange(10, dtype=float)}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
@@ -365,7 +365,7 @@ class System(TestCase):
         self.assertTrue(sys.is_symmetric)
         self.assertTrue(sys.is_constant)
         self.assertTrue(sys.is_constant_matrix)
-        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        self.assertEqual(sys.argshapes, {'u': (10,)})
         args = {'u': numpy.arange(10, dtype=float)}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), **args))
@@ -388,7 +388,7 @@ class System(TestCase):
         self.assertFalse(sys.is_symmetric)
         self.assertFalse(sys.is_constant)
         self.assertTrue(sys.is_constant_matrix)
-        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
@@ -410,7 +410,7 @@ class System(TestCase):
         self.assertFalse(sys.is_symmetric)
         self.assertFalse(sys.is_constant)
         self.assertFalse(sys.is_constant_matrix)
-        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
@@ -428,7 +428,7 @@ class System(TestCase):
         self.assertFalse(sys.is_symmetric)
         self.assertFalse(sys.is_constant)
         self.assertFalse(sys.is_constant_matrix)
-        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
@@ -444,7 +444,7 @@ class System(TestCase):
         self.assertTrue(sys.is_symmetric)
         self.assertFalse(sys.is_constant)
         self.assertFalse(sys.is_constant_matrix)
-        self.assertEqual(sys.trialshapes, {'u': (10,)})
+        self.assertEqual(sys.argshapes, {'u': (10,)})
         args = {'u': numpy.arange(10, dtype=float)}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), **args))
@@ -562,5 +562,5 @@ class system_burgers(TestCase):
         self.system = solver.System(residual, trial='u', test='v')
 
     def test_step(self):
-        args = self.system.step(timestep=100, timetarget='t', historysuffix='0', arguments=self.arguments, method=solver.LinesearchNewton(), tol=1e-10)
+        args = self.system.step(timestep=100, timearg='t', suffix='0', arguments=self.arguments, method=solver.LinesearchNewton(), tol=1e-10)
         self.assertAlmostEqual64(args['u'], 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')

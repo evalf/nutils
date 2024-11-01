@@ -234,8 +234,8 @@ class System:
             residuals = [evaluable.derivative(functional, argobjects[t]) for t in tests]
             self.is_symmetric = self.trials == tests
 
-        self.trialshapes = dict(zip(self.trials, evaluable.compile(tuple(argobjects[t].shape for t in self.trials))()))
-        self.__trial_offsets = numpy.cumsum([0] + [numpy.prod(self.trialshapes[t], dtype=int) for t in self.trials])
+        self.argshapes = dict(zip(argobjects.keys(), evaluable.compile(tuple(arg.shape for arg in argobjects.values()))()))
+        self.__trial_offsets = numpy.cumsum([0] + [numpy.prod(self.argshapes[t], dtype=int) for t in self.trials])
 
         value = functional if self.is_symmetric else ()
         block_vector = [evaluable._flat(res) for res in residuals]
@@ -285,7 +285,7 @@ class System:
         x = numpy.empty(self.__trial_offsets[-1], self.dtype)
         iscons = numpy.empty(self.__trial_offsets[-1], dtype=bool)
         for trial, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:]):
-            trialshape = self.trialshapes[trial]
+            trialshape = self.argshapes[trial]
             trialarg = x[i:j].reshape(trialshape)
             trialarg[...] = arguments.get(trial, 0)
             c = constrain.get(trial, False)
@@ -301,7 +301,7 @@ class System:
 
     @property
     def _trial_info(self):
-        return ' and '.join(t + ' (' + ','.join(map(str, shape)) + ')' for t, shape in self.trialshapes.items())
+        return ' and '.join(t + ' (' + ','.join(map(str, self.argshapes[t])) + ')' for t in self.trials)
 
     MethodIter = Iterator[Tuple[Dict[str, numpy.ndarray], float, float]]
 
@@ -365,21 +365,21 @@ class System:
             log.info(f'optimal value: {val:.1e}')
         return arguments
 
-    def step(self, *, timestep: float, timetarget: str, historysuffix: str, arguments: Dict[str, numpy.ndarray], **solveargs) -> Dict[str, numpy.ndarray]:
+    def step(self, *, timestep: float, suffix: str, arguments: Dict[str, numpy.ndarray], timearg: Optional[str] = None, timesteparg: Optional[str] = None, **solveargs) -> Dict[str, numpy.ndarray]:
         '''Advance a time step.
 
-        This method is best described by an example. Let ``timetarget`` equal
-        't' and ``historysuffix`` '0', and let our system's trial arguments be
-        'u' and 'v'. This method then creates argument copies 't0', 'u0', 'v0',
-        advances 't' by ``timestep``, and solves for the new 'u' and 'v'.
+        This method is best described by an example. Let ``timearg`` equal 't'
+        and ``suffix`` '0', and let our system's trial arguments be 'u' and 'v'.
+        This method then creates argument copies 't0', 'u0', 'v0', advances 't'
+        by ``timestep``, and solves for the new 'u' and 'v'.
 
         Parameters
         ----------
-        timetarget
+        timearg
             Name of the scalar argument that tracks the time.
         timestep
             Size of the time increment.
-        historysuffix
+        suffix
             String suffix to add to argument names to denote their value at the
             beginning of the time step.
         arguments
@@ -389,21 +389,28 @@ class System:
             Remaining keyword arguments are passed on to the ``solver`` method.
         '''
 
+        if not timearg and not timesteparg:
+            raise ValueError('either timearg or timesteparg should be specified')
         arguments = arguments.copy()
         for trial in self.trials:
             if trial in arguments:
-                arguments[trial + historysuffix] = arguments[trial]
-        time = arguments.get(timetarget, 0.)
-        arguments[timetarget + historysuffix] = time
-        arguments[timetarget] = time + timestep
+                arguments[trial + suffix] = arguments[trial]
+        if timesteparg:
+            arguments[timesteparg] = timestep
+        if timearg:
+            time = arguments.get(timearg, 0.)
+            arguments[timearg + suffix] = time
+            arguments[timearg] = time + timestep
         try:
             return self.solve(arguments=arguments, **solveargs)
         except (SolverError, matrix.MatrixError) as e:
+            if timearg not in self.argshapes and timesteparg not in self.argshapes:
+                raise
             log.error(f'error: {e}; retrying with timestep {timestep/2}')
             with log.context('tic'):
-                halfway_arguments = self.step(timestep=timestep/2, timetarget=timetarget, historysuffix=historysuffix, arguments=arguments, **solveargs)
+                halfway_arguments = self.step(timestep=timestep/2, timearg=timearg, timesteparg=timesteparg, suffix=suffix, arguments=arguments, **solveargs)
             with log.context('toc'):
-                return self.step(timestep=timestep/2, timetarget=timetarget, historysuffix=historysuffix, arguments=halfway_arguments, **solveargs)
+                return self.step(timestep=timestep/2, timearg=timearg, timesteparg=timesteparg, suffix=suffix, arguments=halfway_arguments, **solveargs)
 
     @cache.function
     @log.withcontext
@@ -580,7 +587,7 @@ class Pseudotime:
     def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3)
-        djac = self._assemble_inertia_matrix(system.trialshapes, arguments)
+        djac = self._assemble_inertia_matrix([(t, system.argshapes[t]) for t in system.trials], arguments)
 
         first = _First()
         while True:
@@ -592,7 +599,7 @@ class Pseudotime:
             x -= (jac + djac / timestep).solve_leniently(res, constrain=iscons, **linargs)
 
     def _assemble_inertia_matrix(self, trialshapes, arguments):
-        argobjs = [evaluable.Argument(t, tuple(map(evaluable.constant, shape)), float) for t, shape in trialshapes.items()]
+        argobjs = [evaluable.Argument(t, tuple(map(evaluable.constant, shape)), float) for t, shape in trialshapes]
         djacobians = [[evaluable._flat(evaluable.derivative(evaluable._flat(res), argobj).simplified, 2) for argobj in argobjs] for res in self.inertia]
         djac_blocks = evaluable.compile(tuple(tuple(map(evaluable.as_csr, row)) for row in djacobians))
         return matrix.assemble_block_csr(djac_blocks(**arguments))
@@ -857,7 +864,7 @@ def thetamethod(target, residual, inertia, timestep: float, theta: float, *, lhs
     linesearch = newtonargs.pop('linesearch', NormBased())
     method = None if system.is_linear else Newton() if linesearch is None else LinesearchNewton(strategy=linesearch, **newtonargs)
     return _thetamethod(system, arguments,
-        timestep=timestep, timetarget=timetarget, historysuffix=historysuffix, constrain=constrain or {}, tol=newtontol, method=method)
+        timestep=timestep, timearg=timetarget, suffix=historysuffix, constrain=constrain or {}, tol=newtontol, method=method)
 
 
 def _thetamethod(system, arguments, **stepargs):

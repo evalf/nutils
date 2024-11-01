@@ -119,8 +119,7 @@ def main(nelems: int = 99,
         domain.basis('spline', degree=(degree, degree-1), removedofs=((0,), None)),
         domain.basis('spline', degree=(degree-1, degree))]) @ J.T / detJ)
     ns.add_field(('p', 'q'), domain.basis('spline', degree=degree-1) / detJ)
-    ns.add_field(('t', 't0'))
-    ns.DuDt_i = '(u_i - u0_i) / (t - t0) + ∇_j(u_i) u_j' # material derivative
+    ns.add_field(('t', 'dt'))
     ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
     ns.ω = 'ε_ij ∇_j(u_i)'
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
@@ -134,20 +133,21 @@ def main(nelems: int = 99,
     sqr = domain.integral('(.5 Σ_i (u_i - uinf_i)^2 - ∇_k(u_k) p) dV' @ ns, degree=degree*2)
     args = System(sqr, trial='u,p').solve(constrain=cons) # set initial condition to potential flow
 
-    res = domain.integral('(v_i DuDt_i + ∇_j(v_i) σ_ij + q ∇_k(u_k)) dV' @ ns, degree=degree*3)
-    res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=degree*2)
-    div = numpy.sqrt(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2)) # L2 norm of velocity divergence
+    res = domain.integral('v_i (u_i - u0_i) dV' @ ns, degree=degree*3)
+    res += domain.integral('(v_i ∇_j(u_i) u_j + ∇_j(v_i) σ_ij + q ∇_k(u_k)) dt dV' @ ns, degree=degree*3)
+    res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dt dS' @ ns, degree=degree*2)
+    div = numpy.sqrt(abs(function.factor(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2)))) # L2 norm of velocity divergence
 
     postprocess = PostProcessor(domain, ns)
 
     steps = treelog.iter.fraction('timestep', range(round(endtime / timestep))) if endtime < float('inf') \
        else treelog.iter.plain('timestep', itertools.count())
 
-    system = System(res, trial='u,p', test='v,q')
+    system = System(function.factor(res), trial='u,p', test='v,q')
 
     for _ in steps:
-        treelog.info(f'velocity divergence: {div.eval(**args):.0e}')
-        args = system.step(timestep=timestep, timetarget='t', historysuffix='0', arguments=args, constrain=cons, tol=1e-10)
+        treelog.info(f'velocity divergence: {function.eval(div, **args):.0e}')
+        args = system.step(timestep=timestep, timearg='t', timesteparg='dt', suffix='0', arguments=args, constrain=cons, tol=1e-10)
         postprocess(args)
 
     return args, numpy.sqrt(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2))
@@ -201,7 +201,7 @@ class PostProcessor:
             export.plotlines_(ax, x.T, self.bezier.hull, colors='k', linewidths=.1, alpha=.5)
             ax.quiver(*self.xgrd.T, *ugrd.T, angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5, pivot='tip')
             ax.plot(0, 0, 'k', marker=(3, 2, -args['t']*self.ns.rotation.eval()*180/numpy.pi-90), markersize=20)
-        self.xgrd += ugrd * (args['t'] - args['t0'])
+        self.xgrd += ugrd * args['dt']
         self.regularize_xgrd()
 
 

@@ -2368,6 +2368,14 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtyp
         result = numpy.sum(_append_axes(result.transpose((*range(1, result.ndim), 0)), array.shape[1:]) * array, result.ndim-1)
     return result
 
+
+@nutils_dispatch
+def factor(arg):
+    assert not arg.spaces
+    return _Unlower(evaluable.factor(arg),
+        spaces=set(), arguments=arg.arguments, lower_args=LowerArgs((), {}, {}))
+
+
 # BASES
 
 

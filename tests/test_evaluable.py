@@ -1347,3 +1347,65 @@ class Poly(TestCase):
             evaluable.PolyGrad(eval_coeffs, 2).eval(ncoeffs=numpy.array(6)),
             poly.grad(const_coeffs, 2),
         )
+
+
+class factor(TestCase):
+
+    def setUp(self):
+        index = evaluable.loop_index('i', 4)
+        values = evaluable.constant([1., 2., -2., -1.])
+        dofs = index + evaluable.Range(values.shape[0])
+        length = evaluable.constant(8)
+        basis = evaluable.loop_sum(evaluable._inflate(values, dofs, length, axis=0), index)
+        self.varg = evaluable.Argument('v', basis.shape, float)
+        self.v = (basis * self.varg).sum(0)
+        self.targ = evaluable.Argument('t', (), float)
+        self.t = 10. * self.targ
+
+    def assertFactoredEqual(self, f, v=0, t=0):
+        self.assertEqual(f.argument_degree(self.varg), v)
+        self.assertEqual(f.argument_degree(self.targ), t)
+        g = evaluable.factor(f)
+        if not t:
+            tryargs = dict(v=numpy.zeros(8)), dict(v=numpy.ones(8)), dict(v=numpy.arange(8, dtype=float))
+        elif not v:
+            tryargs = dict(t=0.), dict(t=1.), dict(t=-5.)
+        else:
+            tryargs = dict(v=numpy.arange(8, dtype=float), t=0.), dict(v=numpy.zeros(8, dtype=float), t=5.), dict(v=numpy.arange(8, dtype=float), t=5.)
+        for vderiv in range(v):
+            if vderiv:
+                f = evaluable.derivative(f, self.varg)
+                g = evaluable.derivative(g, self.varg)
+            f_ = f
+            g_ = f
+            for tderiv in range(t):
+                if tderiv:
+                    f_ = evaluable.derivative(f_, self.targ)
+                    g_ = evaluable.derivative(g_, self.targ)
+                with self.subTest(f'derivative v{vderiv}, t{tderiv}'):
+                    F = evaluable.compile(f_)
+                    G = evaluable.compile(g_)
+                    for args in tryargs:
+                        self.assertAllAlmostEqual(F(**args), G(**args))
+
+    def test_linear(self):
+        self.assertFactoredEqual(1. + self.v, v=1)
+        self.assertFactoredEqual(2. * self.v - 5. * self.t, v=1, t=1)
+        self.assertFactoredEqual(2. * self.v - self.t, v=1, t=1)
+        self.assertFactoredEqual(2. * self.v * self.t, v=1, t=1)
+
+    def test_quadratic(self):
+        self.assertFactoredEqual(1. + self.v - self.v**2., v=2)
+        self.assertFactoredEqual(3. * self.v**2., v=2)
+        self.assertFactoredEqual(5. * self.t**2., t=2)
+        self.assertFactoredEqual(self.v * self.t**2. - 2. * self.v**2. * self.t, t=2, v=2)
+
+    def test_cubic(self):
+        self.assertFactoredEqual(1. + self.v - self.v**2. + self.v**3., v=3)
+        self.assertFactoredEqual(-self.v**3., v=3)
+        self.assertFactoredEqual(3. * self.t**3., t=3)
+        self.assertFactoredEqual(self.t**2. * (self.v**2. - 2. * self.t), t=3, v=2)
+
+    def test_not_polynomial(self):
+        with self.assertRaisesRegex(evaluable.NotPolynomal, "nutils.evaluable.Sign<f:> is not polynomial in argument 'v'"):
+            evaluable.factor(evaluable.Sign(self.v))
