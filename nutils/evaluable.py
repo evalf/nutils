@@ -2147,6 +2147,10 @@ class Power(Array):
 
     def _argument_degree(self, argument):
         power, where = unalign(self.power.simplified)
+        if isinstance(power, FloatToComplex):
+            power = power.arg
+        if isinstance(power, IntToFloat):
+            power = power.arg
         if argument not in self.power.arguments and not power.ndim and isinstance(power, Constant) and power.value >= 0 and int(power.value) == power.value:
             return self.func.argument_degree(argument) * int(power.value)
 
