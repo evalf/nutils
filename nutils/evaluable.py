@@ -5434,8 +5434,10 @@ def factor(array):
     degree = {arg: array.argument_degree(arg) for arg in array.arguments}
     for args, func in queue:
         func = func.simplified
-        m_args.append(args)
-        m_coeffs.append(zero_all_arguments(func).simplified)
+        zeroed = zero_all_arguments(func).simplified
+        if not iszero(zeroed):
+            m_args.append(args)
+            m_coeffs.append(zeroed)
         for arg in func.arguments: # as m_args grows, fewer arguments will remain in func
             # We keep only m_args that are alphabetically ordered to
             # deduplicate permutations of the same argument set:
@@ -5443,8 +5445,9 @@ def factor(array):
                 n = args.count(arg) + 1 # new monomial power of arg
                 assert n <= degree[arg]
                 queue.append(((*args, arg), derivative(func, arg) / float(n)))
-    log.info(f'constructing sparse polynomial of degree {max(len(args) for args in m_args)} with {len(m_args)} monomials:',
-        ', '.join('*'.join(f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()) or '1' for args in m_args))
+
+    log.info(f'constructing sparse polynomial', ' + '.join(' '.join([f'C{i+1}'] +
+        [f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()]) for i, args in enumerate(m_args)))
 
     # EVALUATION. We now form the polynomial, by accumulating evaluable
     # monomials in which the coefficients are evaluated. To this end we
@@ -5458,6 +5461,8 @@ def factor(array):
     nvals = 0
     for args, (values, indices, shape) in log.iter.fraction('monomial', m_args, eval_coo(m_coeffs)):
         indices, values = _sort_and_prune(shape, indices, values)
+        fill = (len(values) / numpy.prod(shape))**(1/len(shape)) if shape else len(values)
+        log.info(f'{len(values):,} coefficients ({100*fill:.0f}%^{len(shape)} full)')
         if not len(values):
             continue
         nvals += len(values)
@@ -5495,7 +5500,7 @@ def factor(array):
             while monomial.ndim < array.ndim:
                 monomial = Unravel(monomial, constant(shape[monomial.ndim-1]), constant(numpy.prod(shape[monomial.ndim:array.ndim], dtype=int)))
         polynomial += monomial
-    log.info(f'factored function contains {nvals:,} doubles ({nvals>>17:,}MB)')
+    log.info(f'factored function contains {nvals:,} coefficients ({nvals>>17:,}MB)')
     return polynomial
 
 
