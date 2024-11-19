@@ -3900,6 +3900,9 @@ class Ravel(Array):
     def _intbounds_impl(self):
         return self.func._intbounds_impl()
 
+    def _argument_degree(self, argument):
+        return self.func._argument_degree(argument)
+
 
 class Unravel(Array):
 
