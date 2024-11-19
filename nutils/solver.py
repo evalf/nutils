@@ -488,6 +488,9 @@ class LinesearchNewton:
     failrelax: float = 1e-6
     relax0: float = 1.
 
+    def __post_init__(self):
+        assert callable(self.strategy), f'invalid linesearch strategy {self.strategy!r}'
+
     def __str__(self):
         return 'linesearch-newton'
 
@@ -699,7 +702,7 @@ def newton(target, residual, *, jacobian = None, lhs0 = None, relax0: float = 1.
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
     system = System(residual, *_split_trial_test(target))
-    method = Newton() if linesearch is None else LinesearchNewton(strategy=linesearch, relax0=relax0, failrelax=failrelax)
+    method = Newton() if not linesearch else LinesearchNewton(strategy=linesearch, relax0=relax0, failrelax=failrelax)
     return _with_solve(system, method, arguments, constrain or {}, linargs)
 
 
