@@ -5460,6 +5460,8 @@ def factor(array):
     nvals = 0
     for args, (values, indices, shape) in log.iter.fraction('monomial', m_args, eval_coo(m_coeffs)):
         indices, values = _sort_and_prune(shape, indices, values)
+        fill = len(values) / numpy.prod(shape)
+        log.info('*'.join(f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()) or '1', f'is {100*fill:.3f}% full')
         if not len(values):
             continue
         nvals += len(values)
