@@ -2146,7 +2146,9 @@ class Power(Array):
         return Power(unravel(self.func, axis, shape), unravel(self.power, axis, shape))
 
     def _argument_degree(self, argument):
-        power, where = unalign(self.power.simplified)
+        power, _ = unalign(self.power.simplified)
+        while isinstance(power, Cast):
+            power = power.arg
         if argument not in self.power.arguments and not power.ndim and isinstance(power, Constant) and power.value >= 0 and int(power.value) == power.value:
             return self.func.argument_degree(argument) * int(power.value)
 
