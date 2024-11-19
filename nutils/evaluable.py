@@ -1118,7 +1118,7 @@ class InsertAxis(Array):
 
     def _argument_degree(self, argument):
         if argument not in self.length.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class Transpose(Array):
@@ -1323,7 +1323,7 @@ class Transpose(Array):
             return Assemble(transpose(self.func.func, axes), tuple(self.func.indices[i] for i in self.axes), self.shape)
 
     def _argument_degree(self, argument):
-        return self.func._argument_degree(argument)
+        return self.func.argument_degree(argument)
 
 
 class Product(Array):
@@ -1946,7 +1946,7 @@ class Sum(Array):
         return sum(_takediag(self.func, axis1, axis2), -2)
 
     def _argument_degree(self, argument):
-        return self.func._argument_degree(argument)
+        return self.func.argument_degree(argument)
 
 
 class TakeDiag(Array):
@@ -2069,7 +2069,7 @@ class Take(Array):
 
     def _argument_degree(self, argument):
         if argument not in self.indices.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class Power(Array):
@@ -2148,7 +2148,7 @@ class Power(Array):
     def _argument_degree(self, argument):
         power, where = unalign(self.power.simplified)
         if argument not in self.power.arguments and not power.ndim and isinstance(power, Constant) and power.value >= 0 and int(power.value) == power.value:
-            return self.func._argument_degree(argument) * int(power.value)
+            return self.func.argument_degree(argument) * int(power.value)
 
 
 class Pointwise(Array):
@@ -3315,7 +3315,7 @@ class Inflate(Array):
 
     def _argument_degree(self, argument):
         if argument not in self.dofmap.arguments and argument not in self.length.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class SwapInflateTake(Evaluable):
@@ -3552,7 +3552,7 @@ class Diagonalize(Array):
         return tuple((*indices, indices[-1], values) for *indices, values in self.func._assparse)
 
     def _argument_degree(self, argument):
-        return self.func._argument_degree(argument)
+        return self.func.argument_degree(argument)
 
 
 class Guard(Array):
@@ -3907,7 +3907,7 @@ class Ravel(Array):
         return self.func._intbounds_impl()
 
     def _argument_degree(self, argument):
-        return self.func._argument_degree(argument)
+        return self.func.argument_degree(argument)
 
 
 class Unravel(Array):
@@ -3967,7 +3967,7 @@ class Unravel(Array):
 
     def _argument_degree(self, argument):
         if argument not in self.sh1.arguments and argument not in self.sh2.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class RavelIndex(Array):
@@ -5056,7 +5056,7 @@ class LoopSum(Loop):
 
     def _argument_degree(self, argument):
         if argument not in self.length.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class _SizesToOffsets(Array):
@@ -5218,7 +5218,7 @@ class LoopConcatenate(Loop):
 
     def _argument_degree(self, argument):
         if argument not in self.start.arguments and argument not in self.stop.arguments and argument not in self.concat_length.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class SearchSorted(Array):
