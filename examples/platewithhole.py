@@ -1,4 +1,4 @@
-from nutils import mesh, function, export, testing
+from nutils import mesh, function, export, testing, cs
 from nutils.solver import System
 from nutils.expression_v2 import Namespace
 from dataclasses import dataclass
@@ -43,8 +43,8 @@ class FCM:
 
 
 @dataclass
-class NURBS:
-    '''Non-Uniform Radional B-Splines
+class IGA:
+    '''Isogeometric Analysis
 
     Generate a 1x2 structured topology, map it using quadratic NURBS to a
     square domain with circular cut-out, and refine several times before
@@ -81,7 +81,33 @@ class NURBS:
         return topo.withboundary(hole='left', sym='top,bottom', far='right'), geom, nurbsbasis, 5
 
 
-def main(mode: Union[FCM, NURBS] = NURBS(),
+@dataclass
+class TRI:
+    '''Triangulation
+
+    Generate a triangulated mesh with second order geometry using gmsh.
+
+    Parameters
+    ----------
+    elemsize
+        Target element size.
+    degree
+        Polynomial degree for the basis.
+    '''
+
+    elemsize: int = .1
+    degree: int = 2
+
+    def generate(self, radius):
+        rect = cs.Rectangle()
+        circ = cs.Circle(radius=radius)
+        shapes = dict(dom=rect-circ, sym=rect.boundary['left|bottom'], far=rect.boundary['right|top'], hole=circ.boundary)
+        topo, geom = mesh.csgmsh(shapes, elemsize=self.elemsize, order=2)
+        basis = topo.basis('std', self.degree)
+        return topo, geom, basis, self.degree
+
+
+def main(mode: Union[FCM, IGA, TRI] = IGA(),
          radius: float = .5,
          traction: float = .1,
          poisson: float = .3):
@@ -96,7 +122,7 @@ def main(mode: Union[FCM, NURBS] = NURBS(),
 
     The script can be run in two modes: by specifying `mode=FCM`, the circular
     hole is cut out of a regular finite element mesh by means of the Finite Cell
-    Method; by specifying `mode=NURBS` a Non-Uniform Rational BSpline geometry is
+    Method; by specifying `mode=IGA` a Non-Uniform Rational BSpline geometry is
     created to map a regular domain onto the desired shape. Either mode supports
     sub-parameters which can be specified from the command-line by attaching them
     in curly braces (e.g. `FCM{nelems=20,degree=1}`).
@@ -104,7 +130,8 @@ def main(mode: Union[FCM, NURBS] = NURBS(),
     Parameters
     ----------
     mode
-        Discretization strategy: FCM (Finite Cell Method) or NURBS.
+        Discretization strategy: FCM (Finite Cell Method), IGA (Isogeometric
+        Analysis) or TRI (triangulation).
     radius
         Cut-out radius.
     traction
@@ -137,10 +164,10 @@ def main(mode: Union[FCM, NURBS] = NURBS(),
     log.info('hole radius exact up to L2 error {:.2e}'.format(radiuserr))
 
     sqr = topo.boundary['sym'].integral('(u_i n_i)^2 dS' @ ns, degree=degree*2)
-    cons = System(sqr, trial='u').solve_constraints(droptol=1e-15)
+    cons = System(sqr, trial='u').solve_constraints(droptol=1e-10)
 
     sqr = topo.boundary['far'].integral('du_k du_k dS' @ ns, degree=20)
-    cons = System(sqr, trial='u').solve_constraints(droptol=1e-15, constrain=cons)
+    cons = System(sqr, trial='u').solve_constraints(droptol=1e-10, constrain=cons)
 
     res = topo.integral('∇_j(v_i) σ_ij dV' @ ns, degree=degree*2)
     args = System(res, trial='u', test='v').solve(constrain=cons)
@@ -193,7 +220,7 @@ class test(testing.TestCase):
                 fyhZkYI=''')
 
     def test_nurbs0(self):
-        err, cons, args = main(mode=NURBS(nrefine=0))
+        err, cons, args = main(mode=IGA(nrefine=0))
         with self.subTest('l2-error'):
             self.assertAlmostEqual(err[0], .00200, places=5)
         with self.subTest('h1-error'):
@@ -206,7 +233,7 @@ class test(testing.TestCase):
                 eNpjYJh07qLhhnOTjb0vTDdmAAKVcy/1u85lGYforQDzFc6pGSedlzd+eP4ykA8AvkQRaA==''')
 
     def test_nurbs2(self):
-        err, cons, args = main(mode=NURBS(nrefine=2))
+        err, cons, args = main(mode=IGA(nrefine=2))
         with self.subTest('l2-error'):
             self.assertAlmostEqual(err[0], .00009, places=5)
         with self.subTest('h1-error'):
@@ -222,10 +249,17 @@ class test(testing.TestCase):
                 n2c23nZe3djqQqpx88XNxrOv7gOr0zwXZeBxztro/bmnRp7nVY1zgTjvvIXxSaBfnl3YYbzmygmgOgDU
                 Imlr''')
 
+    def test_tri(self):
+        err, cons, args = main(mode=TRI(elemsize=.5))
+        with self.subTest('l2-error'):
+            self.assertAlmostEqual(err[0], .00053, places=5)
+        with self.subTest('h1-error'):
+            self.assertAlmostEqual(err[1], .0131, places=4)
+
 
 if __name__ == '__main__':
     from nutils import cli
     cli.run(main)
 
 
-# example:tags=elasticity,FCM,NURBS
+# example:tags=elasticity,FCM,IGA

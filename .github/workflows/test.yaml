@@ -89,6 +89,9 @@ jobs:
       - name: Install Graphviz
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: sudo apt install -y graphviz
+      - name: Install LibGLU
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: sudo apt install -y libglu1
       - name: Install Nutils and dependencies
         id: install
         env:
@@ -97,7 +100,7 @@ jobs:
           python -um pip install --upgrade --upgrade-strategy eager wheel
           python -um pip install --upgrade --upgrade-strategy eager numpy$_numpy_version
           # Install Nutils from `dist` dir created in job `build-python-package`.
-          python -um pip install "$_wheel[import_gmsh,export_mpl]"
+          python -um pip install "$_wheel[import_gmsh,export_mpl,cs]"
       - name: Install Scipy
         if: ${{ matrix.matrix-backend == 'scipy' }}
         run: python -um pip install --upgrade scipy
@@ -171,12 +174,15 @@ jobs:
         with:
           name: python-package
           path: dist/
+      - name: Install LibGLU
+        if: ${{ matrix.os == 'ubuntu' }}
+        run: sudo apt install -y libglu1
       - name: Install Nutils and dependencies
         id: install
         run: |
           python -um pip install --upgrade --upgrade-strategy eager wheel
           # Install Nutils from `dist` dir created in job `build-python-package`.
-          python -um pip install "$_wheel[matrix_scipy,export_mpl]"
+          python -um pip install "$_wheel[matrix_scipy,export_mpl,cs]"
       - name: Test
         run: python -um unittest discover -b -q -t . -s examples
   test-sphinx:
