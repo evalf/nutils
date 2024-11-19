@@ -31,6 +31,7 @@ else:
 from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse, _pyast
 from functools import cached_property
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph, TupleNode
+from statistics import geometric_mean
 import nutils_poly as poly
 import numpy
 import sys
@@ -5428,8 +5429,10 @@ def factor(array):
     degree = {arg: array.argument_degree(arg) for arg in array.arguments}
     for args, func in queue:
         func = func.simplified
-        m_args.append(args)
-        m_coeffs.append(zero_all_arguments(func).simplified)
+        zeroed = zero_all_arguments(func).simplified
+        if not iszero(zeroed):
+            m_args.append(args)
+            m_coeffs.append(zeroed)
         for arg in func.arguments: # as m_args grows, fewer arguments will remain in func
             # We keep only m_args that are alphabetically ordered to
             # deduplicate permutations of the same argument set:
@@ -5437,8 +5440,9 @@ def factor(array):
                 n = args.count(arg) + 1 # new monomial power of arg
                 assert n <= degree[arg]
                 queue.append(((*args, arg), derivative(func, arg) / float(n)))
-    log.info(f'constructing sparse polynomial of degree {max(len(args) for args in m_args)} with {len(m_args)} monomials:',
-        ', '.join('*'.join(f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()) or '1' for args in m_args))
+
+    log.info(f'constructing sparse polynomial', ' + '.join(' '.join([f'C{i+1}'] +
+        [f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()]) for i, args in enumerate(m_args)))
 
     # EVALUATION. We now form the polynomial, by accumulating evaluable
     # monomials in which the coefficients are evaluated. To this end we
@@ -5452,6 +5456,16 @@ def factor(array):
     nvals = 0
     for args, (values, indices, shape) in log.iter.fraction('monomial', m_args, eval_coo(m_coeffs)):
         indices, values = _sort_and_prune(shape, indices, values)
+
+        info = f'{len(values):,} coefficients for {len(shape)}-tensor'
+        if shape:
+            # The fill ratio is based on the geometric mean of the shape of the
+            # tensor to be insensitive to reshapes, as the geometric mean of
+            # (a, b, c, d) is equal to that of (a * b, c * d).
+            fill = len(values) / geometric_mean(shape)
+            info += f' ({100*fill:.0f}% full)' if .01 <= fill <= 1 else f' (bandwidth {fill:.0f})'
+        log.info(info)
+
         if not len(values):
             continue
         nvals += len(values)
@@ -5487,7 +5501,7 @@ def factor(array):
             size = constant(numpy.prod(shape[:array.ndim], dtype=int))
             monomial = unravel(Inflate(term, index, size), -1, array.shape)
         polynomial += monomial
-    log.info(f'factored function contains {nvals:,} doubles ({nvals>>17:,}MB)')
+    log.info(f'factored function contains {nvals:,} coefficients ({nvals>>17:,}MB)')
     return polynomial
 
 
