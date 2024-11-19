@@ -1427,3 +1427,12 @@ class attributes(TestCase):
         self.assertEqual(numpy.shape(A), (2,3))
         self.assertEqual(numpy.size(A), 6)
         self.assertEqual(numpy.ndim(A), 2)
+
+
+class factor(TestCase):
+
+    def test_lower_with_points(self):
+        topo, geom = mesh.rectilinear([3])
+        f = function.dotarg('dof')
+        v = topo.sample('uniform', 1).eval(function.factor(f**2) * geom[0], dof=2.)
+        self.assertAllAlmostEqual(v, [2, 6, 10])
