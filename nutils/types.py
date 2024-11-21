@@ -387,9 +387,12 @@ class arraydata(Singleton):
     def __new__(cls, arg):
         if isinstance(arg, cls):
             return arg
-        array = numpy.asarray(arg)
-        dtype = dict(b=bool, u=int, i=int, f=float, c=complex)[array.dtype.kind]
-        return super().__new__(cls, dtype, array.shape, array.astype(dtype, copy=False).tobytes())
+        orig = numpy.asarray(arg)
+        dtype = dict(b=bool, u=int, i=int, f=float, c=complex)[orig.dtype.kind]
+        array = orig.astype(dtype, copy=False)
+        if array.dtype != orig.dtype and not numpy.equal(array, orig).all():
+            raise ValueError('cannot cast array with dtype {orig.dtype} to native dtype {array.dtype} without truncation')
+        return super().__new__(cls, dtype, array.shape, array.tobytes())
 
     def reshape(self, *shape):
         if numpy.prod(shape) != numpy.prod(self.shape):
