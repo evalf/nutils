@@ -231,6 +231,8 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
 
     @cached_property
     def as_evaluable_array(self) -> evaluable.Array:
+        if self.spaces:
+            raise ValueError(f'cannot lower function with spaces ({", ".join(self.spaces)}) - did you forget integral or sample?')
         return self.lower(LowerArgs((), {}, {}))
 
     def __index__(self):
