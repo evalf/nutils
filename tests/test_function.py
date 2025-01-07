@@ -1,4 +1,4 @@
-from nutils import evaluable, function, mesh, numeric, types, points, transformseq, transform, element, warnings
+from nutils import evaluable, function, mesh, numeric, types, points, transformseq, transform, element, warnings, sparse
 from nutils.testing import TestCase, parametrize
 import nutils_poly as poly
 import numpy
@@ -1436,3 +1436,12 @@ class factor(TestCase):
         f = function.dotarg('dof')
         v = topo.sample('uniform', 1).eval(function.factor(f**2) * geom[0], dof=2.)
         self.assertAllAlmostEqual(v, [2, 6, 10])
+
+    def test_constant(self):
+        topo, geom = mesh.rectilinear([3])
+        basis = topo.basis('std', 1)
+        f = function.factor(topo.integral(basis[:, numpy.newaxis] * basis, degree=2))
+        ((i, j), v, shape), = function.evaluate(f, _post=sparse.extract)
+        self.assertAllEqual(i, [0, 0, 1, 1, 1, 2, 2, 2, 3, 3])
+        self.assertAllEqual(j, [0, 1, 0, 1, 2, 1, 2, 3, 2, 3])
+        self.assertAllAlmostEqual(v, [1/3, 1/6, 1/6, 2/3, 1/6, 1/6, 2/3, 1/6, 1/6, 1/3])
