@@ -1445,3 +1445,8 @@ class factor(TestCase):
         self.assertAllEqual(i, [0, 0, 1, 1, 1, 2, 2, 2, 3, 3])
         self.assertAllEqual(j, [0, 1, 0, 1, 2, 1, 2, 3, 2, 3])
         self.assertAllAlmostEqual(v, [1/3, 1/6, 1/6, 2/3, 1/6, 1/6, 2/3, 1/6, 1/6, 1/3])
+
+    def test_lower_spaces(self):
+        topo, geom = mesh.rectilinear([3])
+        with self.assertRaisesRegex(ValueError, 'cannot lower function with spaces \(.+\) - did you forget integral or sample?'):
+            function.factor(geom)
