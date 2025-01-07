@@ -5410,8 +5410,7 @@ def factor(array):
     all sparsity of the original.'''
 
     array = array.as_evaluable_array.simplified
-    degree = {arg: array.argument_degree(arg) for arg in array.arguments}
-    log.info(f'analysing function of {", ".join(arg.name for arg in degree)} with highest power {max(degree.values())}')
+    log.info(f'analysing function of {", ".join(arg.name for arg in array.arguments) or "no arguments"}')
 
     # PREPARATION. We construct the equivalent polynomial to the input array,
     # parameterized by the m_coeffs (monomial coefficients) and m_args
@@ -5426,6 +5425,7 @@ def factor(array):
     m_coeffs = []
     m_args = []
     queue = [((), array)]
+    degree = {arg: array.argument_degree(arg) for arg in array.arguments}
     for args, func in queue:
         func = func.simplified
         m_args.append(args)
