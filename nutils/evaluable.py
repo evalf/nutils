@@ -1844,7 +1844,7 @@ class Einsum(Array):
         return self.args[0].dtype
 
     def _compile_expression(self, py_self, *args):
-        return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr(self._einsumfmt), *args)
+        return _pyast.Variable('numpy').get_attr('einsum').call(_pyast.LiteralStr(self._einsumfmt), *args)
 
     @property
     def _node_details(self):
@@ -1986,7 +1986,7 @@ class TakeDiag(Array):
             return transpose(Einsum(func.args, args_idx, func.out_idx[:rmaxis] + func.out_idx[rmaxis+1:]), axes)
 
     def _compile_expression(self, py_self, arr):
-        return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr('...kk->...k'), arr)
+        return _pyast.Variable('numpy').get_attr('einsum').call(_pyast.LiteralStr('...kk->...k'), arr)
 
     def _derivative(self, var, seen):
         return takediag(derivative(self.func, var, seen), self.ndim-1, self.ndim)
@@ -3490,7 +3490,7 @@ class Diagonalize(Array):
         return out
 
     def _compile_with_out(self, builder, out, out_block_id, mode):
-        out_diag = _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr('...ii->...i'), out)
+        out_diag = _pyast.Variable('numpy').get_attr('einsum').call(_pyast.LiteralStr('...ii->...i'), out)
         if mode == 'assign':
             builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
         builder.compile_with_out(self.func, out_diag, out_block_id, mode)
