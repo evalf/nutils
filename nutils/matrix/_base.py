@@ -241,6 +241,8 @@ class Matrix:
                 k -= k_ * c
                 v -= v_ * c
             v2 = _vdot(v)
+            if not v2.all():
+                break
             c = _vdot(v, res) / v2  # min_c |res - c v| => c = v.res / v.v
             newlhs = lhs + k * c
             res = rhs - self @ newlhs  # recompute rather than update to avoid drift
