@@ -5284,7 +5284,7 @@ class ArgSort(Array):
         return self.array,
 
     def evalf(self, array):
-        index = numpy.argsort(array, -1)
+        index = numpy.argsort(array, -1, kind='stable')
         # on some platforms (windows) argsort does not return indices as
         # numpy.dtype(int), so we type cast it for consistency
         return index.astype(int, copy=False)
