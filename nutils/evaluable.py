@@ -798,7 +798,7 @@ class Orthonormal(Array):
     def evalf(G, n):
         GG = numpy.einsum('...ki,...kj->...ij', G, G)
         v1 = numpy.einsum('...ij,...i->...j', G, n)
-        v2 = numpy.linalg.solve(GG, v1)
+        v2 = numpy.linalg.solve(GG, v1[...,numpy.newaxis])[...,0] # NOTE: the newaxis/getitem dance is necessary since Numpy 2
         v3 = numpy.einsum('...ij,...j->...i', G, v2)
         return numeric.normalize(n - v3)
 
