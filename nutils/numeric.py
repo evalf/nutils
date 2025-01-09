@@ -690,9 +690,12 @@ def compress_indices(indices, length):
     if indices[0] < 0 or indices[-1] >= length:
         raise ValueError('indices are out of bounds')
     step = numpy.empty(len(indices)+1, dtype=int)
-    step[0] = indices[0] + 1
-    numpy.subtract(indices[1:], indices[:-1], out=step[1:-1])
-    step[-1] = length - indices[-1]
+    numpy.add(indices[0], 1, out=step[0,...], dtype=step.dtype)
+    numpy.subtract(indices[1:], indices[:-1], out=step[1:-1], dtype=step.dtype)
+    numpy.subtract(length, indices[-1], out=step[-1,...], dtype=step.dtype)
+    # NOTE: the dtype argument is required in addition to the out argument in
+    # order to make sure that the operation is performed in the correct type;
+    # see https://numpy.org/doc/2.0/user/basics.ufuncs.html
     nz, = step.nonzero()
     try:
         return numpy.repeat(nz, step[nz]) # fails if any step is negative
