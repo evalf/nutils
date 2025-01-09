@@ -238,7 +238,7 @@ class TestCase(unittest.TestCase):
             if not nfail:
                 return
             status = ['{}/{} values do not match up to atol={:.2e}, rtol={:.2e}:'.format(nfail, fail.size, atol, rtol)]
-            status.extend('{} desired: {:+.4e}, actual: {:+.4e}, spacing: {:.1e}'.format(list(index), desired[index], actual[index], spacing[index]) for index in zip(*fail.nonzero()))
+            status.extend('{} desired: {:+.4e}, actual: {:+.4e}, spacing: {:.1e}'.format([int(i) for i in index], desired[index], actual[index], spacing[index]) for index in zip(*fail.nonzero()))
             if nfail > 10:
                 status[6:-5] = '...',
         status.append('If this is expected, update the base64 string to:')
