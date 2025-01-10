@@ -1409,3 +1409,6 @@ class factor(TestCase):
     def test_not_polynomial(self):
         with self.assertRaisesRegex(evaluable.NotPolynomal, "nutils.evaluable.Sign<f:> is not polynomial in argument 'v'"):
             evaluable.factor(evaluable.Sign(self.v))
+
+    def test_constant(self):
+        self.assertFactoredEqual(evaluable.constant(1.))
