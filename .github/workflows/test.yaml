@@ -59,6 +59,7 @@ jobs:
           - {name: "mkl windows", os: windows-latest, python-version: "3.12", matrix-backend: mkl, nprocs: 1}
           - {name: "parallel", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 2}
           - {name: "numpy 1.17", os: ubuntu-latest, python-version: "3.8", matrix-backend: numpy, nprocs: 1, numpy-version: ==1.17.3}
+          - {name: "numpy 1.x", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1, numpy-version: <2}
           - {name: "tensorial", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1, tensorial: test}
       fail-fast: false
     env:

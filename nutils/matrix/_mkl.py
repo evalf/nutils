@@ -213,7 +213,7 @@ class MKLMatrix(Matrix):
             raise MatrixError("MKL's fgmres does not support complex data")
         rci = c_int(0)
         n = c_int(len(rhs))
-        b = numpy.array(rhs, dtype=numpy.float64, copy=False)
+        b = numpy.ascontiguousarray(rhs, dtype=numpy.float64)
         x = numpy.zeros_like(b)
         N = min(restart, len(rhs))
         ipar = numpy.empty(128, dtype=numpy.int32)

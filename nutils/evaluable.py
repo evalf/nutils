@@ -798,7 +798,7 @@ class Orthonormal(Array):
     def evalf(G, n):
         GG = numpy.einsum('...ki,...kj->...ij', G, G)
         v1 = numpy.einsum('...ij,...i->...j', G, n)
-        v2 = numpy.linalg.solve(GG, v1)
+        v2 = numpy.linalg.solve(GG, v1[...,numpy.newaxis])[...,0] # NOTE: the newaxis/getitem dance is necessary since Numpy 2
         v3 = numpy.einsum('...ij,...j->...i', G, v2)
         return numeric.normalize(n - v3)
 
@@ -1844,7 +1844,7 @@ class Einsum(Array):
         return self.args[0].dtype
 
     def _compile_expression(self, py_self, *args):
-        return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr(self._einsumfmt), *args)
+        return _pyast.Variable('numpy').get_attr('einsum').call(_pyast.LiteralStr(self._einsumfmt), *args)
 
     @property
     def _node_details(self):
@@ -1986,7 +1986,7 @@ class TakeDiag(Array):
             return transpose(Einsum(func.args, args_idx, func.out_idx[:rmaxis] + func.out_idx[rmaxis+1:]), axes)
 
     def _compile_expression(self, py_self, arr):
-        return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr('...kk->...k'), arr)
+        return _pyast.Variable('numpy').get_attr('einsum').call(_pyast.LiteralStr('...kk->...k'), arr)
 
     def _derivative(self, var, seen):
         return takediag(derivative(self.func, var, seen), self.ndim-1, self.ndim)
@@ -3490,7 +3490,7 @@ class Diagonalize(Array):
         return out
 
     def _compile_with_out(self, builder, out, out_block_id, mode):
-        out_diag = _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr('...ii->...i'), out)
+        out_diag = _pyast.Variable('numpy').get_attr('einsum').call(_pyast.LiteralStr('...ii->...i'), out)
         if mode == 'assign':
             builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
         builder.compile_with_out(self.func, out_diag, out_block_id, mode)
@@ -5284,7 +5284,7 @@ class ArgSort(Array):
         return self.array,
 
     def evalf(self, array):
-        index = numpy.argsort(array, -1)
+        index = numpy.argsort(array, -1, kind='stable')
         # on some platforms (windows) argsort does not return indices as
         # numpy.dtype(int), so we type cast it for consistency
         return index.astype(int, copy=False)
