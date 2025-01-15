@@ -106,8 +106,8 @@ def _equals_simplified(arg1: 'Array', arg2: 'Array'):
 
 _certainly_different = lambda a, b: _equals_simplified(a, b) is False
 _certainly_equal = lambda a, b: _equals_simplified(a, b) is True
-_any_certainly_different = lambda a, b: any(map(_certainly_different, a, b))
-_all_certainly_equal = lambda a, b: all(map(_certainly_equal, a, b))
+_any_certainly_different = lambda a, b: len(a) != len(b) or any(map(_certainly_different, a, b))
+_all_certainly_equal = lambda a, b: len(a) == len(b) and all(map(_certainly_equal, a, b))
 
 
 class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning):
