@@ -5452,8 +5452,9 @@ def factor(array):
     # sparse indices, and contracting the resulting vector with the relevant
     # axis of the sparse values array.
 
-    polynomial = zeros_like(array)
+    polynomial = []
     nvals = 0
+
     for args, (values, indices, shape) in log.iter.fraction('monomial', m_args, eval_coo(m_coeffs)):
         indices, values = _sort_and_prune(shape, indices, values)
 
@@ -5468,41 +5469,41 @@ def factor(array):
 
         if not len(values):
             continue
-        nvals += len(values)
-        factors = [constant(values)]
-        i = array.ndim
-        for arg, repeated in _iter_repeated(args):
-            if arg.ndim == 0:
-                factor = arg
-            else:
-                j = i + arg.ndim
-                factor = Take(_flat(arg), constant(numpy.ravel_multi_index(indices[i:j], shape[i:j])))
-                i = j
-            if repeated:
-                # With reference to the example of the doc string, derivative
-                # will naively generate an evaluable of the form array'(arg)
-                # darg = darray_darg(0) darg + .5 arg d2array_darg2 darg + .5
-                # darg d2array_darg2 arg. By Schwarz's theorem d2array_darg2 is
-                # symmetric, and the latter two terms are equal. However, since
-                # the row and column indices of d2array_darg2 differ, we cannot
-                # detect this equality but rather need to embed the information
-                # explicitly. To this end, factor produces an evaluable of the
-                # form array(arg) == array(0) + darray_darg(0) arg + .5
-                # SymProd(arg, d2array_darg2 arg), which produces the desired
-                # derivative array'(arg) == darray_darg(0) + d2array_darg2 arg.
-                factor = SymProd(factors.pop(), factor)
-            factors.append(factor)
-        term = util.product(factors)
-        assert i == len(indices)
+
+        offsets = numpy.cumsum([array.ndim] + [arg.ndim for arg in args])
+        factors = [Take(_flat(arg), constant(numpy.ravel_multi_index(indices[s], shape[s]))) if arg.ndim else arg
+            for arg, s in zip(args, map(slice, offsets, offsets[1:]))]
+
+        # With reference to the example of the doc string, derivative will
+        # generate an evaluable of the form array'(arg) darg = darray_darg(0)
+        # darg + .5 arg d2array_darg2 darg + .5 darg d2array_darg2 arg. By
+        # Schwarz's theorem d2array_darg2 is symmetric, and the latter two
+        # terms are equal. However, since the row and column indices of
+        # d2array_darg2 differ, we cannot detect this equality but rather need
+        # to embed the information explicitly. To this end, factor produces an
+        # evaluable of the form array(arg) == array(0) + darray_darg(0) arg +
+        # .5 SymProd(arg, d2array_darg2 arg), which produces the desired
+        # derivative array'(arg) == darray_darg(0) + d2array_darg2 arg.
+        for shift, i in enumerate(i for i, (a, b) in enumerate(util.pairwise(args)) if a == b):
+            i -= shift
+            factors[i] = SymProd(factors[i], factors.pop(i+1))
+
+        monomial = constant(values)
+        for factor in factors:
+            monomial *= factor
+
         if array.ndim == 0:
-            monomial = Sum(term)
+            term = Sum(monomial)
         else:
             index = constant(numpy.ravel_multi_index(indices[:array.ndim], shape[:array.ndim]))
             size = constant(numpy.prod(shape[:array.ndim], dtype=int))
-            monomial = unravel(Inflate(term, index, size), -1, array.shape)
-        polynomial += monomial
+            term = unravel(Inflate(monomial, index, size), -1, array.shape)
+
+        polynomial.append(term)
+        nvals += len(values)
+
     log.info(f'factored function contains {nvals:,} coefficients ({nvals>>17:,}MB)')
-    return polynomial
+    return util.sum(polynomial) if polynomial else zeros_like(array)
 
 
 class SymProd(Array):
@@ -5635,13 +5636,6 @@ def _sort_and_prune(shape, indices, values):
     if nonzero.all():
         nonzero = slice(None)
     return numpy.unravel_index(flat_index[nonzero], shape), values[nonzero]
-
-
-def _iter_repeated(iterator):
-    last = object()
-    for item in iterator:
-        yield item, item == last
-        last = item
 
 
 class _Stats:
