@@ -2970,13 +2970,9 @@ def Elemwise(data: typing.Tuple[types.arraydata, ...], index: Array, dtype: Dtyp
     concat = constant(numpy.concatenate(raveled, axis=-1))
     if not var_axes:
         return Take(concat, index)
-    cumprod = [shape[i] for i in var_axes]
-    for i in reversed(range(len(cumprod)-1)):
-        cumprod[i] *= cumprod[i+1]  # work backwards so that the shape check matches in Unravel
-    offsets = _SizesToOffsets(asarray([d.shape[-1] for d in raveled]))
-    elemwise = Take(concat, Range(cumprod[0]) + Take(offsets, index))
-    for i in range(len(var_axes)-1):
-        elemwise = Unravel(elemwise, shape[var_axes[i]], cumprod[i+1])
+    offset = Take(_SizesToOffsets(asarray([d.shape[-1] for d in raveled])), index)
+    ravelshape = [shape[i] for i in var_axes]
+    elemwise = unravel(Take(concat, Range(util.product(ravelshape)) + offset), -1, ravelshape)
     return Transpose.from_end(elemwise, *var_axes)
 
 
@@ -3267,9 +3263,7 @@ class Inflate(Array):
         else:  # kronecker; newindex is all zeros (but of varying length)
             intersection = InsertAxis(self.func, newindex.shape[0])
         if index.ndim:
-            swapped = Inflate(intersection, newdofmap, util.product(index.shape))
-            for i in range(index.ndim-1):
-                swapped = Unravel(swapped, index.shape[i], util.product(index.shape[i+1:]))
+            swapped = unravel(Inflate(intersection, newdofmap, util.product(index.shape)), -1, index.shape)
         else:  # get; newdofmap is all zeros (but of varying length)
             swapped = Sum(intersection)
         return swapped
@@ -5486,9 +5480,7 @@ def factor(array):
         else:
             index = constant(numpy.ravel_multi_index(indices[:array.ndim], shape[:array.ndim]))
             size = constant(numpy.prod(shape[:array.ndim], dtype=int))
-            monomial = Inflate(term, index, size)
-            while monomial.ndim < array.ndim:
-                monomial = Unravel(monomial, constant(shape[monomial.ndim-1]), constant(numpy.prod(shape[monomial.ndim:array.ndim], dtype=int)))
+            monomial = unravel(Inflate(term, index, size), -1, array.shape)
         polynomial += monomial
     log.info(f'factored function contains {nvals:,} doubles ({nvals>>17:,}MB)')
     return polynomial
@@ -5980,10 +5972,17 @@ def _inflate(arg: Array, dofmap: Array, length: Array, axis: int):
 
 
 def unravel(func, axis, shape):
+    if not shape:
+        raise ValueError('cannot unravel to an empty shape')
     func = asarray(func)
     axis = numeric.normdim(func.ndim, axis)
-    assert len(shape) == 2
-    return Transpose.from_end(Unravel(Transpose.to_end(func, axis), *shape), axis, axis+1)
+    if len(shape) == 1:
+        assert not _certainly_different(func.shape[axis], shape[0])
+        return func
+    f = Transpose.to_end(func, axis)
+    for i in range(len(shape)-1):
+        f = Unravel(f, shape[i], util.product(shape[i+1:]))
+    return Transpose.from_end(f, *range(axis, axis+len(shape)))
 
 
 def ravel(func, axis):
