@@ -93,6 +93,12 @@ jobs:
         run: |
           sudo apt install -y graphviz
           echo "NUTILS_TESTING_REQUIRES=$NUTILS_TESTING_REQUIRES app:dot" >> $GITHUB_ENV
+      - name: Install Gmsh
+        # install gmsh via pip on windows and macos and via apt on linux, as
+        # the latter version is dynamically linked and requires libgl etc.
+        run: |
+          ${{ matrix.os == 'ubuntu-latest' && 'sudo apt install gmsh' || 'python -um pip install gmsh' }}
+          echo "NUTILS_TESTING_REQUIRES=$NUTILS_TESTING_REQUIRES app:gmsh" >> $GITHUB_ENV
       - name: Install Nutils and dependencies
         id: install
         env:

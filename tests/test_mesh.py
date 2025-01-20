@@ -9,8 +9,12 @@ class gmsh(TestCase):
 
     def setUp(self):
         super().setUp()
-        path = pathlib.Path(__file__).parent/'test_mesh'/'mesh{0.ndims}d_p{0.degree}_v{0.version}.msh'.format(self)
-        self.domain, self.geom = mesh.gmsh(path)
+        path = pathlib.Path(__file__).parent/'test_mesh'
+        if self.version == 'geo':
+            self.require_application('gmsh')
+            self.domain, self.geom = mesh.gmsh(path/f'mesh{self.ndims}d.geo', order=self.degree, dimension=self.ndims)
+        else:
+            self.domain, self.geom = mesh.gmsh(path/f'mesh{self.ndims}d_p{self.degree}_v{self.version}.msh')
 
     @requires('meshio')
     def test_volume(self):
@@ -83,7 +87,7 @@ class gmsh(TestCase):
 
 
 for ndims in 2, 3:
-    for version in 2, 4:
+    for version in 2, 4, 'geo':
         for degree in range(1, 5 if ndims == 2 else 3):
             gmsh(ndims=ndims, version=version, degree=degree)
 
@@ -93,8 +97,12 @@ class gmshmanifold(TestCase):
 
     def setUp(self):
         super().setUp()
-        path = pathlib.Path(__file__).parent/'test_mesh'/'mesh3dmani_p{0.degree}_v{0.version}.msh'.format(self)
-        self.domain, self.geom = mesh.gmsh(path)
+        path = pathlib.Path(__file__).parent/'test_mesh'
+        if self.version == 'geo':
+            self.require_application('gmsh')
+            self.domain, self.geom = mesh.gmsh(path/'mesh3dmani.geo', order=self.degree, dimension=3)
+        else:
+            self.domain, self.geom = mesh.gmsh(path/f'mesh3dmani_p{self.degree}_v{self.version}.msh')
 
     @requires('meshio')
     def test_volume(self):
@@ -107,7 +115,7 @@ class gmshmanifold(TestCase):
         self.assertAllAlmostEqual(length, 2*numpy.pi, places=1 if self.degree == 1 else 3)
 
 
-for version in 2, 4:
+for version in 2, 4, 'geo':
     for degree in 1, 2:
         gmshmanifold(version=version, degree=degree)
 
