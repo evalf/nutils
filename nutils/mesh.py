@@ -506,6 +506,14 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, *, space='X'):
         Geometry function.
     '''
 
+    used = numpy.zeros(len(coords), dtype=bool)
+    used[nodes] = True
+    if not used.all():
+        log.warning(f'{len(used) - used.sum()} vertices are not used')
+        for name, points in ptags.items():
+            if not used[points].all():
+                log.warning(f'point {name} is not connected')
+
     nverts = len(coords)
     nelems, ncnodes = cnodes.shape
     ndims = nodes.shape[1] - 1
