@@ -448,7 +448,7 @@ def parsegmsh(mshdata):
 
 
 @log.withcontext
-def gmsh(fname, name='gmsh', *, space='X'):
+def gmsh(fname, *, space='X'):
     """Gmsh parser
 
     Parser for Gmsh files in `.msh` format. Only files with physical groups are
@@ -459,8 +459,6 @@ def gmsh(fname, name='gmsh', *, space='X'):
     ----------
     fname : :class:`str` or :class:`io.BufferedIOBase`
         Path to mesh file or mesh file object.
-    name : :class:`str` or :any:`None`
-        Name of parsed topology, defaults to 'gmsh'.
 
     Returns
     -------
@@ -471,10 +469,10 @@ def gmsh(fname, name='gmsh', *, space='X'):
     """
 
     with util.binaryfile(fname) as f:
-        return simplex(name=name, **parsegmsh(f), space=space)
+        return simplex(**parsegmsh(f), space=space)
 
 
-def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space='X'):
+def simplex(nodes, cnodes, coords, tags, btags, ptags, *, space='X'):
     '''Simplex topology.
 
     Parameters
@@ -499,8 +497,6 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
         preserving order.
     ptags : :class:`dict`
         Dictionary of name->node numbers referencing the ``nodes`` table.
-    name : :class:`str`
-        Name of simplex topology.
 
     Returns
     -------
