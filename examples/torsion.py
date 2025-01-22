@@ -66,7 +66,7 @@ def main(length: float = 2*np.pi,
     zgrid = length * np.linspace(-.5, .5, round(length / elemsize)+1)
     θgrid = np.linspace(-np.pi, np.pi, round(2 * np.pi / elemsize)+1)
     cylinder, (z, θ) = mesh.rectilinear([zgrid, θgrid], periodic=(1,))
-    φ = θ - (z / length * np.pi / 180) * function.Argument('φ', shape=())
+    φ = θ - (z / length * np.pi / 180) * function.field('φ')
     if trim:
         cylinder = cylinder.trim(θ**2 + z**2 - trim**2, maxrefine=2)
     extrusion, r = mesh.line([1 - thickness/2, 1 + thickness/2], space='T')
@@ -77,8 +77,7 @@ def main(length: float = 2*np.pi,
     ns.X = np.stack([z, r * np.sin(θ), r * np.cos(θ)]) # reference geometry
     ns.Xφ = np.stack([z * stretch, r * np.sin(φ), r * np.cos(φ)])
     ns.define_for('X', gradient='∇', jacobians=('dV',))
-    ns.add_field('u', topo.basis('spline', degree=degree,
-        removedofs=((0,-1),None,None)), shape=(3,)) # deformation, clamped
+    ns.u = topo.field('u', btype='spline', degree=degree, removedofs=((0,-1),None,None), shape=[3]) # deformation, clamped
     ns.x_i = 'Xφ_i + u_i' # deformed geometry
     ns.F_ij = '∇_j(x_i)'
     ns.J = np.linalg.det(ns.F)

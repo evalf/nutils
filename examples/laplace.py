@@ -49,13 +49,13 @@ def main(nelems: int = 10,
 
     # To be able to write index based tensor contractions, we need to bundle
     # all relevant functions together in a namespace. Here we add the geometry
-    # `x`, a test function `v`, and the solution `u`. The latter two are formed
-    # by contracting a basis with function arguments of the same name.
+    # `x`, a test function `v`, and the solution `u`.
 
     ns = Namespace()
     ns.x = geom
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-    ns.add_field(('u', 'v'), domain.basis(btype, degree=degree))
+    ns.u = domain.field('u', btype=btype, degree=degree)
+    ns.v = domain.field('v', btype=btype, degree=degree)
 
     # We are now ready to implement the Laplace equation. In weak form, the
     # solution is a scalar field `u` for which ∫_Ω ∇v·∇u - ∫_Γn v f = 0 ∀ v.

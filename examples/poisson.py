@@ -20,7 +20,7 @@ def main(nelems: int = 32):
     '''
 
     topo, x = mesh.unitsquare(nelems, etype='square')
-    u = function.field('u', topo.basis('std', degree=1))
+    u = topo.field('u', btype='std', degree=1)
     g = u.grad(x)
     J = function.J(x)
 

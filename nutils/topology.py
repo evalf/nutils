@@ -392,6 +392,23 @@ class Topology:
             basis = numpy.ravel(basis[..., numpy.newaxis] * other_basis)
         return basis
 
+    @log.withcontext
+    def field(self, name: str, /, *, shape=(), dtype=float, **kwargs):
+        '''Create a field.
+
+        A field is a contraction of a basis with an argument of given type and
+        shape, the latter prefixed with the required dof axes. The following
+        two functions are fully equivalent on non-tensorial topologies, and
+        functionally equivalent on all topologies:
+
+        ```
+        self.field(name, shape=S, dtype=D, **B)
+        function.field(name, self.basis(**B), shape=S, dtype=D)
+        ```
+        '''
+
+        return function.field(name, *self._tensorial_bases(**kwargs), shape=shape, dtype=dtype)
+
     def sample(self, ischeme: str, degree: int) -> Sample:
         'Create sample.'
 

@@ -121,7 +121,8 @@ def main(mode: Union[FCM, NURBS] = NURBS(),
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     ns.λ = 2 * poisson
     ns.μ = 1 - poisson
-    ns.add_field(('u', 'v'), basis, shape=(2,))
+    ns.u = function.field('u', basis, shape=[2])
+    ns.v = function.field('v', basis, shape=[2])
     ns.X_i = 'x_i + u_i'
     ns.ε_ij = '(∇_j(u_i) + ∇_i(u_j)) / 2'
     ns.σ_ij = 'λ ε_kk δ_ij + 2 μ ε_ij'

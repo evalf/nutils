@@ -100,15 +100,15 @@ def main(nelems: int = 32,
     ns.x = geom
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     if not compatible:
-        ns.add_field(('u', 'v'), domain.basis('std', degree=degree), shape=(domain.ndims,))
-        ns.add_field(('p', 'q'), domain.basis('std', degree=degree-1)[1:])
-        ns.add_field('ψ', domain.basis('std', degree=2)[1:])
+        ns.u = domain.field('u', btype='std', degree=degree, shape=[2])
+        ns.p = domain.field('p', btype='std', degree=degree-1)
+        ns.ψ = domain.field('ψ', btype='std', degree=2)
     else:
-        ns.add_field(('u', 'v'), function.vectorize([
-            domain.basis('spline', degree=(degree, degree-1)),
-            domain.basis('spline', degree=(degree-1, degree))]))
-        ns.add_field(('p', 'q'), domain.basis('spline', degree=degree-1)[1:])
-        ns.add_field('ψ', domain.basis('spline', degree=degree)[1:])
+        ns.u = function.field('u', function.vectorize([domain.basis('spline', degree=p) for p in degree - 1 + numpy.eye(2, dtype=int)]))
+        ns.p = domain.field('p', btype='spline', degree=degree-1)
+        ns.ψ = domain.field('ψ', btype='spline', degree=degree)
+    ns.v = function.replace_arguments(ns.u, 'u:v')
+    ns.q = function.replace_arguments(ns.p, 'p:q')
     ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
 
     # weak formulation for Stokes flow, over-integrating for improved
@@ -119,6 +119,8 @@ def main(nelems: int = 32,
     # strong enforcement of non-penetrating boundary conditions
     sqr = domain.boundary.integral('(u_k n_k)^2 dS' @ ns, degree=degree*2)
     cons = System(sqr, trial='u').solve_constraints(droptol=1e-15)
+    cons['p'] = numpy.zeros(res.argshapes['p'], dtype=bool)
+    cons['p'].flat[0] = True # point constraint
 
     if strongbc:
         # strong enforcement of tangential boundary conditions
@@ -156,7 +158,9 @@ def postprocess(domain, ns, **arguments):
 
     # reconstruct velocity streamlines
     sqr = domain.integral('Σ_i (u_i - ε_ij ∇_j(ψ))^2 dV' @ ns, degree=4)
-    arguments = System(sqr, trial='ψ').solve(arguments=arguments)
+    consψ = numpy.zeros(sqr.argshapes['ψ'], dtype=bool)
+    consψ.flat[0] = True # point constraint
+    arguments = System(sqr, trial='ψ').solve(arguments=arguments, constrain={'ψ': consψ})
 
     bezier = domain.sample('bezier', 9)
     x, u, p, ψ = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'p', 'ψ'] @ ns, **arguments)
@@ -197,7 +201,7 @@ class test(testing.TestCase):
                 YcDGBdLMJR3Y/X+zdkhHHrEHM6lENt25+OU8OUi8PUn+klm87lacqiN4uQrZ4tUCLh3g4AFrV6Q/uctG
                 gQ==''')
         with self.subTest('stokes-pressure'):
-            self.assertAlmostEqual64(args0['p'], '''
+            self.assertAlmostEqual64(args0['p'][1:], '''
                 eNoBHgDh/+vVsNEXy6jTbiq1z7Av9C0mLJkw1NDTLEEtEC/xNAwED0s=''')
         with self.subTest('navier-stokes-velocity'):
             self.assertAlmostEqual64(args1['u'], '''
@@ -206,7 +210,7 @@ class test(testing.TestCase):
                 nM/5nf5xevqZxDOq5w4bCwLlOoD6XDV/n1t//s5ZvjPzTjmdDjx55+Slky/MGaDgHFB3vz4DgynQfS9O
                 A3WcBIkCAB7aSkk=''')
         with self.subTest('navier-stokes-pressure'):
-            self.assertAlmostEqual64(args1['p'], '''
+            self.assertAlmostEqual64(args1['p'][1:], '''
                 eNpz01W9oHVmuU7SJYtzgherdcr0n59dfiZT11yP97yCGQDN0Azu''')
 
     def test_mixed(self):
@@ -218,7 +222,7 @@ class test(testing.TestCase):
                 n+Y8k3RG+Mwio99nuoHqg4G48WzCmTignYUXDfXNzoedATuL4bMeA0Op9qczWqfXnTl2ioHhINAdHufv
                 ntx18qoZSH7FSRAJAB13Sc0=''')
         with self.subTest('stokes-pressure'):
-            self.assertAlmostEqual64(args0['p'], '''
+            self.assertAlmostEqual64(args0['p'][1:], '''
                 eNp7pKl+nf1KznmxS62ns/W+az/TNTL4ondU1/46t6GKKQDiJg1H''')
         with self.subTest('navier-stokes-velocity'):
             self.assertAlmostEqual64(args1['u'], '''
@@ -227,7 +231,7 @@ class test(testing.TestCase):
                 n5xefpbrzEYjZ3MGhiogDr/YYbxbjYHhrH6lYcY55zNgZzGcNWBgUL0Uctr3zLzTt08xMOScZmCYdnbl
                 qQMnpcxB8konQSQACVZG3A==''')
         with self.subTest('navier-stokes-pressure'):
-            self.assertAlmostEqual64(args1['p'], '''
+            self.assertAlmostEqual64(args1['p'][1:], '''
                 eNrbqjVZs1/ry/n48z1nSrW9L83RkTmneNZMO/TCOUNbMwDktQ3z''')
 
     def test_compatible(self):
@@ -237,14 +241,14 @@ class test(testing.TestCase):
                 eNpjYIAAvwvdBr9O2Zk90E8+rXQ6yxzGZ4CDTfr3z0H45hc2mjSagFgn9f1P15+G6Fc0PHSSgQEAx7kX
                 6A==''')
         with self.subTest('stokes-pressure'):
-            self.assertAlmostEqual64(args0['p'], '''
+            self.assertAlmostEqual64(args0['p'][1:], '''
                 eNoL1u+7NOfUR929ugvORxlU6W7V1TcUuyiif/PKCf1yUwDfRw2t''')
         with self.subTest('navier-stokes-velocity'):
             self.assertAlmostEqual64(args1['u'], '''
                 eNpjYICA1HNRRkGnZ5r26m86bX3awvyBftS5C6dOmDHAwWxDmbMzTUEsrfMrTA6YgFjKV53OOJ0FsR7o
                 F561OMnAAAC5tRfX''')
         with self.subTest('navier-stokes-pressure'):
-            self.assertAlmostEqual64(args1['p'], '''
+            self.assertAlmostEqual64(args1['p'][1:], '''
                 eNoz1VYx3HT6t16w/uKz73Uv6R7RNzx35swh7XdXrQ0TzADbMQ6l''')
 
     def test_strong(self):
@@ -255,7 +259,7 @@ class test(testing.TestCase):
                 iNedYmDoPc3AsMGEgQGh77beyzPHzkqfYTpTcObp6Zmnlc7B5A5dOH4+9dyDMx807M50GvCdOnki8wRM
                 DhcAAEYiNtQ=''')
         with self.subTest('stokes-pressure'):
-            self.assertAlmostEqual64(args0['p'], '''
+            self.assertAlmostEqual64(args0['p'][1:], '''
                 eNoBHgDh/3fRlNYxy7PR0NVKz1ktVi1E1HowsdGJ07Qt/9PINA6QEUk=''')
         with self.subTest('navier-stokes-velocity'):
             self.assertAlmostEqual64(args1['u'], '''
@@ -263,7 +267,7 @@ class test(testing.TestCase):
                 /9BPPW1gXH6W2eSpkds5mBz72fvnUs/EnHt+etXpCWdZzgSd3W8Ck1M9L3zGGyi/4Pz80+ZnNp44c9L8
                 BEwOFwAA4RM3QA==''')
         with self.subTest('navier-stokes-pressure'):
-            self.assertAlmostEqual64(args1['p'], '''
+            self.assertAlmostEqual64(args1['p'][1:], '''
                 eNoBHgDh//ot489SzMEsntHezWTPAC+jL+XN/8wF02UxTc1JNhf0ELc=''')
 
 

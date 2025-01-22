@@ -51,7 +51,7 @@ def main(nelems: int = 20,
     ns.angle = angle * numpy.pi / 180
     ns.λ = 2 * poisson
     ns.μ = 1 - 2 * poisson
-    ns.add_field('u', domain.basis(btype, degree=degree), shape=(domain.ndims,))
+    ns.u = domain.field('u', btype=btype, degree=degree, shape=[domain.ndims])
     ns.x_i = 'X_i + u_i'
     ns.ε_ij = '.5 (∇_j(u_i) + ∇_i(u_j))'
     ns.energy = 'λ ε_ii ε_jj + 2 μ ε_ij ε_ij'

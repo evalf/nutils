@@ -53,18 +53,18 @@ def main(etype: str = 'square',
 
         if irefine:
             refdom = domain.refined
-            refbasis = refdom.basis(btype, degree=degree)
-            ns.add_field('vref', refbasis)
-            res = refdom.integral('∇_k(vref) ∇_k(u) dV' @ ns, degree=degree*2)
-            res -= refdom.boundary.integral('vref ∇_k(u) n_k dS' @ ns, degree=degree*2)
-            indicator = res.derivative('vref').eval(**args)
-            supp = refbasis.get_support(indicator**2 > numpy.mean(indicator**2))
-            domain = domain.refined_by(refdom.transforms[supp])
+            ns.refbasis = refdom.basis(btype=btype, degree=degree)
+            res = refdom.integral('∇_k(refbasis_n) ∇_k(u) dV' @ ns, degree=degree*2)
+            res -= refdom.boundary.integral('refbasis_n ∇_k(u) n_k dS' @ ns, degree=degree*2)
+            indicator = numpy.square(res.eval(**args))
+            irefelems = ns.refbasis.get_support(indicator > indicator.mean())
+            domain = domain.refined_by(refdom.transforms[irefelems])
 
         ns = Namespace()
         ns.x = geom
         ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-        ns.add_field(('u', 'v'), domain.basis(btype, degree=degree))
+        ns.u = domain.field('u', btype=btype, degree=degree)
+        ns.v = domain.field('v', btype=btype, degree=degree)
         ns.uexact = exact
         ns.du = 'u - uexact'
 

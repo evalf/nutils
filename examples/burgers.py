@@ -40,14 +40,16 @@ def main(nelems: int = 40,
     ns = Namespace()
     ns.x = geom
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-    ns.add_field(('u', 'u0', 'v'), domain.basis(btype, degree=degree))
-    ns.add_field(('t', 't0'))
-    ns.dudt = '(u - u0) / (t - t0)'
+    ns.u = domain.field('u', btype=btype, degree=degree)
+    ns.du = ns.u - function.replace_arguments(ns.u, 'u:u0')
+    ns.v = domain.field('v', btype=btype, degree=degree)
+    ns.t = function.field('t')
+    ns.dt = ns.t - function.field('t0')
     ns.f = '.5 u^2'
     ns.C = 1
     ns.uinit = 'exp(-25 x^2)'
 
-    res = domain.integral('(v dudt - ∇(v) f) dV' @ ns, degree=degree*2)
+    res = domain.integral('(v du / dt - ∇(v) f) dV' @ ns, degree=degree*2)
     res -= domain.interfaces.integral('[v] n ({f} - .5 C [u] n) dS' @ ns, degree=degree*2)
 
     sqr = domain.integral('(u - uinit)^2 dV' @ ns, degree=max(degree*2, 5))
