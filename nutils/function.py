@@ -231,6 +231,8 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
 
     @cached_property
     def as_evaluable_array(self) -> evaluable.Array:
+        if self.spaces:
+            raise ValueError(f'cannot lower function with spaces ({", ".join(self.spaces)}) - did you forget integral or sample?')
         return self.lower(LowerArgs((), {}, {}))
 
     def __index__(self):
@@ -2370,10 +2372,14 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtyp
 
 
 @nutils_dispatch
-def factor(arg):
-    assert not arg.spaces
-    return _Unlower(evaluable.factor(arg),
-        spaces=set(), arguments=arg.arguments, lower_args=LowerArgs((), {}, {}))
+class factor(Array):
+
+    def __init__(self, array: Array) -> None:
+        self._array = evaluable.factor(array)
+        super().__init__(shape=array.shape, dtype=array.dtype, spaces=set(), arguments=array.arguments)
+
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        return evaluable.prependaxes(self._array, args.points_shape)
 
 
 # BASES

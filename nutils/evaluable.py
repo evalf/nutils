@@ -31,6 +31,7 @@ else:
 from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse, _pyast
 from functools import cached_property
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph, TupleNode
+from statistics import geometric_mean
 import nutils_poly as poly
 import numpy
 import sys
@@ -106,8 +107,8 @@ def _equals_simplified(arg1: 'Array', arg2: 'Array'):
 
 _certainly_different = lambda a, b: _equals_simplified(a, b) is False
 _certainly_equal = lambda a, b: _equals_simplified(a, b) is True
-_any_certainly_different = lambda a, b: any(map(_certainly_different, a, b))
-_all_certainly_equal = lambda a, b: all(map(_certainly_equal, a, b))
+_any_certainly_different = lambda a, b: len(a) != len(b) or any(map(_certainly_different, a, b))
+_all_certainly_equal = lambda a, b: len(a) == len(b) and all(map(_certainly_equal, a, b))
 
 
 class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning):
@@ -1118,7 +1119,7 @@ class InsertAxis(Array):
 
     def _argument_degree(self, argument):
         if argument not in self.length.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class Transpose(Array):
@@ -1323,7 +1324,7 @@ class Transpose(Array):
             return Assemble(transpose(self.func.func, axes), tuple(self.func.indices[i] for i in self.axes), self.shape)
 
     def _argument_degree(self, argument):
-        return self.func._argument_degree(argument)
+        return self.func.argument_degree(argument)
 
 
 class Product(Array):
@@ -1946,7 +1947,7 @@ class Sum(Array):
         return sum(_takediag(self.func, axis1, axis2), -2)
 
     def _argument_degree(self, argument):
-        return self.func._argument_degree(argument)
+        return self.func.argument_degree(argument)
 
 
 class TakeDiag(Array):
@@ -2069,7 +2070,7 @@ class Take(Array):
 
     def _argument_degree(self, argument):
         if argument not in self.indices.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class Power(Array):
@@ -2146,9 +2147,11 @@ class Power(Array):
         return Power(unravel(self.func, axis, shape), unravel(self.power, axis, shape))
 
     def _argument_degree(self, argument):
-        power, where = unalign(self.power.simplified)
+        power, _ = unalign(self.power.simplified)
+        while isinstance(power, Cast):
+            power = power.arg
         if argument not in self.power.arguments and not power.ndim and isinstance(power, Constant) and power.value >= 0 and int(power.value) == power.value:
-            return self.func._argument_degree(argument) * int(power.value)
+            return self.func.argument_degree(argument) * int(power.value)
 
 
 class Pointwise(Array):
@@ -2970,13 +2973,9 @@ def Elemwise(data: typing.Tuple[types.arraydata, ...], index: Array, dtype: Dtyp
     concat = constant(numpy.concatenate(raveled, axis=-1))
     if not var_axes:
         return Take(concat, index)
-    cumprod = [shape[i] for i in var_axes]
-    for i in reversed(range(len(cumprod)-1)):
-        cumprod[i] *= cumprod[i+1]  # work backwards so that the shape check matches in Unravel
-    offsets = _SizesToOffsets(asarray([d.shape[-1] for d in raveled]))
-    elemwise = Take(concat, Range(cumprod[0]) + Take(offsets, index))
-    for i in range(len(var_axes)-1):
-        elemwise = Unravel(elemwise, shape[var_axes[i]], cumprod[i+1])
+    offset = Take(_SizesToOffsets(asarray([d.shape[-1] for d in raveled])), index)
+    ravelshape = [shape[i] for i in var_axes]
+    elemwise = unravel(Take(concat, Range(util.product(ravelshape)) + offset), -1, ravelshape)
     return Transpose.from_end(elemwise, *var_axes)
 
 
@@ -3267,9 +3266,7 @@ class Inflate(Array):
         else:  # kronecker; newindex is all zeros (but of varying length)
             intersection = InsertAxis(self.func, newindex.shape[0])
         if index.ndim:
-            swapped = Inflate(intersection, newdofmap, util.product(index.shape))
-            for i in range(index.ndim-1):
-                swapped = Unravel(swapped, index.shape[i], util.product(index.shape[i+1:]))
+            swapped = unravel(Inflate(intersection, newdofmap, util.product(index.shape)), -1, index.shape)
         else:  # get; newdofmap is all zeros (but of varying length)
             swapped = Sum(intersection)
         return swapped
@@ -3315,7 +3312,7 @@ class Inflate(Array):
 
     def _argument_degree(self, argument):
         if argument not in self.dofmap.arguments and argument not in self.length.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class SwapInflateTake(Evaluable):
@@ -3552,7 +3549,7 @@ class Diagonalize(Array):
         return tuple((*indices, indices[-1], values) for *indices, values in self.func._assparse)
 
     def _argument_degree(self, argument):
-        return self.func._argument_degree(argument)
+        return self.func.argument_degree(argument)
 
 
 class Guard(Array):
@@ -3906,6 +3903,9 @@ class Ravel(Array):
     def _intbounds_impl(self):
         return self.func._intbounds_impl()
 
+    def _argument_degree(self, argument):
+        return self.func.argument_degree(argument)
+
 
 class Unravel(Array):
 
@@ -3964,7 +3964,7 @@ class Unravel(Array):
 
     def _argument_degree(self, argument):
         if argument not in self.sh1.arguments and argument not in self.sh2.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class RavelIndex(Array):
@@ -5053,7 +5053,7 @@ class LoopSum(Loop):
 
     def _argument_degree(self, argument):
         if argument not in self.length.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class _SizesToOffsets(Array):
@@ -5215,7 +5215,7 @@ class LoopConcatenate(Loop):
 
     def _argument_degree(self, argument):
         if argument not in self.start.arguments and argument not in self.stop.arguments and argument not in self.concat_length.arguments:
-            return self.func._argument_degree(argument)
+            return self.func.argument_degree(argument)
 
 
 class SearchSorted(Array):
@@ -5393,6 +5393,86 @@ def zero_all_arguments(value):
         return zeros_like(value)
 
 
+class Monomial(Array):
+    '''Helper object for factor.
+
+    Performs a sparse tensor multiplication, without summation, and returns the
+    result as a dense vector; inflation and reshape is the responsibility of
+    factor. The factors of the multiplication are ``values`` and all the
+    ``dependencies``, which are scattered into values via the ``indices``. The
+    ``powers`` argument contains multiplicities, for the following reason.
+
+    With reference to the example of the factor doc string, derivative will
+    generate an evaluable of the form array'(arg) darg = darray_darg(0) darg +
+    .5 arg d2array_darg2 darg + .5 darg d2array_darg2 arg. By Schwarz's theorem
+    d2array_darg2 is symmetric, and the latter two terms are equal. However,
+    since the row and column indices of d2array_darg2 differ, we cannot detect
+    this equality but rather need to embed the information explicitly.
+
+    In this situation, the ``powers`` argument contains the value 2 to indicate
+    that its position is symmetric with the next, and the first integral can
+    therefore be doubled. With that, the derivative takes the desired form of
+    array'(arg) == darray_darg(0) + d2array_darg2 arg.'''
+
+    values: types.arraydata
+    dependencies: typing.Tuple[Array, ...]
+    indices: typing.Tuple[typing.Tuple[types.arraydata, ...], ...]
+    powers: typing.Tuple[int]
+
+    def __post_init__(self):
+        assert self.values.ndim == 1, self.values.shape
+        assert len(self.dependencies) == len(self.indices) == len(self.powers)
+        assert all(index.shape == self.values.shape for indices in self.indices for index in indices), (self.values.shape, self.indices)
+        assert all(len(indices) == arg.ndim for arg, indices in zip(self.dependencies, self.indices)), (len(self.indices), self.dependencies)
+        assert all(power == 1 or power > 1 and self.powers[i+1] == power - 1 and self.dependencies[i+1] == self.dependencies[i] for i, power in enumerate(self.powers)), self.powers
+
+    def _simplified(self):
+        if not self.dependencies:
+            return Constant(self.values)
+
+    @property
+    def shape(self):
+        return constant(self.values.shape[0]),
+
+    @property
+    def dtype(self):
+        return self.values.dtype
+
+    def evalf(self, *args):
+        v = numpy.array(self.values)
+        for arg, indices in zip(args, self.indices):
+            v *= arg[indices]
+        return v
+
+    def _derivative(self, var, seen):
+        deriv = Zeros(self.shape + var.shape, self.dtype)
+        iarg = 0
+        while iarg < len(self.dependencies):
+            dep = self.dependencies[iarg]
+            m = Monomial(self.values,
+                self.dependencies[:iarg] + self.dependencies[iarg+1:],
+                self.indices[:iarg] + self.indices[iarg+1:],
+                self.powers[:iarg] + self.powers[iarg+1:])
+            if dep.ndim:
+                *indices, ravel_index = map(Constant, self.indices[iarg])
+                *lengths, ravel_length = dep.shape
+                while indices:
+                    ravel_index += indices.pop() * ravel_length
+                    ravel_length *= lengths.pop()
+                m = unravel(Inflate(Diagonalize(m), ravel_index, ravel_length), -1, dep.shape)
+            m = einsum('aB,BC->aC', m, derivative(dep, var, seen))
+            power = self.powers[iarg]
+            if power > 1:
+                m *= m.dtype(power)
+            deriv += m
+            iarg += power
+        assert iarg == len(self.dependencies)
+        return deriv
+
+    def _argument_degree(self, argument):
+        return builtins.sum(dep.argument_degree(argument) for dep in self.dependencies)
+
+
 @log.withcontext
 def factor(array):
     '''Convert array to a sparse polynomial.
@@ -5411,8 +5491,7 @@ def factor(array):
     all sparsity of the original.'''
 
     array = array.as_evaluable_array.simplified
-    degree = {arg: array.argument_degree(arg) for arg in array.arguments}
-    log.info(f'analysing function of {", ".join(arg.name for arg in degree)} with highest power {max(degree.values())}')
+    log.info(f'analysing function of {", ".join(arg.name for arg in array.arguments) or "no arguments"}')
 
     # PREPARATION. We construct the equivalent polynomial to the input array,
     # parameterized by the m_coeffs (monomial coefficients) and m_args
@@ -5427,10 +5506,13 @@ def factor(array):
     m_coeffs = []
     m_args = []
     queue = [((), array)]
+    degree = {arg: array.argument_degree(arg) for arg in array.arguments}
     for args, func in queue:
         func = func.simplified
-        m_args.append(args)
-        m_coeffs.append(zero_all_arguments(func).simplified)
+        zeroed = zero_all_arguments(func).simplified
+        if not iszero(zeroed):
+            m_args.append(args)
+            m_coeffs.append(zeroed)
         for arg in func.arguments: # as m_args grows, fewer arguments will remain in func
             # We keep only m_args that are alphabetically ordered to
             # deduplicate permutations of the same argument set:
@@ -5438,8 +5520,9 @@ def factor(array):
                 n = args.count(arg) + 1 # new monomial power of arg
                 assert n <= degree[arg]
                 queue.append(((*args, arg), derivative(func, arg) / float(n)))
-    log.info(f'constructing sparse polynomial of degree {max(len(args) for args in m_args)} with {len(m_args)} monomials:',
-        ', '.join('*'.join(f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()) or '1' for args in m_args))
+
+    log.info(f'constructing sparse polynomial', ' + '.join(' '.join([f'C{i+1}'] +
+        [f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()]) for i, args in enumerate(m_args)))
 
     # EVALUATION. We now form the polynomial, by accumulating evaluable
     # monomials in which the coefficients are evaluated. To this end we
@@ -5449,95 +5532,41 @@ def factor(array):
     # sparse indices, and contracting the resulting vector with the relevant
     # axis of the sparse values array.
 
-    polynomial = zeros_like(array)
+    polynomial = []
     nvals = 0
+
     for args, (values, indices, shape) in log.iter.fraction('monomial', m_args, eval_coo(m_coeffs)):
         indices, values = _sort_and_prune(shape, indices, values)
+
+        info = f'{len(values):,} coefficients for {len(shape)}-tensor'
+        if shape:
+            # The fill ratio is based on the geometric mean of the shape of the
+            # tensor to be insensitive to reshapes, as the geometric mean of
+            # (a, b, c, d) is equal to that of (a * b, c * d).
+            fill = len(values) / geometric_mean(shape)
+            info += f' ({100*fill:.0f}% full)' if .01 <= fill <= 1 else f' (bandwidth {fill:.0f})'
+        log.info(info)
+
         if not len(values):
             continue
-        nvals += len(values)
-        factors = [constant(values)]
-        i = array.ndim
-        for arg, repeated in _iter_repeated(args):
-            if arg.ndim == 0:
-                factor = arg
-            else:
-                j = i + arg.ndim
-                factor = Take(_flat(arg), constant(numpy.ravel_multi_index(indices[i:j], shape[i:j])))
-                i = j
-            if repeated:
-                # With reference to the example of the doc string, derivative
-                # will naively generate an evaluable of the form array'(arg)
-                # darg = darray_darg(0) darg + .5 arg d2array_darg2 darg + .5
-                # darg d2array_darg2 arg. By Schwarz's theorem d2array_darg2 is
-                # symmetric, and the latter two terms are equal. However, since
-                # the row and column indices of d2array_darg2 differ, we cannot
-                # detect this equality but rather need to embed the information
-                # explicitly. To this end, factor produces an evaluable of the
-                # form array(arg) == array(0) + darray_darg(0) arg + .5
-                # SymProd(arg, d2array_darg2 arg), which produces the desired
-                # derivative array'(arg) == darray_darg(0) + d2array_darg2 arg.
-                factor = SymProd(factors.pop(), factor)
-            factors.append(factor)
-        term = util.product(factors)
-        assert i == len(indices)
+
+        indexmap = map(types.arraydata, indices[array.ndim:])
+        monomial = Monomial(types.arraydata(values), args,
+            indices=tuple(tuple(next(indexmap) for _ in range(arg.ndim)) for arg in args),
+            powers=tuple(args[i:].count(arg) for i, arg in enumerate(args)))
+
         if array.ndim == 0:
-            monomial = Sum(term)
+            term = Sum(monomial)
         else:
             index = constant(numpy.ravel_multi_index(indices[:array.ndim], shape[:array.ndim]))
             size = constant(numpy.prod(shape[:array.ndim], dtype=int))
-            monomial = Inflate(term, index, size)
-            while monomial.ndim < array.ndim:
-                monomial = Unravel(monomial, constant(shape[monomial.ndim-1]), constant(numpy.prod(shape[monomial.ndim:array.ndim], dtype=int)))
-        polynomial += monomial
-    log.info(f'factored function contains {nvals:,} doubles ({nvals>>17:,}MB)')
-    return polynomial
+            term = unravel(Inflate(monomial, index, size), -1, array.shape)
 
+        polynomial.append(term)
+        nvals += len(values)
 
-class SymProd(Array):
-    '''Symmetric product.
-
-    The ``SymProd(a, b)`` operation behaves like ``Multiply(a, b)`` except that
-    its derivative is ``2 a db`` rather than ``a db + da b``, effectively
-    encoding the information that the two terms are equal. Care should be taken
-    that the ``SymProd`` operation is used only where this property applies.'''
-
-    a: Array
-    b: Array
-
-    def __post_init__(self):
-        assert not _any_certainly_different(self.a.shape, self.b.shape)
-        assert self.a.dtype == self.b.dtype
-        assert self.a.dtype != bool
-        assert not isinstance(self.b, SymProd)
-
-    @property
-    def shape(self):
-        return self.a.shape
-
-    @property
-    def dtype(self):
-        return self.a.dtype
-
-    @property
-    def dependencies(self):
-        return self.a, self.b
-
-    @property
-    def power(self):
-        return self.a.power + 1 if isinstance(self.a, SymProd) else 2
-
-    def evalf(self, a, b):
-        return a * b
-
-    def _derivative(self, var, seen):
-        return self.dtype(self.power) * appendaxes(self.a, var.shape) * self.b._derivative(var, seen)
-
-    def _optimized_for_numpy(self):
-        return self.a * self.b
-
-    def _argument_degree(self, argument):
-        return self.a.argument_degree(argument) + self.b.argument_degree(argument)
+    log.info(f'factored function contains {nvals:,} coefficients ({nvals>>17:,}MB)')
+    return util.sum(polynomial) if polynomial else zeros_like(array)
 
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
@@ -5624,13 +5653,6 @@ def _sort_and_prune(shape, indices, values):
     if nonzero.all():
         nonzero = slice(None)
     return numpy.unravel_index(flat_index[nonzero], shape), values[nonzero]
-
-
-def _iter_repeated(iterator):
-    last = object()
-    for item in iterator:
-        yield item, item == last
-        last = item
 
 
 class _Stats:
@@ -5980,10 +6002,17 @@ def _inflate(arg: Array, dofmap: Array, length: Array, axis: int):
 
 
 def unravel(func, axis, shape):
+    if not shape:
+        raise ValueError('cannot unravel to an empty shape')
     func = asarray(func)
     axis = numeric.normdim(func.ndim, axis)
-    assert len(shape) == 2
-    return Transpose.from_end(Unravel(Transpose.to_end(func, axis), *shape), axis, axis+1)
+    if len(shape) == 1:
+        assert not _certainly_different(func.shape[axis], shape[0])
+        return func
+    f = Transpose.to_end(func, axis)
+    for i in range(len(shape)-1):
+        f = Unravel(f, shape[i], util.product(shape[i+1:]))
+    return Transpose.from_end(f, *range(axis, axis+len(shape)))
 
 
 def ravel(func, axis):
