@@ -911,24 +911,12 @@ class _Replace(Array):
     def __init__(self, arg: Array, replacements: Dict[str, Array]) -> None:
         self._arg = arg
         self._replacements = {}
+        for old, new in _argument_to_array(replacements, arg):
+            if new.spaces:
+                raise ValueError(f'replacement functions cannot contain spaces, but replacement for Argument {old.name!r} contains space {", ".join(new.spaces)}.')
+            self._replacements[old.name] = new
         # Build arguments map with replacements.
-        unreplaced = {}
-        for name, (shape, dtype) in arg.arguments.items():
-            if name in replacements:
-                replacement = replacements[name]
-                if isinstance(replacement, str):
-                    replacement = Argument(replacement, shape, dtype)
-                else:
-                    replacement = Array.cast(replacement)
-                    if replacement.shape != shape:
-                        raise ValueError(f'Argument {name!r} has shape {shape} but the replacement has shape {replacement.shape}.')
-                    if replacement.dtype != dtype:
-                        raise ValueError(f'Argument {name!r} has dtype {dtype.__name__} but the replacement has dtype {replacement.dtype.__name__}.')
-                    if replacement.spaces:
-                        raise ValueError(f'replacement functions cannot contain spaces, but replacement for Argument {name!r} contains space {", ".join(replacement.spaces)}.')
-                self._replacements[name] = replacement
-            else:
-                unreplaced[name] = shape, dtype
+        unreplaced = {name: shape_dtype for name, shape_dtype in arg.arguments.items() if name not in replacements}
         arguments = _join_arguments([unreplaced] + [replacement.arguments for replacement in self._replacements.values()])
         super().__init__(arg.shape, arg.dtype, arg.spaces, arguments)
 
@@ -1687,6 +1675,53 @@ def kronecker(__array: IntoArray, axis: int, length: int, pos: IntoArray) -> Arr
     return _Transpose.from_end(scatter(__array, length, pos), axis)
 
 
+def _argument_to_array(d: Any, array: Array) -> Iterable[Tuple[Argument, Array]]:
+    '''Helper function for argument replacement.
+
+    Given dictionary-like input, along with an array to look up argument names,
+    yield ``(arg, new)`` tuples where ``arg`` is an ``Argument`` and ``new`` an
+    ``Array`` of equal shape and dtype. A ``ValueError`` is raised if any key
+    cannot be made a valid argument for the provided array or any value cannot
+    be made an array of the same shape and dtype.
+
+    Dictionary-like input is either an actual dictionary, a sequence of (key,
+    value) tuples or strings, or a string, where any string is replaced by the
+    relevant Argument object. The following inputs are all equivalent:
+
+        d = {'u': 'v', 'p': 'q'}
+        d = 'u:v,p:q'
+        d = ('u:v', 'p:q')
+        d = [('u', 'v'), ('p', 'q')]
+        d = {'u': Argument('v', ...), 'p': Argument('q', ...)}
+        d = [(Argument('u', ...), Argument('v', ...)), 'p:q']
+    '''
+
+    for item in d.split(',') if isinstance(d, str) else d.items() if isinstance(d, dict) else d:
+        arg, new = item.split(':', 1) if isinstance(item, str) else item
+
+        if isinstance(arg, str):
+            if arg not in array.arguments:
+                continue
+            arg = Argument(arg, *array.arguments[arg])
+        elif not isinstance(arg, Argument):
+            raise ValueError('Key must be string or argument')
+        elif arg.name not in arguments:
+            continue
+        elif array.arguments[arg.name] != (arg.shape, arg.dtype):
+            raise ValueError(f'Argument {arg.name!r} has wrong shape or dtype')
+
+        if isinstance(new, str):
+            new = Argument(new, arg.shape, arg.dtype)
+        else:
+            new = Array.cast(new)
+            if new.shape != arg.shape:
+                raise ValueError(f'Argument {arg.name!r} has shape {arg.shape} but the replacement has shape {new.shape}.')
+            elif new.dtype != arg.dtype:
+                raise ValueError(f'Argument {arg.name!r} has dtype {arg.dtype.__name__} but the replacement has dtype {new.dtype.__name__}.')
+
+        yield arg, new
+
+
 @nutils_dispatch
 def replace_arguments(__array: IntoArray, __arguments: Mapping[str, Union[IntoArray, str]]) -> Array:
     '''Replace arguments with :class:`Array` objects.
@@ -1735,15 +1770,8 @@ def linearize(__array: IntoArray, __arguments: Union[str, Dict[str, str], Iterab
     '''
 
     array = Array.cast(__array)
-    args = __arguments.split(',') if isinstance(__arguments, str) \
-      else __arguments.items() if isinstance(__arguments, dict) \
-      else __arguments
-    parts = []
-    for kv in args:
-        k, v = kv.split(':', 1) if isinstance(kv, str) else kv
-        f = derivative(array, k)
-        parts.append(numpy.sum(f * Argument(v, *array.arguments[k]), tuple(range(array.ndim, f.ndim))))
-    return util.sum(parts)
+    return util.sum(numpy.sum(derivative(array, arg) * lin, array.ndim + numpy.arange(arg.ndim))
+        for arg, lin in _argument_to_array(__arguments, array))
 
 
 def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:
