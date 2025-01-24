@@ -75,7 +75,7 @@ class NURBS:
         if self.nrefine:
             topo = topo.refine(self.nrefine)
             bsplinebasis = topo.basis('spline', degree=2)
-            sqr = topo.integral((function.dotarg('w', bsplinebasis) - weightfunc)**2, degree=9)
+            sqr = topo.integral((function.field('w', bsplinebasis) - weightfunc)**2, degree=9)
             controlweights = System(sqr, trial='w').solve()['w']
             nurbsbasis = bsplinebasis * controlweights / weightfunc
         return topo.withboundary(hole='left', sym='top,bottom', far='right'), geom, nurbsbasis, 5

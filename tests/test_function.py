@@ -794,7 +794,7 @@ class replace_arguments(TestCase):
             function.replace_arguments(function.Argument('foo', (2,), dtype=float), dict(foo=geom))
 
 
-class dotarg(TestCase):
+class field(TestCase):
 
     def assertEvalAlmostEqual(self, f_actual, desired, **arguments):
         self.assertEqual(f_actual.shape, desired.shape)
@@ -810,13 +810,13 @@ class dotarg(TestCase):
         a243 = numpy.arange(24, dtype=float).reshape(2, 4, 3)
         a4 = numpy.arange(4, dtype=float)
         a45 = numpy.arange(20, dtype=float).reshape(4, 5)
-        self.assertEvalAlmostEqual(function.dotarg('arg'), a, arg=a)
-        self.assertEvalAlmostEqual(function.dotarg('arg', shape=(2, 3)), a23, arg=a23)
-        self.assertEvalAlmostEqual(function.dotarg('arg', a4), numpy.einsum('i,i->', a4, a4), arg=a4)
-        self.assertEvalAlmostEqual(function.dotarg('arg', a45), numpy.einsum('i,ij->j', a4, a45), arg=a4)
-        self.assertEvalAlmostEqual(function.dotarg('arg', a24, shape=(3,)), numpy.einsum('ij,ik->jk', a23, a24), arg=a23)
-        self.assertEvalAlmostEqual(function.dotarg('arg', a2, a45), numpy.einsum('ij,i,jk->k', a24, a2, a45), arg=a24)
-        self.assertEvalAlmostEqual(function.dotarg('arg', a2, a45, shape=(3,)), numpy.einsum('ijk,i,jl->kl', a243, a2, a45), arg=a243)
+        self.assertEvalAlmostEqual(function.field('arg'), a, arg=a)
+        self.assertEvalAlmostEqual(function.field('arg', shape=(2, 3)), a23, arg=a23)
+        self.assertEvalAlmostEqual(function.field('arg', a4), numpy.einsum('i,i->', a4, a4), arg=a4)
+        self.assertEvalAlmostEqual(function.field('arg', a45), numpy.einsum('i,ij->j', a4, a45), arg=a4)
+        self.assertEvalAlmostEqual(function.field('arg', a24, shape=(3,)), numpy.einsum('ij,ik->jk', a23, a24), arg=a23)
+        self.assertEvalAlmostEqual(function.field('arg', a2, a45), numpy.einsum('ij,i,jk->k', a24, a2, a45), arg=a24)
+        self.assertEvalAlmostEqual(function.field('arg', a2, a45, shape=(3,)), numpy.einsum('ijk,i,jl->kl', a243, a2, a45), arg=a243)
 
 
 class jacobian(TestCase):
@@ -1388,13 +1388,13 @@ SurfaceGradient(boundary=True, etype='cube')
 class Eval(TestCase):
 
     def test_single(self):
-        f = function.dotarg('v', numpy.array([1, 2, 3]))
+        f = function.field('v', numpy.array([1, 2, 3]))
         retval = function.eval(f, v=numpy.array([4, 5, 6]))
         self.assertEqual(retval, 4+10+18)
 
     def test_multiple(self):
-        f = function.dotarg('v', numpy.array([1, 2, 3]))
-        g = function.dotarg('v', numpy.array([3, 2, 1]))
+        f = function.field('v', numpy.array([1, 2, 3]))
+        g = function.field('v', numpy.array([3, 2, 1]))
         retvals = function.eval([f, g], v=numpy.array([4, 5, 6]))
         self.assertEqual(retvals, (4+10+18, 12+10+6))
 
@@ -1433,7 +1433,7 @@ class factor(TestCase):
 
     def test_lower_with_points(self):
         topo, geom = mesh.rectilinear([3])
-        f = function.dotarg('dof')
+        f = function.field('dof')
         v = topo.sample('uniform', 1).eval(function.factor(f**2) * geom[0], dof=2.)
         self.assertAllAlmostEqual(v, [2, 6, 10])
 

@@ -2368,8 +2368,14 @@ def rotmat(__arg: IntoArray) -> Array:
     return Array.cast(numpy.stack([trignormal(__arg), trigtangent(__arg)], 0))
 
 
+def dotarg(*args, **kwargs):
+    '''Alias for :func:`field`.'''
+
+    return field(*args, **kwargs)
+
+
 @nutils_dispatch
-def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtype: DType = float) -> Array:
+def field(name: str, /, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtype: DType = float) -> Array:
     '''Return the inner product of the first axes of the given arrays with an argument with the given name.
 
     An argument with shape ``(arrays[0].shape[0], ..., arrays[-1].shape[0]) +
@@ -2379,7 +2385,7 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtyp
 
     Parameters
     ----------
-    argname : :class:`str`
+    name : :class:`str`
         The name of the argument.
     *arrays : :class:`Array` or something that can be :meth:`~Array.cast` into one
         The arrays to take inner products with.
@@ -2394,7 +2400,7 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtyp
         The inner product with shape ``shape + arrays[0].shape[1:] + ... + arrays[-1].shape[1:]``.
     '''
 
-    result = Argument(__argname, tuple(array.shape[0] for array in arrays) + tuple(shape), dtype=dtype)
+    result = Argument(name, tuple(array.shape[0] for array in arrays) + tuple(shape), dtype=dtype)
     for array in arrays:
         result = numpy.sum(_append_axes(result.transpose((*range(1, result.ndim), 0)), array.shape[1:]) * array, result.ndim-1)
     return result

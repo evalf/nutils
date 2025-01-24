@@ -695,8 +695,8 @@ class Namespace:
         >>> topo, ns.x = mesh.rectilinear([2, 2])
         >>> ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
         >>> ns.basis = topo.basis('spline', degree=1)
-        >>> ns.u = function.dotarg('u', ns.basis)
-        >>> ns.v = function.dotarg('v', ns.basis)
+        >>> ns.u = function.field('u', ns.basis)
+        >>> ns.v = function.field('v', ns.basis)
         >>> res = topo.integral('-∇_i(v) ∇_i(u) dV' @ ns, degree=2)
         >>> res += topo.boundary.integral('∇_i(v) u n_i dS' @ ns, degree=2)
         '''
@@ -718,7 +718,7 @@ class Namespace:
             setattr(self, jacobian, function.jacobian(geom, numpy.size(geom) - i))
 
     def add_field(self, __names: Union[str, Sequence[str]], *__bases, shape: Tuple[int, ...] = (), dtype: function.DType = float):
-        '''Add field(s) of the form ns.u = function.dotarg('u', ...)
+        '''Add field(s) of the form ns.u = function.field('u', ...)
 
         Parameters
         ----------
@@ -733,7 +733,7 @@ class Namespace:
         '''
 
         for name in (__names,) if isinstance(__names, str) else __names:
-            setattr(self, name, function.dotarg(name, *__bases, shape=shape, dtype=dtype))
+            setattr(self, name, function.field(name, *__bases, shape=shape, dtype=dtype))
 
     def copy_(self, **replacements: Mapping[str, function.Array]) -> 'Namespace':
         '''Return a copy of this namespace.
