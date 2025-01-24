@@ -2346,6 +2346,7 @@ def vectorize(args: Sequence[IntoArray]) -> Array:
     :class:`Array`
     '''
 
+    args = tuple(args)
     return numpy.concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
 
 
