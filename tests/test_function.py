@@ -1439,7 +1439,7 @@ class factor(TestCase):
 
     def test_constant(self):
         topo, geom = mesh.rectilinear([3])
-        basis = topo.basis('std', 1)
+        basis = topo.basis('std', degree=1)
         f = function.factor(topo.integral(basis[:, numpy.newaxis] * basis, degree=2))
         ((i, j), v, shape), = function.evaluate(f, _post=sparse.extract)
         self.assertAllEqual(i, [0, 0, 1, 1, 1, 2, 2, 2, 3, 3])

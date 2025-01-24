@@ -341,19 +341,56 @@ class Topology:
 
         raise NotImplementedError
 
-    def basis(self, name: str, *args, **kwargs) -> function.Basis:
+    def _tensorial_bases(self, btype: str, **kwargs) -> function.Basis:
+        '''Generate bases for different tensorial directions as appropriate.'''
+
+        # This default implementation generates a single basis through dispatch
+        # to the basis_<btype> method, after stripping any hierarchical prefix
+        # to allow the same basis type to be used on the base topology as on
+        # its refinements.
+
+        if not self.ndims:
+            return
+
+        if btype.startswith('h-'):
+            btype = btype[2:]
+        elif btype.startswith('th-'):
+            btype = btype[3:]
+            kwargs.pop('truncation_tolerance', None)
+
+        f = getattr(self, 'basis_' + btype)
+        yield f(**kwargs)
+
+    @log.withcontext
+    def basis(self, btype=None, __degree=None, **kwargs):
+        '''Create a basis.
+
+        A basis is a set of basis functions organized in a one dimensional
+        array. The available types varies depending on the topology.
         '''
-        Create a basis.
-        '''
+
+        # The basis method is not redefined in Topology subclasses;
+        # specialization happens via the _tensorial_bases method.
+
+        if btype is None:
+            if 'name' not in kwargs:
+                raise TypeError("basis() missing 1 required positional argument: 'btype'")
+            btype = kwargs.pop('name')
+            warnings.deprecation("the basis type parameter has been renamed from 'name' to 'btype', please update your code")
+
+        if __degree is not None:
+            if 'degree' in kwargs:
+                raise TypeError("basis() got multiple values for argument 'degree'")
+            kwargs['degree'] = __degree
+            warnings.deprecation('the degree parameter must be specified as a keyword argument, please update your code')
+
         if self.ndims == 0:
             return function.PlainBasis([[[1]]], [[0]], 1, self.f_index, self.f_coords)
-        split = name.split('-', 1)
-        if len(split) == 2 and split[0] in ('h', 'th'):
-            name = split[1]  # default to non-hierarchical bases
-            if split[0] == 'th':
-                kwargs.pop('truncation_tolerance', None)
-        f = getattr(self, 'basis_' + name)
-        return f(*args, **kwargs)
+
+        basis, *other_bases = self._tensorial_bases(btype, **kwargs)
+        for other_basis in other_bases:
+            basis = numpy.ravel(basis[..., numpy.newaxis] * other_basis)
+        return basis
 
     def sample(self, ischeme: str, degree: int) -> Sample:
         'Create sample.'
@@ -1265,8 +1302,7 @@ class _Mul(_TensorialTopology):
             interfaces.append(self.topo1.interfaces_spaces(spaces1) * self.topo2)
         return Topology.disjoint_union(*interfaces)
 
-    def basis(self, name: str, degree: Union[int, Sequence[int]], **kwargs) -> function.Basis:
-        kwargs['degree'] = degree
+    def _tensorial_bases(self, btype, **kwargs):
         kwargs1 = {}
         kwargs2 = {}
 
@@ -1308,10 +1344,8 @@ class _Mul(_TensorialTopology):
         kwargs1.update(kwargs)
         kwargs2.update(kwargs)
 
-        basis1 = self.topo1.basis(name, **kwargs1)
-        basis2 = self.topo2.basis(name, **kwargs2)
-        assert basis1.ndim == basis2.ndim == 1
-        return numpy.ravel(basis1[:,None] * basis2[None,:])
+        yield from self.topo1._tensorial_bases(btype, **kwargs1)
+        yield from self.topo2._tensorial_bases(btype, **kwargs2)
 
     def sample(self, ischeme: str, degree: int) -> Sample:
         return self.topo1.sample(ischeme, degree) * self.topo2.sample(ischeme, degree)
@@ -1389,8 +1423,8 @@ class _WithGroupAliases(_TensorialTopology):
     def connectivity(self) -> Sequence[Sequence[int]]:
         return self.parent.connectivity
 
-    def basis(self, name: str, *args, **kwargs) -> function.Basis:
-        return self.parent.basis(name, *args, **kwargs)
+    def _tensorial_bases(self, btype, **kwargs) -> function.Basis:
+        yield from self.parent._tensorial_bases(btype, **kwargs)
 
     def sample(self, ischeme: str, degree: int) -> Sample:
         return self.parent.sample(ischeme, degree)
@@ -1851,8 +1885,8 @@ class WithGroupsTopology(TransformChainsTopology):
             topo = topo.basetopo
         return UnionTopology(ptopos, pnames)
 
-    def basis(self, name, *args, **kwargs):
-        return self.basetopo.basis(name, *args, **kwargs)
+    def _tensorial_bases(self, btype, **kwargs):
+        yield from self.basetopo._tensorial_bases(btype, **kwargs)
 
     @cached_property
     def refined(self):
@@ -2685,12 +2719,11 @@ class SubsetTopology(TransformChainsTopology):
             irefs[iielem] = ref
         return SubsetTopology(baseinterfaces, irefs)
 
-    @log.withcontext
-    def basis(self, name, *args, **kwargs):
+    def _tensorial_bases(self, btype, **kwargs):
         if isinstance(self.basetopo, HierarchicalTopology):
             warnings.warn('basis may be linearly dependent; a linearly indepent basis is obtained by trimming first, then creating hierarchical refinements')
-        basis = self.basetopo.basis(name, *args, **kwargs)
-        return function.PrunedBasis(basis, self._indices, self.f_index, self.f_coords)
+        basis = self.basetopo.basis(btype, **kwargs)
+        yield function.PrunedBasis(basis, self._indices, self.f_index, self.f_coords)
 
     def locate(self, geom, coords, *, eps=0, skip_missing=False, **kwargs):
         sample = self.basetopo.locate(geom, coords, eps=eps, skip_missing=skip_missing, **kwargs)
@@ -2903,8 +2936,7 @@ class HierarchicalTopology(TransformChainsTopology):
                 hopposites.append(level.interfaces.opposites[selection])
         return TransformChainsTopology(self.space, hreferences, transformseq.chain(htransforms, self.transforms.todims, self.ndims-1), transformseq.chain(hopposites, self.transforms.todims, self.ndims-1))
 
-    @log.withcontext
-    def basis(self, name, *args, truncation_tolerance=1e-15, **kwargs):
+    def _tensorial_bases(self, btype, truncation_tolerance=1e-15, **kwargs):
         '''Create hierarchical basis.
 
         A hierarchical basis is constructed from bases on different levels of
@@ -2945,14 +2977,15 @@ class HierarchicalTopology(TransformChainsTopology):
         basis : :class:`nutils.function.Array`
         '''
 
-        if name.startswith('h-'):
+        if btype.startswith('h-'):
             truncated = False
-            name = name[2:]
-        elif name.startswith('th-'):
+            btype = btype[2:]
+        elif btype.startswith('th-'):
             truncated = True
-            name = name[3:]
+            btype = btype[3:]
         else:
-            return super().basis(name, *args, **kwargs)
+            yield from super()._tensorial_bases(btype, **kwargs)
+            return
 
         # 1. identify active (supported) and passive (unsupported) basis functions
         ubases = []
@@ -2971,7 +3004,7 @@ class HierarchicalTopology(TransformChainsTopology):
                 prev_ielems = ielems_i = numpy.unique(numpy.concatenate([numpy.asarray(touchielems_i, dtype=int), nontouchielems_i], axis=0))
                 prev_transforms = topo.transforms
 
-                basis_i = topo.basis(name, *args, **kwargs)
+                basis_i = topo.basis(btype, **kwargs)
                 assert isinstance(basis_i, function.Basis)
                 ubases.insert(0, basis_i)
                 # Basis functions that have at least one touchelem in their support.
@@ -3050,7 +3083,7 @@ class HierarchicalTopology(TransformChainsTopology):
                 degree = poly.degree(self.ndims, max(c.shape[-1] for c in trans_coeffs))
                 hbasis_coeffs.append(numpy.concatenate([poly.change_degree(c, self.ndims, degree) for c in trans_coeffs], axis=0))
 
-        return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords)
+        yield function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords)
 
 
 class MultipatchTopology(TransformChainsTopology):

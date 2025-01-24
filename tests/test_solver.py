@@ -337,8 +337,8 @@ class System(TestCase):
 
     def test_constant(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.field('u', domain.basis('std', 1))
-        v = function.field('v', domain.basis('std', 1))
+        u = function.field('u', domain.basis('std', degree=1))
+        v = function.field('v', domain.basis('std', degree=1))
         f = domain.integral(v * (1 + u) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u', test='v')
         self.assertTrue(sys.is_linear)
@@ -358,7 +358,7 @@ class System(TestCase):
 
     def test_constant_symmetric(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.field('u', domain.basis('std', 1))
+        u = function.field('u', domain.basis('std', degree=1))
         f = domain.integral((1 + u - u**2) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u')
         self.assertTrue(sys.is_linear)
@@ -379,8 +379,8 @@ class System(TestCase):
 
     def test_constant_matrix(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.field('u', domain.basis('std', 1))
-        v = function.field('v', domain.basis('std', 1))
+        u = function.field('u', domain.basis('std', degree=1))
+        v = function.field('v', domain.basis('std', degree=1))
         t = function.field('t')
         f = domain.integral(v * (t + u) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u', test='v')
@@ -401,8 +401,8 @@ class System(TestCase):
 
     def test_linear(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.field('u', domain.basis('std', 1))
-        v = function.field('v', domain.basis('std', 1))
+        u = function.field('u', domain.basis('std', degree=1))
+        v = function.field('v', domain.basis('std', degree=1))
         t = function.field('t')
         f = domain.integral(v * (u * t + 1) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u', test='v')
@@ -419,8 +419,8 @@ class System(TestCase):
 
     def test_nonlinear(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.field('u', domain.basis('std', 1))
-        v = function.field('v', domain.basis('std', 1))
+        u = function.field('u', domain.basis('std', degree=1))
+        v = function.field('v', domain.basis('std', degree=1))
         t = function.field('t')
         f = domain.integral(v * (u**2 + t) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u', test='v')
@@ -437,7 +437,7 @@ class System(TestCase):
 
     def test_nonlinear_symmetric(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.field('u', domain.basis('std', 1))
+        u = function.field('u', domain.basis('std', degree=1))
         f = domain.integral(numpy.exp(u) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u')
         self.assertFalse(sys.is_linear)

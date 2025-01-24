@@ -835,7 +835,7 @@ def unitcircle(nelems: int, variant: str) -> Tuple[Topology, function.Array]:
         # denominator onto a second order basis for efficient evaluation and
         # correct boundary gradients at the patch interfaces.
 
-        basis = topo.basis('spline', 2)
+        basis = topo.basis('spline', degree=2)
         # Minimize e = (f - B c)^2 = f^2 - 2 f B c + cT BT B c -> BT B c = BT f
         BB, BX, BY, BW, XX, YY, WW = topo.integrate([basis[:,None] * basis[None,:],
             basis * X, basis * Y, basis * W, X**2, Y**2, W**2], degree=4)
