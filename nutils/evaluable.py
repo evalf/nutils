@@ -3394,27 +3394,40 @@ class Assemble(Array):
         return numeric.accumulate(func, reshaped_indices, shape)
 
     def _compile_with_out(self, builder, out, out_block_id, mode):
+        # Compiles to an assignment (or in place addition) of the form:
+        #
+        #     out[index1, index2, ...] = func.transpose(trans)
+        #
+        # The order of the indices is unchanged, but ranges are converted to
+        # slices and any other indices (dubbed 'advanced') reshaped in similar
+        # fashion to numpy._ix to index the cross product. The right hand side
+        # is transposed if a slice operation separates two advanced indices to
+        # match Numpy's advanced indexing rules.
         assert mode in ('iadd', 'assign')
         if mode == 'assign':
             builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
-        compiled_indices = []
         advanced_ndim = builtins.sum(index.ndim for index in self.indices if not isinstance(index, Range))
+        compiled_indices = []
+        trans = [] # axes of func corresponding to advanced indices
         i = 0
         for index in self.indices:
+            j = i + index.ndim
             if isinstance(index, Range):
                 n = builder.compile(index.shape[0])
-                compiled_indices.append(_pyast.Variable('slice').call(n))
+                compiled_index = _pyast.Variable('slice').call(n)
             else:
-                j = i + index.ndim
+                prefix = len(trans)
+                trans.extend(range(i, j))
+                suffix = advanced_ndim - len(trans)
                 compiled_index = builder.compile(index)
                 if index.ndim < advanced_ndim:
-                    compiled_index = compiled_index.get_item(_pyast.Raw(','.join(['None'] * i + [':'] * index.ndim + ['None'] * (advanced_ndim-j))))
-                compiled_indices.append(compiled_index)
-                i = j
-        assert i == advanced_ndim
+                    compiled_index = compiled_index.get_item(_pyast.Raw(','.join(['None'] * prefix + [':'] * index.ndim + ['None'] * suffix)))
+            compiled_indices.append(compiled_index)
+            i = j
+        assert i == self.func.ndim
+        assert len(trans) == advanced_ndim
         compiled_func = builder.compile(self.func)
-        trans = [i for i, index in enumerate(self.indices) if not isinstance(index, Range)]
-        if advanced_ndim and any(numpy.diff(trans) > 1):
+        if advanced_ndim > 1 and trans[-1] - trans[0] != advanced_ndim - 1: # trans is noncontiguous
             # see https://numpy.org/doc/stable/user/basics.indexing.html#combining-advanced-and-basic-indexing
             trans.extend(i for i, index in enumerate(self.indices) if isinstance(index, Range))
             compiled_func = compiled_func.get_attr('transpose').call(*[_pyast.LiteralInt(i) for i in trans])
