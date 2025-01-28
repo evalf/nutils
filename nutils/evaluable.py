@@ -3422,22 +3422,27 @@ class Assemble(Array):
 
     def _optimized_for_numpy(self):
         if isinstance(self.func, Assemble):
-            nontrivial_indices = []
-            for f in self.func, self: # order is important to maintain insertion order of ndim=0 indices
-                offset = 0
-                for index in f.indices:
-                    if index != Range(f.shape[offset]):
-                        nontrivial_indices.append((offset, index))
-                    offset += index.ndim
-                assert offset == f.func.ndim
-            nontrivial_indices.sort(key=lambda item: item[0]) # order of equal offsets is maintained
-            indices = []
-            for i, index in nontrivial_indices:
-                if i < len(indices):
-                    return # inflations overlap
-                while i > len(indices):
-                    indices.append(Range(self.shape[len(indices)]))
-                indices.append(index)
+            indices = list(self.indices)
+            # We aim to merge the indices from the nested Assemble operations
+            # if they are separable, i.e. preceded by or following on full
+            # slices, by replacing Range instances in indices by the
+            # corresponding index from self.func.
+            for i, index in enumerate(self.func.indices):
+                if index != Range(self.func.shape[i]): # non-trivial index of self.func
+                    # we need to account for the different axis numberings
+                    # between self and self.func to find the right insertion
+                    # point.
+                    ax1 = 0 # axis of self.func
+                    ax2 = 0 # axis of self
+                    while ax1 < i: # find ax1, ax2 corresponding to i
+                        ax1 += indices[ax2].ndim
+                        ax2 += 1
+                    if ax1 != i or ax2 >= self.ndim or indices[ax2] != Range(self.shape[ax2]):
+                        # Any nontrivial nesting scenario would have been
+                        # handled by Inflate if possible, so we simply bail out
+                        # at the first sign of difficulty.
+                        return
+                    indices[ax2] = index # merge!
             return Assemble(self.func.func, tuple(indices), self.shape)
 
 
