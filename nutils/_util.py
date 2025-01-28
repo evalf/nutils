@@ -592,7 +592,7 @@ def name_of_main():
 def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptname: str = '', outdir: str = '', outuri: str = ''):
     '''Context to add a HtmlLog to the active logger.'''
 
-    import html, base64, bottombar
+    import html, base64
 
     if not scriptname and (not outdir or outrooturi and not outuri):
         scriptname = name_of_main()
@@ -619,7 +619,14 @@ def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptn
     with treelog.HtmlLog(outdir, title=scriptname, htmltitle=htmltitle, favicon=favicon) as htmllog:
         loguri = outuri + '/' + htmllog.filename
         try:
-            with treelog.add(htmllog), bottombar.add(loguri, label='writing log to'):
+            import bottombar
+        except ImportError:
+            treelog.info(f'writing log to: {loguri}')
+            status = contextlib.nullcontext()
+        else:
+            status = bottombar.add(loguri, label='writing log to')
+        try:
+            with treelog.add(htmllog), status:
                 yield
         except Exception as e:
             with treelog.set(htmllog):
