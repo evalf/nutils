@@ -13,7 +13,7 @@ def run(f, *, argv=None):
 
     decorators = (
         util.trap_sigint(),
-        bottombar.add(util.timer(), label='runtime', right=True, refresh=1), \
+        bottombar.add(util.elapsed(), label='elapsed', right=True, refresh=1), \
         bottombar.add(util.memory(), label='memory', right=True, refresh=1), \
         util.in_context(cache.caching),
         util.in_context(parallel.maxprocs),

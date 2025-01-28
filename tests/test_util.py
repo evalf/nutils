@@ -200,8 +200,8 @@ class time(TestCase):
         self.assertEqual(cm.output[1], 'ERROR:nutils:test')
         self.assertEqual(cm.output[2][:18], 'INFO:nutils:finish')
 
-    def test_timer(self):
-        self.assertEqual(str(util.timer()), '0:00')
+    def test_elapsed(self):
+        self.assertEqual(str(util.elapsed()), '0:00')
 
 
 class in_context(TestCase):

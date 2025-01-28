@@ -373,7 +373,7 @@ def timeit():
     treelog.info(f'finish {te:%Y-%m-%d %H:%M:%S}, elapsed {format_timedelta(te-t0)}')
 
 
-class timer:
+class elapsed:
     '''Timer that returns elapsed seconds as string representation.'''
 
     def __init__(self):
