@@ -8,25 +8,33 @@ python function based arguments specified on the command line.
 def run(f, *, argv=None):
     '''Command line interface for a single function.'''
 
-    import treelog, bottombar
+    import treelog
     from . import _util as util, matrix, parallel, cache, warnings
 
-    decorators = (
-        util.trap_sigint(),
-        bottombar.add(util.timer(), label='runtime', right=True, refresh=1), \
-        bottombar.add(util.memory(), label='memory', right=True, refresh=1), \
-        util.in_context(cache.caching),
-        util.in_context(parallel.maxprocs),
-        util.in_context(matrix.backend),
-        util.in_context(util.set_stdoutlog),
-        util.in_context(util.add_htmllog),
-        util.in_context(util.log_traceback),
-        util.in_context(util.post_mortem),
+    decorators = [util.trap_sigint()]
+    for func in util.elapsed, util.memory:
+        try:
+            import bottombar
+            status = func()
+        except:
+            pass
+        else:
+            decorators.append(bottombar.add(status, label=func.__name__, right=True, refresh=1))
+    decorators.extend(util.in_context(c) for c in [
+        cache.caching,
+        parallel.maxprocs,
+        matrix.backend,
+        util.set_stdoutlog,
+        util.add_htmllog,
+        util.log_traceback,
+        util.post_mortem,
+    ])
+    decorators.extend([
         warnings.via(treelog.warning),
         util.log_version,
         util.log_arguments,
         util.timeit(),
-    )
+    ])
 
     for decorator in reversed(decorators):
         f = decorator(f)
