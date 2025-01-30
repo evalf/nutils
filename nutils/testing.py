@@ -18,6 +18,7 @@ import warnings as _builtin_warnings
 import logging
 import numpy
 import shutil
+import os
 from nutils import warnings, numeric, _util as util
 
 
@@ -31,6 +32,10 @@ class PrintHandler(logging.Handler):
 def _require(category, test, *items):
     missing = [item for item in items if not test(item)]
     if missing:
+        for item in os.getenv(f'NUTILS_TESTING_REQUIRES', '').split():
+            prefix, name = item.split(':')
+            if category.startswith(prefix) and name in missing:
+                raise RuntimeError(f'{category} {required!r} is unexpectedly missing')
         if len(missing) > 1:
             category += 's'
         missing = ', '.join(missing)
@@ -42,6 +47,13 @@ def _test_decorator(test, *args):
         test(*args)
     except unittest.SkipTest as e:
         wrapper = unittest.skip(e)
+    except Exception as outer_exc:
+        inner_exc = outer_exc
+        def wrapper(f):
+            @functools.wraps(f)
+            def wrapped(self):
+                raise inner_exc
+            return wrapped
     else:
         def wrapper(f):
             return f

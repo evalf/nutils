@@ -73,6 +73,7 @@ jobs:
       MKL_NUM_THREADS: 1
       PYTHONHASHSEED: 0
       NUTILS_TENSORIAL: ${{ matrix.tensorial }}
+      NUTILS_TESTING_REQUIRES: "mod:matplotlib mod:meshio mod:PIL"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -89,7 +90,9 @@ jobs:
           path: dist/
       - name: Install Graphviz
         if: ${{ matrix.os == 'ubuntu-latest' }}
-        run: sudo apt install -y graphviz
+        run: |
+          sudo apt install -y graphviz
+          echo "NUTILS_TESTING_REQUIRES=$NUTILS_TESTING_REQUIRES app:dot" >> $GITHUB_ENV
       - name: Install Nutils and dependencies
         id: install
         env:
@@ -101,11 +104,14 @@ jobs:
           python -um pip install "$_wheel[import-gmsh,export-mpl]"
       - name: Install Scipy
         if: ${{ matrix.matrix-backend == 'scipy' }}
-        run: python -um pip install --upgrade scipy
+        run: |
+          python -um pip install --upgrade scipy
+          echo "NUTILS_TESTING_REQUIRES=$NUTILS_TESTING_REQUIRES mod:scipy" >> $GITHUB_ENV
       - name: Configure MKL
         if: ${{ matrix.matrix-backend == 'mkl' }}
         run: |
           python -um pip install --upgrade --upgrade-strategy eager mkl
+          echo "NUTILS_TESTING_REQUIRES=$NUTILS_TESTING_REQUIRES lib:mkl_rt" >> $GITHUB_ENV
       - name: Test
         env:
           COVERAGE_ID: ${{ matrix.name }}
@@ -203,6 +209,7 @@ jobs:
       # Fixes https://github.com/actions/virtual-environments/issues/3080
       STORAGE_OPTS: overlay.mount_program=/usr/bin/fuse-overlayfs
       _wheel: ${{ needs.build-python-package.outputs.wheel }}
+      NUTILS_TESTING_REQUIRES: "mod:matplotlib mod:meshio mod:PIL lib:mkl_rt"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
