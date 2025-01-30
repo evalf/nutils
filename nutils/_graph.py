@@ -6,6 +6,7 @@ import subprocess
 import abc
 import html
 import re
+import shutil
 
 Metadata = TypeVar('Metadata')
 GraphvizColorCallback = Callable[['Node'], Optional[str]]
@@ -61,10 +62,13 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
         return ''.join(itertools.chain(['digraph {bgcolor="darkgray";'], _generate_graphviz_subgraphs(subgraph_children, nodes, None, id_gen, 0), edges, ['}']))
 
     def export_graphviz(self, *, fill_color: Optional[GraphvizColorCallback] = None, dot_path: str = 'dot', image_type: str = 'svg') -> None:
+        dot = shutil.which(dot_path)
+        if not dot:
+            raise RuntimeError(f'cannot find graphviz application {dot_path!r}')
         src = self.generate_graphviz_source(fill_color=fill_color)
         with treelog.infofile('dot.'+image_type, 'wb') as img:
             src = src.replace(';', ';\n')
-            status = subprocess.run([dot_path, '-Gstart=1', '-T'+image_type], input=src.encode(), stdout=subprocess.PIPE)
+            status = subprocess.run([dot, '-Gstart=1', '-T'+image_type], input=src.encode(), stdout=subprocess.PIPE)
             if status.returncode:
                 for i, line in enumerate(src.split('\n'), 1):
                     print('{:04d}  {}'.format(i, line))
