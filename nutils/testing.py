@@ -17,6 +17,7 @@ import binascii
 import warnings as _builtin_warnings
 import logging
 import numpy
+import shutil
 from nutils import warnings, numeric
 
 
@@ -251,10 +252,12 @@ class TestCase(unittest.TestCase):
         self.fail('\n'.join(status))
 
     require_module = functools.partial(_require, 'module', importlib.util.find_spec)
+    require_application = functools.partial(_require, 'application', shutil.which)
 
 
 # decorators
 requires = functools.partial(_test_decorator, TestCase.require_module)
+requires_application = functools.partial(_test_decorator, TestCase.require_application)
 
 
 ContextTestCase = TestCase

@@ -1,4 +1,4 @@
-from nutils.testing import TestCase
+from nutils.testing import TestCase, requires_application
 from nutils import _graph
 import itertools
 import unittest
@@ -334,8 +334,6 @@ class generate(TestCase):
                          '1 -> 0;'
                          '}')
 
+    @requires_application('dot')
     def test_export_graphviz(self):
-        try:
-            self.multiple.export_graphviz()
-        except FileNotFoundError:
-            self.skipTest('graphviz not available')
+        self.multiple.export_graphviz()
