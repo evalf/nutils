@@ -27,21 +27,24 @@ class PrintHandler(logging.Handler):
         print(record.msg)
 
 
-def _not_has_module(module):
-    try:
-        importlib.import_module(module)
-    except ImportError:
-        return True
-    else:
-        return False
-
-
-def requires(*modules):
-    missing = tuple(filter(_not_has_module, modules))
+def _require(category, test, *items):
+    missing = [item for item in items if not test(item)]
     if missing:
-        return unittest.skip('missing module{}: {}'.format('s' if len(missing) > 1 else '', ','.join(missing)))
+        if len(missing) > 1:
+            category += 's'
+        missing = ', '.join(missing)
+        raise unittest.SkipTest(f'missing {category}: {missing}')
+
+
+def _test_decorator(test, *args):
+    try:
+        test(*args)
+    except unittest.SkipTest as e:
+        wrapper = unittest.skip(e)
     else:
-        return lambda func: func
+        def wrapper(f):
+            return f
+    return wrapper
 
 
 class _ParametrizedCollection(type):
@@ -246,6 +249,12 @@ class TestCase(unittest.TestCase):
             s = binascii.b2a_base64(zlib.compress(numeric.pack(actual, atol, rtol, dtype).tobytes(), 9)).decode().rstrip()
         status.extend(s[i:i+80] for i in range(0, len(s), 80))
         self.fail('\n'.join(status))
+
+    require_module = functools.partial(_require, 'module', importlib.util.find_spec)
+
+
+# decorators
+requires = functools.partial(_test_decorator, TestCase.require_module)
 
 
 ContextTestCase = TestCase

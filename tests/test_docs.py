@@ -29,9 +29,7 @@ class DocTestCase(nutils.testing.ContextTestCase, _doctest.DocTestCase):
             if blank and line[indent:].startswith('.. requires:: '):
                 requires.extend(name.strip() for name in line[indent+13:].split(','))
             blank = not line.strip()
-        missing = tuple(filter(nutils.testing._not_has_module, requires))
-        if missing:
-            self.skipTest('missing module{}: {}'.format('s' if len(missing) > 1 else '', ','.join(missing)))
+        self.require_module(*requires)
 
         if 'matplotlib' in requires:
             import matplotlib.testing
