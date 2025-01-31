@@ -18,7 +18,7 @@ import warnings as _builtin_warnings
 import logging
 import numpy
 import shutil
-from nutils import warnings, numeric
+from nutils import warnings, numeric, _util as util
 
 
 class PrintHandler(logging.Handler):
@@ -253,11 +253,13 @@ class TestCase(unittest.TestCase):
 
     require_module = functools.partial(_require, 'module', importlib.util.find_spec)
     require_application = functools.partial(_require, 'application', shutil.which)
+    require_library = functools.partial(_require, 'library', util.loadlib)
 
 
 # decorators
 requires = functools.partial(_test_decorator, TestCase.require_module)
 requires_application = functools.partial(_test_decorator, TestCase.require_application)
+requires_library = functools.partial(_test_decorator, TestCase.require_library)
 
 
 ContextTestCase = TestCase

@@ -92,10 +92,11 @@ class backend(testing.TestCase):
 
     def setUp(self):
         super().setUp()
-        try:
-            self.enter_context(matrix.backend(self.backend))
-        except matrix.BackendNotAvailable:
-            self.skipTest('backend is unavailable')
+        if self.backend == 'scipy':
+            self.require_module('scipy')
+        elif self.backend == 'mkl':
+            self.require_library('mkl_rt')
+        self.enter_context(matrix.backend(self.backend))
         self.offdiag = -1+.5j if self.complex else -1
         self.exact = 2 * numpy.eye(self.n) + self.offdiag * numpy.eye(self.n, self.n, 1) + self.offdiag * numpy.eye(self.n, self.n, -1)
         data = sparse.prune(sparse.fromarray(self.exact), inplace=True)
