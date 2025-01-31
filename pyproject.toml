@@ -21,10 +21,10 @@ classifiers = [
 
 [project.optional-dependencies]
 docs = ["Sphinx >=1.8,<8"]
-export_mpl = ["matplotlib >=3.3,<4"]
-matrix_mkl = ["mkl"]
-matrix_scipy = ["scipy >=0.13,<2"]
-import_gmsh = ["meshio >=4,<6"]
+export-mpl = ["matplotlib >=3.3,<4"]
+matrix-mkl = ["mkl"]
+matrix-scipy = ["scipy >=0.13,<2"]
+import-gmsh = ["meshio >=4,<6"]
 
 [build-system]
 requires = ["flit_core >=3.2,<4"]
