@@ -6,16 +6,10 @@ import treelog as log
 import os
 import numpy
 
-libmkl_path = os.environ.get('NUTILS_MATRIX_MKL_LIB', None)
-if libmkl_path:
-    libmkl = CDLL(libmkl_path)
-else:
-    for v in '.2', '.1', '':
-        libmkl = util.loadlib(linux=f'libmkl_rt.so{v}', darwin=f'libmkl_rt{v}.dylib', win32=f'mkl_rt{v}.dll')
-        if libmkl:
-            break
-    else:
-        raise BackendNotAvailable('the Intel MKL matrix backend requires libmkl to be installed (try: pip install mkl)')
+
+libmkl = util.loadlib('mkl_rt')
+if libmkl is None:
+    raise BackendNotAvailable('the Intel MKL matrix backend requires libmkl to be installed (try: pip install mkl)')
 
 
 def assemble(data, rowptr, colidx, ncols):

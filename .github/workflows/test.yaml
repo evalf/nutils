@@ -106,7 +106,6 @@ jobs:
         if: ${{ matrix.matrix-backend == 'mkl' }}
         run: |
           python -um pip install --upgrade --upgrade-strategy eager mkl
-          python -um devtools.gha.configure_mkl
       - name: Test
         env:
           COVERAGE_ID: ${{ matrix.name }}
