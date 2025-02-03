@@ -18,6 +18,8 @@ import io
 import contextlib
 import treelog
 import datetime
+import site
+import re
 from typing import Iterable, Sequence, Tuple
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
@@ -172,25 +174,49 @@ class single_or_multiple:
         return retvals
 
 
-def loadlib(**libname):
-    '''
-    Find and load a dynamic library using :any:`ctypes.CDLL`.  For each
-    (supported) platform the name of the library should be specified as a keyword
-    argument, including the extension, where the keywords should match the
-    possible values of :any:`sys.platform`.
+def loadlib(name):
+    '''Find and load a dynamic library.
+
+    This routine will try to load the requested library from any of the
+    platform default locations. Only the unversioned name is queried, assuming
+    that this is an alias to the most recent version. If this fails then
+    site-package directories are searched for both versioned and unversioned
+    files. The library is returned upon first succes or ``None`` otherwise.
 
     Example
     -------
 
-    To load the Intel MKL runtime library, write::
+    To load the Intel MKL runtime library, write simply::
 
-        loadlib(linux='libmkl_rt.so', darwin='libmkl_rt.dylib', win32='mkl_rt.dll')
+        libmkl = loadlib('mkl_rt')
     '''
 
+    if sys.platform == 'linux':
+        libsubdir = 'lib'
+        libname = f'lib{name}.so'
+        versioned = f'lib{name}.so.(\d+)'
+    elif sys.platform == 'darwin':
+        libsubdir = 'lib'
+        libname = f'lib{name}.dylib'
+        versioned = f'lib{name}.(\d+).dylib'
+    elif sys.platform == 'win32':
+        libsubdir = r'Library\bin'
+        libname = f'{name}.dll'
+        versioned = f'{name}.(\d+).dll'
+    else:
+        return
+
     try:
-        return ctypes.CDLL(libname[sys.platform])
-    except (OSError, KeyError):
+        return ctypes.CDLL(libname)
+    except:
         pass
+
+    for prefix in dict.fromkeys(site.PREFIXES): # stable deduplication
+        if os.path.isdir(libdir := os.path.join(prefix, libsubdir)):
+            if os.path.isfile(path := os.path.join(libdir, libname)):
+                return ctypes.CDLL(path)
+            if match := max(map(re.compile(versioned).fullmatch, os.listdir(libdir)), key=lambda m: int(m.group(1)) if m else -1, default=None):
+                return ctypes.CDLL(os.path.join(libdir, match.group(0)))
 
 
 def readtext(path):

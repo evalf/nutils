@@ -38,9 +38,9 @@ def _log_msg(*msg, color: Optional[str] = None, title: Optional[str] = None, fil
 
 
 debug = functools.partial(_log_msg)
-notice = functools.partial(_log_msg, type='1;36')
+notice = functools.partial(_log_msg, color='1;36')
 warning = functools.partial(_log_msg, color='1;33')
-error = functools.partial(_log_msg, type='1;31')
+error = functools.partial(_log_msg, color='1;31')
 
 
 def info(*args: Any) -> None:

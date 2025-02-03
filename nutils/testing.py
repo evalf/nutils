@@ -17,7 +17,9 @@ import binascii
 import warnings as _builtin_warnings
 import logging
 import numpy
-from nutils import warnings, numeric
+import shutil
+import os
+from nutils import warnings, numeric, _util as util
 
 
 class PrintHandler(logging.Handler):
@@ -27,21 +29,35 @@ class PrintHandler(logging.Handler):
         print(record.msg)
 
 
-def _not_has_module(module):
-    try:
-        importlib.import_module(module)
-    except ImportError:
-        return True
-    else:
-        return False
-
-
-def requires(*modules):
-    missing = tuple(filter(_not_has_module, modules))
+def _require(category, test, *items):
+    missing = [item for item in items if not test(item)]
     if missing:
-        return unittest.skip('missing module{}: {}'.format('s' if len(missing) > 1 else '', ','.join(missing)))
+        for item in os.getenv(f'NUTILS_TESTING_REQUIRES', '').split():
+            prefix, name = item.split(':')
+            if category.startswith(prefix) and name in missing:
+                raise RuntimeError(f'{category} {required!r} is unexpectedly missing')
+        if len(missing) > 1:
+            category += 's'
+        missing = ', '.join(missing)
+        raise unittest.SkipTest(f'missing {category}: {missing}')
+
+
+def _test_decorator(test, *args):
+    try:
+        test(*args)
+    except unittest.SkipTest as e:
+        wrapper = unittest.skip(e)
+    except Exception as outer_exc:
+        inner_exc = outer_exc
+        def wrapper(f):
+            @functools.wraps(f)
+            def wrapped(self):
+                raise inner_exc
+            return wrapped
     else:
-        return lambda func: func
+        def wrapper(f):
+            return f
+    return wrapper
 
 
 class _ParametrizedCollection(type):
@@ -246,6 +262,16 @@ class TestCase(unittest.TestCase):
             s = binascii.b2a_base64(zlib.compress(numeric.pack(actual, atol, rtol, dtype).tobytes(), 9)).decode().rstrip()
         status.extend(s[i:i+80] for i in range(0, len(s), 80))
         self.fail('\n'.join(status))
+
+    require_module = functools.partial(_require, 'module', importlib.util.find_spec)
+    require_application = functools.partial(_require, 'application', shutil.which)
+    require_library = functools.partial(_require, 'library', util.loadlib)
+
+
+# decorators
+requires = functools.partial(_test_decorator, TestCase.require_module)
+requires_application = functools.partial(_test_decorator, TestCase.require_application)
+requires_library = functools.partial(_test_decorator, TestCase.require_library)
 
 
 ContextTestCase = TestCase
