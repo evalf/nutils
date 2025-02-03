@@ -411,6 +411,11 @@ class Quantity(metaclass=Dimension):
         dims, args = zip(*Quantity.__unpack(*args)) # we abuse the fact that unpack str returns dimensionless
         return functools.reduce(operator.mul, dims).wrap(op(*args, **kwargs))
 
+    @register('arguments_for')
+    def __attribute(op, *args, **kwargs):
+        __dims, args = zip(*Quantity.__unpack(*args))
+        return op(*args, **kwargs)
+
     del register
 
     ## DEFINE OPERATORS

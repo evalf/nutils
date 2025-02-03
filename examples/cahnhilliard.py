@@ -180,7 +180,7 @@ def main(size: Length = parse('10cm'),
     system = System(nrg / tol, trial='φ,η')
 
     numpy.random.seed(seed)
-    args = dict(φ=numpy.random.normal(0, .5, system.argshapes['φ'])) # initial condition
+    args = dict(φ=numpy.random.normal(0, .5, function.arguments_for(nrg)['φ'].shape)) # initial condition
 
     with log.iter.fraction('timestep', range(round(endtime / timestep))) as steps:
         for istep in steps:

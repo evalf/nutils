@@ -2417,6 +2417,30 @@ class factor(Array):
         return evaluable.prependaxes(self._array, args.points_shape)
 
 
+@nutils_dispatch
+def arguments_for(*arrays) -> Dict[str, Argument]:
+    '''Get all arguments that array(s) depend on.
+
+    Given any number of arrays, return a dictionary of all arguments involved,
+    mapping the name to the :class:`Argument` object. Raise a ``ValueError`` if
+    arrays have conflicting arguments, i.e. sharing a name but differing in
+    shape and/or dtype.
+    '''
+
+    arguments = {}
+    for array in arrays:
+        if isinstance(array, Array):
+            for name, (shape, dtype) in array._arguments.items():
+                argument = arguments.get(name)
+                if argument is None:
+                    arguments[name] = Argument(name, shape, dtype)
+                elif argument.shape != shape:
+                    raise ValueError(f'inconsistent shapes for argument {name!r}')
+                elif argument.dtype != dtype:
+                    raise ValueError(f'inconsistent dtypes for argument {name!r}')
+    return arguments
+
+
 # BASES
 
 

@@ -1450,3 +1450,30 @@ class factor(TestCase):
         topo, geom = mesh.rectilinear([3])
         with self.assertRaisesRegex(ValueError, 'cannot lower function with spaces \(.+\) - did you forget integral or sample?'):
             function.factor(geom)
+
+
+class arguments_for(TestCase):
+
+    def test_single(self):
+        x = function.field('x', numpy.array([1,2,3]), shape=(2,), dtype=int)
+        f = x**2
+        self.assertEqual({a.name: (a.shape, a.dtype) for a in function.arguments_for(f).values()},
+            {'x': ((3,2), int)})
+
+    def test_multiple(self):
+        x = function.field('x', numpy.array([1,2,3]), shape=(2,), dtype=int)
+        y = function.field('y', numpy.array([4,5]), dtype=float)
+        z = function.field('z', dtype=complex)
+        f = x * y
+        g = x**2 * z
+        self.assertEqual({a.name: (a.shape, a.dtype) for a in function.arguments_for(f, g).values()},
+            {'x': ((3,2), int), 'y': ((2,), float), 'z': ((), complex)})
+
+    def test_conflict(self):
+        x = function.field('x', numpy.array([1,2,3]), shape=(2,), dtype=int)
+        y1 = function.field('y', numpy.array([4,5]), dtype=float)
+        y2 = function.field('y', dtype=complex)
+        f = x * y1
+        g = x**2 * y2
+        with self.assertRaisesRegex(ValueError, "inconsistent shapes for argument 'y'"):
+            function.arguments_for(f, g)

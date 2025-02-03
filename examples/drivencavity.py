@@ -119,7 +119,7 @@ def main(nelems: int = 32,
     # strong enforcement of non-penetrating boundary conditions
     sqr = domain.boundary.integral('(u_k n_k)^2 dS' @ ns, degree=degree*2)
     cons = System(sqr, trial='u').solve_constraints(droptol=1e-15)
-    cons['p'] = numpy.zeros(res.argshapes['p'], dtype=bool)
+    cons['p'] = numpy.zeros(function.arguments_for(res)['p'].shape, dtype=bool)
     cons['p'].flat[0] = True # point constraint
 
     if strongbc:
@@ -158,7 +158,7 @@ def postprocess(domain, ns, **arguments):
 
     # reconstruct velocity streamlines
     sqr = domain.integral('Σ_i (u_i - ε_ij ∇_j(ψ))^2 dV' @ ns, degree=4)
-    consψ = numpy.zeros(sqr.argshapes['ψ'], dtype=bool)
+    consψ = numpy.zeros(function.arguments_for(sqr)['ψ'].shape, dtype=bool)
     consψ.flat[0] = True # point constraint
     arguments = System(sqr, trial='ψ').solve(arguments=arguments, constrain={'ψ': consψ})
 
