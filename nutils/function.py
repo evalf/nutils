@@ -913,7 +913,7 @@ class _Replace(Array):
         self._replacements = {}
         for old, new in _argument_to_array(replacements, arg):
             if new.spaces:
-                raise ValueError(f'replacement functions cannot contain spaces, but replacement for Argument {old.name!r} contains space {", ".join(new.spaces)}.')
+                raise ValueError(f'replacement functions cannot be bound to a space, but replacement for Argument {old.name!r} is bound to {", ".join(new.spaces)}.')
             self._replacements[old.name] = new
         # Build arguments map with replacements.
         unreplaced = {name: shape_dtype for name, shape_dtype in arg.arguments.items() if name not in replacements}

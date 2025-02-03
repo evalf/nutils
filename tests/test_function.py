@@ -790,7 +790,7 @@ class replace_arguments(TestCase):
 
     def test_nonempty_spaces(self):
         topo, geom = mesh.unitsquare(1, 'square')
-        with self.assertRaisesRegex(ValueError, "replacement functions cannot contain spaces, but replacement for Argument 'foo' contains space X."):
+        with self.assertRaisesRegex(ValueError, "replacement functions cannot be bound to a space, but replacement for Argument 'foo' is bound to X."):
             function.replace_arguments(function.Argument('foo', (2,), dtype=float), dict(foo=geom))
 
 
