@@ -12,6 +12,7 @@ from .transform import TransformItem
 from .topology import Topology
 from math import comb
 from typing import Optional, Sequence, Tuple, Union
+from pathlib import Path
 import numpy
 import os
 import itertools
@@ -20,6 +21,9 @@ import math
 import treelog as log
 import io
 import contextlib
+import tempfile
+import subprocess
+import shutil
 _ = numpy.newaxis
 
 # MESH GENERATORS
@@ -316,6 +320,11 @@ def parsegmsh(mshdata):
 
     msh = gmsh.main.read_buffer(mshdata)
 
+    return _simplex_args_from_meshio(msh)
+
+
+def _simplex_args_from_meshio(msh):
+
     if not msh.cell_sets:
         # Old versions of the gmsh file format repeat elements that have multiple
         # tags. To support this we edit the meshio data to bring it in the same
@@ -448,19 +457,30 @@ def parsegmsh(mshdata):
 
 
 @log.withcontext
-def gmsh(fname, name='gmsh', *, space='X'):
+def gmsh(fname, *, dimension=None, order=1, numbers={}, space='X'):
     """Gmsh parser
 
-    Parser for Gmsh files in `.msh` format. Only files with physical groups are
-    supported. See the `Gmsh manual
+    Parser for Gmsh files in `.msh` or `.geo` format. Requires the meshio
+    module to be installed. Conversion of .geo files additionally requires the
+    gmsh application to be installed in the execution path.
+
+    Only files with physical groups are supported. See the `Gmsh manual
     <http://geuz.org/gmsh/doc/texinfo/gmsh.html>`_ for details.
 
     Parameters
     ----------
-    fname : :class:`str` or :class:`io.BufferedIOBase`
-        Path to mesh file or mesh file object.
-    name : :class:`str` or :any:`None`
-        Name of parsed topology, defaults to 'gmsh'.
+    fname : :class:`str` or :class:`pathlib.Path` or :class:`io.BufferedIOBase`
+        Path to .geo or .msh file, or a file object for .msh data.
+    dimension : :class:`int` (optional)
+        Spatial dimension. Specifying this signals to the gmsh function that
+        the input is a .geo file; otherwise the input is assumed to be in .msh
+        format. Valid values are 1, 2 and 3.
+    numbers : :class:`dict` (optional)
+        Only valid for .geo files: number definitions that are added to the
+        beginning of a .geo file via the -setnumber argument.
+    space : :class:`str` (optional)
+        Name of the Nutils topology to distinguish it from other topological
+        directions.
 
     Returns
     -------
@@ -470,11 +490,53 @@ def gmsh(fname, name='gmsh', *, space='X'):
         Isoparametric map.
     """
 
-    with util.binaryfile(fname) as f:
-        return simplex(name=name, **parsegmsh(f), space=space)
+    try:
+        import meshio
+    except ImportError as e:
+        raise Exception('function.gmsh requires the meshio module to be installed') from e
+
+    if dimension is None:
+        cached_read = cache.function(meshio.gmsh.main.read_buffer)
+        with util.binaryfile(fname) as f:
+            mesh = cached_read(f)
+        return simplex(**_simplex_args_from_meshio(mesh), space=space)
+
+    gmsh = shutil.which('gmsh')
+    if not gmsh:
+        raise RuntimeError('gmsh application does not appear to be installed')
+
+    if not (isinstance(fname, str) and fname.endswith('.geo') or isinstance(fname, Path) and fname.suffix == '.geo'):
+        raise ValueError(f'fname parameter should be a file name with extension .geo, got {fname!r}')
+
+    if not isinstance(dimension, int) or not 1 <= dimension <= 3:
+        raise ValueError(f'dimension parameter should be 1, 2 or 3, got {dimension!r}')
+
+    if not isinstance(order, int) or not order >= 1:
+        raise ValueError(f'order be a strictly positive integer, got {order!r}')
+
+    fid, mshpath = tempfile.mkstemp(suffix='.msh')
+    try:
+        os.close(fid) # release file for writing by gmsh (windows)
+        args = [gmsh, fname, '-o', mshpath, '-order', str(order), f'-{dimension}', '-bin']
+        for name, number in numbers.items():
+            args.extend(['-setnumber', name, str(number)])
+        status = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in status.stdout.splitlines():
+            try:
+                level, text = line.split(': ', 1)
+                getattr(log, level.strip().lower())(text)
+            except:
+                log.info(line)
+        if status.returncode != 0:
+            raise RuntimeError(f'gmsh failed with error code {status.returncode}')
+        mesh = meshio.read(mshpath)
+    finally:
+        os.unlink(mshpath)
+
+    return simplex(**_simplex_args_from_meshio(mesh), space=space)
 
 
-def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space='X'):
+def simplex(nodes, cnodes, coords, tags, btags, ptags, *, space='X'):
     '''Simplex topology.
 
     Parameters
@@ -499,8 +561,6 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
         preserving order.
     ptags : :class:`dict`
         Dictionary of name->node numbers referencing the ``nodes`` table.
-    name : :class:`str`
-        Name of simplex topology.
 
     Returns
     -------
@@ -509,6 +569,14 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
     geom : :class:`nutils.function.Array`
         Geometry function.
     '''
+
+    used = numpy.zeros(len(coords), dtype=bool)
+    used[nodes] = True
+    if not used.all():
+        log.warning(f'{len(used) - used.sum()} vertices are not used')
+        for name, points in ptags.items():
+            if not used[points].all():
+                log.warning(f'point {name} is not connected')
 
     nverts = len(coords)
     nelems, ncnodes = cnodes.shape
