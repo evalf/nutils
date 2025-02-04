@@ -41,7 +41,7 @@ def main(nelems: int = 24,
     ns.δ = function.eye(domain.ndims)
     ns.x = geom
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-    ns.add_field(('u', 't'), domain.basis(btype, degree=degree), shape=(2,))
+    ns.u = domain.field('u', btype=btype, degree=degree, shape=[2])
     ns.X_i = 'x_i + u_i'
     ns.λ = 1
     ns.μ = .5/poisson - 1
@@ -61,8 +61,9 @@ def main(nelems: int = 24,
     if direct:
         ns.t_i = 'σ_ij n_j' # <-- this is an inadmissible boundary term
     else:
-        energy -= domain.boundary['top'].integral('u_i t_i dS' @ ns, degree=degree*2)
-        args = System(energy, trial='t', test='u').solve(constrain={'t': numpy.isnan(cons['u'])}, arguments=args)
+        ns.t = domain.field('t', btype=btype, degree=degree, shape=[2])
+        system = System(energy - domain.boundary['top'].integral('u_i t_i dS' @ ns, degree=degree*2), trial='t', test='u')
+        args = system.solve(constrain={'t': numpy.isnan(cons['u'])}, arguments=args)
     F = domain.boundary['top'].integrate('t_i dS' @ ns, degree=degree*2, arguments=args)
     log.user('total clamping force:', F)
 

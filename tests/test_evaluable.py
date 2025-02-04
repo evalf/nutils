@@ -559,6 +559,7 @@ _check('inflate-scalar', lambda f: evaluable.Inflate(f, dofmap=evaluable.constan
 _check('inflate-diagonal', lambda f: evaluable.Inflate(evaluable.Inflate(f, evaluable.constant(1), evaluable.constant(3)), evaluable.constant(1), evaluable.constant(3)), lambda a: numpy.diag(numpy.array([0, a, 0])), numpy.array(.5))
 _check('inflate-one', lambda f: evaluable.Inflate(f, evaluable.constant(0), evaluable.constant(1)), lambda a: numpy.array([a]), numpy.array(.5))
 _check('inflate-range', lambda f: evaluable.Inflate(f, evaluable.Range(evaluable.constant(3)), evaluable.constant(3)), lambda a: a, ANY(3))
+_check('inflate-twice', lambda f: evaluable._inflate(evaluable.Inflate(f, evaluable.constant([[0,1],[2,0]]), evaluable.constant(3)), evaluable.constant([0, 1, 0]), evaluable.constant(2), axis=0), lambda a: numpy.einsum('ij,jklm,lmn->ikn', [[1,0,1],[0,1,0]], a, [[[1,0,0],[0,1,0]],[[0,0,1],[1,0,0]]]), ANY(3,5,2,2))
 _check('take', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 2])), lambda a: a[:, [0, 3, 2]], ANY(2, 4))
 _check('take-duplicate', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 0])), lambda a: a[:, [0, 3, 0]], ANY(2, 4))
 _check('choose', lambda a, b, c: evaluable.Choose(a % 2, evaluable.stack([b, c], -1)), lambda a, b, c: numpy.choose(a % 2, [b, c]), INT(3, 3), ANY(3, 3), ANY(3, 3))

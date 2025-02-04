@@ -105,7 +105,8 @@ def main(nelems: int = 50,
     X = RZ * REV
     ns.x = ns.rz @ ns.rot
     ns.define_for('x', gradient='∇', jacobians=('dV', 'dS'), curl='curl')
-    ns.add_field(('A', 'Atest'), RZ.basis('spline', degree=degree, removedofs=[[0, -1], [-1]])[:,numpy.newaxis] * ns.eθ, dtype=complex)
+    ns.A = RZ.field('A', btype='spline', degree=degree, removedofs=[[0, -1], [-1]], dtype=complex) * ns.eθ
+    ns.Atest = function.replace_arguments(ns.A, 'A:Atest')
     ns.B_i = 'curl_ij(A_j)'
     ns.E_i = '-j ω A_i'
     ns.Jind_i = 'σ E_i'
@@ -123,7 +124,8 @@ def main(nelems: int = 50,
     # on a basis.
 
     ns.Borig = ns.B
-    ns.add_field(('B', 'Btest'), RZ.basis('spline', degree=degree), ns.rot, dtype=complex)
+    ns.B = function.field('B', RZ.basis('spline', degree=degree), ns.rot, dtype=complex)
+    ns.Btest = function.replace_arguments(ns.B, 'B:Btest')
     res = REV.integral(RZ.integral('Btest_i (B_i - Borig_i) dV' @ ns, degree=2*degree), degree=0)
     args = System(res, trial='B', test='Btest').solve(arguments=args)
 

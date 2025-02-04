@@ -128,7 +128,7 @@ class integral_compatibility(TestCase):
         a = function.Argument('a', (2, 3), dtype=int)
         b = function.Argument('b', (3,), dtype=int)
         f = (a * b[None]).sum(-1)
-        self.assertEqual(dict(f.argshapes), dict(a=(2, 3), b=(3,)))
+        self.assertEqual({a.name: a.shape for a in function.arguments_for(f).values()}, dict(a=(2, 3), b=(3,)))
 
     def test_argshapes_shape_mismatch(self):
         with self.assertRaises(Exception):
@@ -425,7 +425,7 @@ class Unlower(TestCase):
         f = function._Unlower(e, frozenset(), arguments, function.LowerArgs((2, 3), {}, {}))
         self.assertEqual(f.shape, (4, 5))
         self.assertEqual(f.dtype, int)
-        self.assertEqual(f.arguments, arguments)
+        self.assertEqual(f._arguments, arguments)
         self.assertEqual(f.lower(function.LowerArgs((2, 3), {}, {})), e)
         with self.assertRaises(ValueError):
             f.lower(function.LowerArgs((3, 4), {}, {}))
@@ -790,11 +790,11 @@ class replace_arguments(TestCase):
 
     def test_nonempty_spaces(self):
         topo, geom = mesh.unitsquare(1, 'square')
-        with self.assertRaisesRegex(ValueError, "replacement functions cannot contain spaces, but replacement for Argument 'foo' contains space X."):
+        with self.assertRaisesRegex(ValueError, "replacement functions cannot be bound to a space, but replacement for Argument 'foo' is bound to X."):
             function.replace_arguments(function.Argument('foo', (2,), dtype=float), dict(foo=geom))
 
 
-class dotarg(TestCase):
+class field(TestCase):
 
     def assertEvalAlmostEqual(self, f_actual, desired, **arguments):
         self.assertEqual(f_actual.shape, desired.shape)
@@ -810,13 +810,13 @@ class dotarg(TestCase):
         a243 = numpy.arange(24, dtype=float).reshape(2, 4, 3)
         a4 = numpy.arange(4, dtype=float)
         a45 = numpy.arange(20, dtype=float).reshape(4, 5)
-        self.assertEvalAlmostEqual(function.dotarg('arg'), a, arg=a)
-        self.assertEvalAlmostEqual(function.dotarg('arg', shape=(2, 3)), a23, arg=a23)
-        self.assertEvalAlmostEqual(function.dotarg('arg', a4), numpy.einsum('i,i->', a4, a4), arg=a4)
-        self.assertEvalAlmostEqual(function.dotarg('arg', a45), numpy.einsum('i,ij->j', a4, a45), arg=a4)
-        self.assertEvalAlmostEqual(function.dotarg('arg', a24, shape=(3,)), numpy.einsum('ij,ik->jk', a23, a24), arg=a23)
-        self.assertEvalAlmostEqual(function.dotarg('arg', a2, a45), numpy.einsum('ij,i,jk->k', a24, a2, a45), arg=a24)
-        self.assertEvalAlmostEqual(function.dotarg('arg', a2, a45, shape=(3,)), numpy.einsum('ijk,i,jl->kl', a243, a2, a45), arg=a243)
+        self.assertEvalAlmostEqual(function.field('arg'), a, arg=a)
+        self.assertEvalAlmostEqual(function.field('arg', shape=(2, 3)), a23, arg=a23)
+        self.assertEvalAlmostEqual(function.field('arg', a4), numpy.einsum('i,i->', a4, a4), arg=a4)
+        self.assertEvalAlmostEqual(function.field('arg', a45), numpy.einsum('i,ij->j', a4, a45), arg=a4)
+        self.assertEvalAlmostEqual(function.field('arg', a24, shape=(3,)), numpy.einsum('ij,ik->jk', a23, a24), arg=a23)
+        self.assertEvalAlmostEqual(function.field('arg', a2, a45), numpy.einsum('ij,i,jk->k', a24, a2, a45), arg=a24)
+        self.assertEvalAlmostEqual(function.field('arg', a2, a45, shape=(3,)), numpy.einsum('ijk,i,jl->kl', a243, a2, a45), arg=a243)
 
 
 class jacobian(TestCase):
@@ -1388,13 +1388,13 @@ SurfaceGradient(boundary=True, etype='cube')
 class Eval(TestCase):
 
     def test_single(self):
-        f = function.dotarg('v', numpy.array([1, 2, 3]))
+        f = function.field('v', numpy.array([1, 2, 3]))
         retval = function.eval(f, v=numpy.array([4, 5, 6]))
         self.assertEqual(retval, 4+10+18)
 
     def test_multiple(self):
-        f = function.dotarg('v', numpy.array([1, 2, 3]))
-        g = function.dotarg('v', numpy.array([3, 2, 1]))
+        f = function.field('v', numpy.array([1, 2, 3]))
+        g = function.field('v', numpy.array([3, 2, 1]))
         retvals = function.eval([f, g], v=numpy.array([4, 5, 6]))
         self.assertEqual(retvals, (4+10+18, 12+10+6))
 
@@ -1433,13 +1433,13 @@ class factor(TestCase):
 
     def test_lower_with_points(self):
         topo, geom = mesh.rectilinear([3])
-        f = function.dotarg('dof')
+        f = function.field('dof')
         v = topo.sample('uniform', 1).eval(function.factor(f**2) * geom[0], dof=2.)
         self.assertAllAlmostEqual(v, [2, 6, 10])
 
     def test_constant(self):
         topo, geom = mesh.rectilinear([3])
-        basis = topo.basis('std', 1)
+        basis = topo.basis('std', degree=1)
         f = function.factor(topo.integral(basis[:, numpy.newaxis] * basis, degree=2))
         ((i, j), v, shape), = function.evaluate(f, _post=sparse.extract)
         self.assertAllEqual(i, [0, 0, 1, 1, 1, 2, 2, 2, 3, 3])
@@ -1450,3 +1450,30 @@ class factor(TestCase):
         topo, geom = mesh.rectilinear([3])
         with self.assertRaisesRegex(ValueError, 'cannot lower function with spaces \(.+\) - did you forget integral or sample?'):
             function.factor(geom)
+
+
+class arguments_for(TestCase):
+
+    def test_single(self):
+        x = function.field('x', numpy.array([1,2,3]), shape=(2,), dtype=int)
+        f = x**2
+        self.assertEqual({a.name: (a.shape, a.dtype) for a in function.arguments_for(f).values()},
+            {'x': ((3,2), int)})
+
+    def test_multiple(self):
+        x = function.field('x', numpy.array([1,2,3]), shape=(2,), dtype=int)
+        y = function.field('y', numpy.array([4,5]), dtype=float)
+        z = function.field('z', dtype=complex)
+        f = x * y
+        g = x**2 * z
+        self.assertEqual({a.name: (a.shape, a.dtype) for a in function.arguments_for(f, g).values()},
+            {'x': ((3,2), int), 'y': ((2,), float), 'z': ((), complex)})
+
+    def test_conflict(self):
+        x = function.field('x', numpy.array([1,2,3]), shape=(2,), dtype=int)
+        y1 = function.field('y', numpy.array([4,5]), dtype=float)
+        y2 = function.field('y', dtype=complex)
+        f = x * y1
+        g = x**2 * y2
+        with self.assertRaisesRegex(ValueError, "inconsistent shapes for argument 'y'"):
+            function.arguments_for(f, g)

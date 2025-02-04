@@ -147,20 +147,19 @@ def main(size: Length = parse('10cm'),
         domain, geom = mesh.unitsquare(nelems, etype)
 
     ns = Namespace()
-    ns.x = size * geom
+    ns.x = geom * size
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-    ns.add_field(('φ', 'φ0'), domain.basis('std', degree=degree))
-    ns.add_field('η', domain.basis('std', degree=degree) * stens / epsilon) # basis scaling to give η the required unit
-    ns.add_field('dt')
-    ns.dt *= timestep
+    ns.φ = domain.field('φ', btype='std', degree=degree)
+    ns.dφ = ns.φ - function.replace_arguments(ns.φ, 'φ:φ0')
+    ns.η = domain.field('η', btype='std', degree=degree) * (stens / epsilon)
+    ns.dt = function.field('dt') * timestep
     ns.ε = epsilon
     ns.σ = stens
     ns.σmean = (wtensp + wtensn) / 2
     ns.σdiff = (wtensp - wtensn) / 2
     ns.σwall = 'σmean + φ σdiff'
-    ns.dφ = 'φ - φ0'
     ns.ψ = '.25 (φ^2 - 1)^2'
-    ns.δψ = '.25 dφ^2 (1 - φ0^2 / 6 - φ φ0 / 3 - φ^2 / 2)' if stable else '0'
+    ns.δψ = '.25 dφ^2 (1 - φ^2 + 2 φ dφ / 3 - dφ^2 / 6)' if stable else '0'
     ns.M = mobility
     ns.J_i = '-M ∇_i(η)'
     ns.v_i = 'φ J_i'
@@ -181,7 +180,7 @@ def main(size: Length = parse('10cm'),
     system = System(nrg / tol, trial='φ,η')
 
     numpy.random.seed(seed)
-    args = dict(φ=numpy.random.normal(0, .5, system.argshapes['φ'])) # initial condition
+    args = dict(φ=numpy.random.normal(0, .5, function.arguments_for(nrg)['φ'].shape)) # initial condition
 
     with log.iter.fraction('timestep', range(round(endtime / timestep))) as steps:
         for istep in steps:

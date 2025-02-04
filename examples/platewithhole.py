@@ -75,7 +75,7 @@ class NURBS:
         if self.nrefine:
             topo = topo.refine(self.nrefine)
             bsplinebasis = topo.basis('spline', degree=2)
-            sqr = topo.integral((function.dotarg('w', bsplinebasis) - weightfunc)**2, degree=9)
+            sqr = topo.integral((function.field('w', bsplinebasis) - weightfunc)**2, degree=9)
             controlweights = System(sqr, trial='w').solve()['w']
             nurbsbasis = bsplinebasis * controlweights / weightfunc
         return topo.withboundary(hole='left', sym='top,bottom', far='right'), geom, nurbsbasis, 5
@@ -121,7 +121,8 @@ def main(mode: Union[FCM, NURBS] = NURBS(),
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     ns.λ = 2 * poisson
     ns.μ = 1 - poisson
-    ns.add_field(('u', 'v'), basis, shape=(2,))
+    ns.u = function.field('u', basis, shape=[2])
+    ns.v = function.field('v', basis, shape=[2])
     ns.X_i = 'x_i + u_i'
     ns.ε_ij = '(∇_j(u_i) + ∇_i(u_j)) / 2'
     ns.σ_ij = 'λ ε_kk δ_ij + 2 μ ε_ij'

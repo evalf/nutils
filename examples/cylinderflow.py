@@ -115,11 +115,15 @@ def main(nelems: int = 99,
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     J = ns.x.grad(geom)
     detJ = numpy.linalg.det(J)
-    ns.add_field(('u', 'u0', 'v'), function.vectorize([
+    ns.u = function.field('u', function.vectorize([
         domain.basis('spline', degree=(degree, degree-1), removedofs=((0,), None)),
         domain.basis('spline', degree=(degree-1, degree))]) @ J.T / detJ)
-    ns.add_field(('p', 'q'), domain.basis('spline', degree=degree-1) / detJ)
-    ns.add_field(('t', 'dt'))
+    ns.p = domain.field('p', btype='spline', degree=degree-1) / detJ
+    ns.v = function.replace_arguments(ns.u, 'u:v')
+    ns.q = function.replace_arguments(ns.p, 'p:q')
+    ns.t = function.field('t')
+    ns.du = ns.u - function.replace_arguments(ns.u, 'u:u0')
+    ns.dt = function.field('dt')
     ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
     ns.ω = 'ε_ij ∇_j(u_i)'
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
@@ -133,7 +137,7 @@ def main(nelems: int = 99,
     sqr = domain.integral('(.5 Σ_i (u_i - uinf_i)^2 - ∇_k(u_k) p) dV' @ ns, degree=degree*2)
     args = System(sqr, trial='u,p').solve(constrain=cons) # set initial condition to potential flow
 
-    res = domain.integral('v_i (u_i - u0_i) dV' @ ns, degree=degree*3)
+    res = domain.integral('v_i du_i dV' @ ns, degree=degree*3)
     res += domain.integral('(v_i ∇_j(u_i) u_j + ∇_j(v_i) σ_ij + q ∇_k(u_k)) dt dV' @ ns, degree=degree*3)
     res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dt dS' @ ns, degree=degree*2)
     div = numpy.sqrt(abs(function.factor(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2)))) # L2 norm of velocity divergence

@@ -224,7 +224,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         self.shape = tuple(sh.__index__() for sh in shape)
         self.dtype = dtype
         self.spaces = frozenset(spaces)
-        self.arguments = dict(arguments)
+        self._arguments = dict(arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         raise NotImplementedError
@@ -236,8 +236,8 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         return self.lower(LowerArgs((), {}, {}))
 
     def __index__(self):
-        if self.arguments or self.spaces:
-            raise ValueError('cannot convert non-constant array to index: arguments={}'.format(','.join(self.arguments)))
+        if self._arguments or self.spaces:
+            raise ValueError('cannot convert non-constant array to index: arguments={}'.format(','.join(self._arguments)))
         elif self.ndim:
             raise ValueError('cannot convert non-scalar array to index: shape={}'.format(self.shape))
         elif self.dtype != int:
@@ -483,11 +483,17 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
 
     def contains(self, __name: str) -> bool:
         'Test if target occurs in this function.'
-        return __name in self.arguments
+        return __name in self._arguments
+
+    @property
+    def arguments(self) -> Mapping[str, Tuple[Shape, DType]]:
+        warnings.deprecation('array.arguments is deprecated and will be removed in Nutils 10, please use function.arguments_for(array) instead')
+        return self._arguments.copy()
 
     @property
     def argshapes(self) -> Mapping[str, Tuple[int, ...]]:
-        return {name: shape for name, (shape, dtype) in self.arguments.items()}
+        warnings.deprecation("array.argshapes[...] is deprecated and will be removed in Nutils 10, please use function.arguments_for(array)[...].shape instead")
+        return {name: shape for name, (shape, dtype) in self._arguments.items()}
 
     def conjugate(self):
         '''Return the complex conjugate, elementwise.
@@ -684,7 +690,7 @@ class Custom(Array):
         self._args = args
         self._npointwise = npointwise
         spaces = frozenset(space for arg in args if isinstance(arg, Array) for space in arg.spaces)
-        arguments = _join_arguments(arg.arguments for arg in args if isinstance(arg, Array))
+        arguments = _join_arguments(arg._arguments for arg in args if isinstance(arg, Array))
         super().__init__(shape=(*points_shape, *shape), dtype=dtype, spaces=spaces, arguments=arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
@@ -692,7 +698,7 @@ class Custom(Array):
         add_points_shape = tuple(map(evaluable.asarray, self.shape[:self._npointwise]))
         points_shape = args.points_shape + add_points_shape
         coordinates = {space: evaluable.Transpose.to_end(evaluable.appendaxes(coords, add_points_shape), coords.ndim-1) for space, coords in args.coordinates.items()}
-        return _CustomEvaluable(type(self).__name__, self.evalf, self.partial_derivative, evalargs, self.shape[self._npointwise:], self.dtype, self.spaces, types.frozendict(self.arguments), LowerArgs(points_shape, types.frozendict(args.transform_chains), types.frozendict(coordinates)))
+        return _CustomEvaluable(type(self).__name__, self.evalf, self.partial_derivative, evalargs, self.shape[self._npointwise:], self.dtype, self.spaces, types.frozendict(self._arguments), LowerArgs(points_shape, types.frozendict(args.transform_chains), types.frozendict(coordinates)))
 
     @classmethod
     def evalf(cls, *args: Any) -> numpy.ndarray:
@@ -833,7 +839,7 @@ class _WithoutPoints:
     def __init__(self, __arg: Array) -> None:
         self._arg = __arg
         self.spaces = __arg.spaces
-        self.arguments = __arg.arguments
+        self._arguments = __arg._arguments
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         return self._arg.lower(LowerArgs((), args.transform_chains, {}))
@@ -851,7 +857,7 @@ class _Wrapper(Array):
         self._args = args
         assert all(hasattr(arg, 'lower') for arg in self._args)
         spaces = frozenset(space for arg in args for space in arg.spaces)
-        arguments = _join_arguments(arg.arguments for arg in self._args)
+        arguments = _join_arguments(arg._arguments for arg in self._args)
         super().__init__(shape, dtype, spaces, arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
@@ -911,25 +917,13 @@ class _Replace(Array):
     def __init__(self, arg: Array, replacements: Dict[str, Array]) -> None:
         self._arg = arg
         self._replacements = {}
+        for old, new in _argument_to_array(replacements, arg):
+            if new.spaces:
+                raise ValueError(f'replacement functions cannot be bound to a space, but replacement for Argument {old.name!r} is bound to {", ".join(new.spaces)}.')
+            self._replacements[old.name] = new
         # Build arguments map with replacements.
-        unreplaced = {}
-        for name, (shape, dtype) in arg.arguments.items():
-            if name in replacements:
-                replacement = replacements[name]
-                if isinstance(replacement, str):
-                    replacement = Argument(replacement, shape, dtype)
-                else:
-                    replacement = Array.cast(replacement)
-                    if replacement.shape != shape:
-                        raise ValueError(f'Argument {name!r} has shape {shape} but the replacement has shape {replacement.shape}.')
-                    if replacement.dtype != dtype:
-                        raise ValueError(f'Argument {name!r} has dtype {dtype.__name__} but the replacement has dtype {replacement.dtype.__name__}.')
-                    if replacement.spaces:
-                        raise ValueError(f'replacement functions cannot contain spaces, but replacement for Argument {name!r} contains space {", ".join(replacement.spaces)}.')
-                self._replacements[name] = replacement
-            else:
-                unreplaced[name] = shape, dtype
-        arguments = _join_arguments([unreplaced] + [replacement.arguments for replacement in self._replacements.values()])
+        unreplaced = {name: shape_dtype for name, shape_dtype in arg._arguments.items() if name not in replacements}
+        arguments = _join_arguments([unreplaced] + [replacement._arguments for replacement in self._replacements.values()])
         super().__init__(arg.shape, arg.dtype, arg.spaces, arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
@@ -962,7 +956,7 @@ class _Transpose(Array):
     def __init__(self, arg: Array, axes: Tuple[int, ...]) -> None:
         self._arg = arg
         self._axes = tuple(n.__index__() for n in axes)
-        super().__init__(tuple(arg.shape[axis] for axis in axes), arg.dtype, arg.spaces, arg.arguments)
+        super().__init__(tuple(arg.shape[axis] for axis in axes), arg.dtype, arg.spaces, arg._arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         arg = self._arg.lower(args)
@@ -976,7 +970,7 @@ class _Opposite(Array):
     def __init__(self, arg: Array, space: str) -> None:
         self._arg = arg
         self._space = space
-        super().__init__(arg.shape, arg.dtype, arg.spaces, arg.arguments)
+        super().__init__(arg.shape, arg.dtype, arg.spaces, arg._arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         oppargs = LowerArgs(args.points_shape, dict(args.transform_chains), args.coordinates)
@@ -1043,7 +1037,7 @@ class _Derivative(Array):
         self._arg = arg
         self._var = var
         self._eval_var = evaluable.Argument(var.name, tuple(evaluable.constant(n) for n in var.shape), var.dtype)
-        arguments = _join_arguments((arg.arguments, var.arguments))
+        arguments = _join_arguments((arg._arguments, var._arguments))
         super().__init__(arg.shape+var.shape, complex if var.dtype == complex else arg.dtype, arg.spaces | var.spaces, arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
@@ -1068,7 +1062,7 @@ class _Gradient(Array):
         common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
         self._func = numpy.broadcast_to(func, common_shape)
         self._geom = numpy.broadcast_to(geom, (*common_shape, geom.shape[-1]))
-        arguments = _join_arguments((func.arguments, geom.arguments))
+        arguments = _join_arguments((func._arguments, geom._arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
@@ -1094,7 +1088,7 @@ class _SurfaceGradient(Array):
         common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
         self._func = numpy.broadcast_to(func, common_shape)
         self._geom = numpy.broadcast_to(geom, (*common_shape, geom.shape[-1]))
-        arguments = _join_arguments((func.arguments, geom.arguments))
+        arguments = _join_arguments((func._arguments, geom._arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
@@ -1124,7 +1118,7 @@ class _Jacobian(Array):
                              'not greater than the dimension of the geometry.')
         self._tip_dim = tip_dim
         self._geom = geom
-        super().__init__((), float, geom.spaces, geom.arguments)
+        super().__init__((), float, geom.spaces, geom._arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         geom = self._geom.lower(args)
@@ -1145,7 +1139,7 @@ class _Normal(Array):
     def __init__(self, geom: Array) -> None:
         self._geom = geom
         assert geom.dtype == float
-        super().__init__(geom.shape, float, geom.spaces, geom.arguments)
+        super().__init__(geom.shape, float, geom.spaces, geom._arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         geom = self._geom.lower(args)
@@ -1180,7 +1174,7 @@ class _ExteriorNormal(Array):
     def __init__(self, rgrad: Array) -> None:
         assert rgrad.dtype == float and rgrad.shape[-2] == rgrad.shape[-1] + 1
         self._rgrad = rgrad
-        super().__init__(rgrad.shape[:-1], float, rgrad.spaces, rgrad.arguments)
+        super().__init__(rgrad.shape[:-1], float, rgrad.spaces, rgrad._arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         rgrad = self._rgrad.lower(args)
@@ -1207,7 +1201,7 @@ class _Concatenate(Array):
             shape=(*shape0[:self.axis], builtins.sum(array.shape[self.axis] for array in self.arrays), *shape0[self.axis+1:]),
             dtype=self.arrays[0].dtype,
             spaces=functools.reduce(operator.or_, (array.spaces for array in self.arrays)),
-            arguments=_join_arguments(array.arguments for array in self.arrays))
+            arguments=_join_arguments(array._arguments for array in self.arrays))
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         return util.sum(evaluable._inflate(array.lower(args), evaluable.Range(evaluable.constant(array.shape[self.axis])) + offset, evaluable.constant(self.shape[self.axis]), self.axis-self.ndim)
@@ -1687,6 +1681,53 @@ def kronecker(__array: IntoArray, axis: int, length: int, pos: IntoArray) -> Arr
     return _Transpose.from_end(scatter(__array, length, pos), axis)
 
 
+def _argument_to_array(d: Any, array: Array) -> Iterable[Tuple[Argument, Array]]:
+    '''Helper function for argument replacement.
+
+    Given dictionary-like input, along with an array to look up argument names,
+    yield ``(arg, new)`` tuples where ``arg`` is an ``Argument`` and ``new`` an
+    ``Array`` of equal shape and dtype. A ``ValueError`` is raised if any key
+    cannot be made a valid argument for the provided array or any value cannot
+    be made an array of the same shape and dtype.
+
+    Dictionary-like input is either an actual dictionary, a sequence of (key,
+    value) tuples or strings, or a string, where any string is replaced by the
+    relevant Argument object. The following inputs are all equivalent:
+
+        d = {'u': 'v', 'p': 'q'}
+        d = 'u:v,p:q'
+        d = ('u:v', 'p:q')
+        d = [('u', 'v'), ('p', 'q')]
+        d = {'u': Argument('v', ...), 'p': Argument('q', ...)}
+        d = [(Argument('u', ...), Argument('v', ...)), 'p:q']
+    '''
+
+    for item in d.split(',') if isinstance(d, str) else d.items() if isinstance(d, dict) else d:
+        arg, new = item.split(':', 1) if isinstance(item, str) else item
+
+        if isinstance(arg, str):
+            if arg not in array._arguments:
+                continue
+            arg = Argument(arg, *array._arguments[arg])
+        elif not isinstance(arg, Argument):
+            raise ValueError('Key must be string or argument')
+        elif arg.name not in arguments:
+            continue
+        elif array._arguments[arg.name] != (arg.shape, arg.dtype):
+            raise ValueError(f'Argument {arg.name!r} has wrong shape or dtype')
+
+        if isinstance(new, str):
+            new = Argument(new, arg.shape, arg.dtype)
+        else:
+            new = Array.cast(new)
+            if new.shape != arg.shape:
+                raise ValueError(f'Argument {arg.name!r} has shape {arg.shape} but the replacement has shape {new.shape}.')
+            elif new.dtype != arg.dtype:
+                raise ValueError(f'Argument {arg.name!r} has dtype {arg.dtype.__name__} but the replacement has dtype {new.dtype.__name__}.')
+
+        yield arg, new
+
+
 @nutils_dispatch
 def replace_arguments(__array: IntoArray, __arguments: Mapping[str, Union[IntoArray, str]]) -> Array:
     '''Replace arguments with :class:`Array` objects.
@@ -1735,15 +1776,8 @@ def linearize(__array: IntoArray, __arguments: Union[str, Dict[str, str], Iterab
     '''
 
     array = Array.cast(__array)
-    args = __arguments.split(',') if isinstance(__arguments, str) \
-      else __arguments.items() if isinstance(__arguments, dict) \
-      else __arguments
-    parts = []
-    for kv in args:
-        k, v = kv.split(':', 1) if isinstance(kv, str) else kv
-        f = derivative(array, k)
-        parts.append(numpy.sum(f * Argument(v, *array.arguments[k]), tuple(range(array.ndim, f.ndim))))
-    return util.sum(parts)
+    return util.sum(numpy.sum(derivative(array, arg) * lin, array.ndim + numpy.arange(arg.ndim))
+        for arg, lin in _argument_to_array(__arguments, array))
 
 
 def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:
@@ -1824,14 +1858,14 @@ def derivative(__arg: IntoArray, __var: Union[str, 'Argument']) -> Array:
 
     arg = Array.cast(__arg)
     if isinstance(__var, str):
-        if __var not in arg.arguments:
+        if __var not in arg._arguments:
             raise ValueError('no such argument: {}'.format(__var))
-        shape, dtype = arg.arguments[__var]
+        shape, dtype = arg._arguments[__var]
         __var = Argument(__var, shape, dtype=dtype)
     elif not isinstance(__var, Argument):
         raise ValueError('Expected an instance of `Argument` as second argument of `derivative` but got a `{}.{}`.'.format(type(__var).__module__, type(__var).__qualname__))
-    if __var.name in arg.arguments:
-        shape, dtype = arg.arguments[__var.name]
+    if __var.name in arg._arguments:
+        shape, dtype = arg._arguments[__var.name]
         if __var.shape != shape:
             raise ValueError('Argument {!r} has shape {} in the function, but the derivative to {!r} with shape {} was requested.'.format(__var.name, shape, __var.name, __var.shape))
         if __var.dtype != dtype:
@@ -2318,6 +2352,7 @@ def vectorize(args: Sequence[IntoArray]) -> Array:
     :class:`Array`
     '''
 
+    args = tuple(args)
     return numpy.concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
 
 
@@ -2339,8 +2374,14 @@ def rotmat(__arg: IntoArray) -> Array:
     return Array.cast(numpy.stack([trignormal(__arg), trigtangent(__arg)], 0))
 
 
+def dotarg(*args, **kwargs):
+    '''Alias for :func:`field`.'''
+
+    return field(*args, **kwargs)
+
+
 @nutils_dispatch
-def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtype: DType = float) -> Array:
+def field(name: str, /, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtype: DType = float) -> Array:
     '''Return the inner product of the first axes of the given arrays with an argument with the given name.
 
     An argument with shape ``(arrays[0].shape[0], ..., arrays[-1].shape[0]) +
@@ -2350,7 +2391,7 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtyp
 
     Parameters
     ----------
-    argname : :class:`str`
+    name : :class:`str`
         The name of the argument.
     *arrays : :class:`Array` or something that can be :meth:`~Array.cast` into one
         The arrays to take inner products with.
@@ -2365,7 +2406,7 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtyp
         The inner product with shape ``shape + arrays[0].shape[1:] + ... + arrays[-1].shape[1:]``.
     '''
 
-    result = Argument(__argname, tuple(array.shape[0] for array in arrays) + tuple(shape), dtype=dtype)
+    result = Argument(name, tuple(array.shape[0] for array in arrays) + tuple(shape), dtype=dtype)
     for array in arrays:
         result = numpy.sum(_append_axes(result.transpose((*range(1, result.ndim), 0)), array.shape[1:]) * array, result.ndim-1)
     return result
@@ -2376,10 +2417,34 @@ class factor(Array):
 
     def __init__(self, array: Array) -> None:
         self._array = evaluable.factor(array)
-        super().__init__(shape=array.shape, dtype=array.dtype, spaces=set(), arguments=array.arguments)
+        super().__init__(shape=array.shape, dtype=array.dtype, spaces=set(), arguments=array._arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         return evaluable.prependaxes(self._array, args.points_shape)
+
+
+@nutils_dispatch
+def arguments_for(*arrays) -> Dict[str, Argument]:
+    '''Get all arguments that array(s) depend on.
+
+    Given any number of arrays, return a dictionary of all arguments involved,
+    mapping the name to the :class:`Argument` object. Raise a ``ValueError`` if
+    arrays have conflicting arguments, i.e. sharing a name but differing in
+    shape and/or dtype.
+    '''
+
+    arguments = {}
+    for array in arrays:
+        if isinstance(array, Array):
+            for name, (shape, dtype) in array._arguments.items():
+                argument = arguments.get(name)
+                if argument is None:
+                    arguments[name] = Argument(name, shape, dtype)
+                elif argument.shape != shape:
+                    raise ValueError(f'inconsistent shapes for argument {name!r}')
+                elif argument.dtype != dtype:
+                    raise ValueError(f'inconsistent dtypes for argument {name!r}')
+    return arguments
 
 
 # BASES
@@ -2443,7 +2508,7 @@ class Basis(Array):
         self.nelems = nelems
         self.index = Array.cast(index, dtype=int, ndim=0)
         self.coords = coords
-        arguments = _join_arguments((index.arguments, coords.arguments))
+        arguments = _join_arguments((index._arguments, coords._arguments))
         super().__init__((ndofs,), float, spaces=index.spaces | coords.spaces, arguments=arguments)
 
         _index = evaluable.Argument('_index', shape=(), dtype=int)

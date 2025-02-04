@@ -1190,7 +1190,7 @@ class multipatch_misc(TestCase):
     def test_basis_merge_dofs(self):
         patches = (0, 4, 2, 5), (9, 1, 5, 3), (2, 5, 6, 7), (5, 3, 7, 8)
         domain, geom = mesh.multipatch(patches=patches, nelems=1)
-        basis = domain.basis('spline', 1)
+        basis = domain.basis('spline', degree=1)
         actual = domain.sample('bezier', 2).eval(basis)
         desired = numpy.zeros((16, 10))
         desired[numpy.arange(16), [0, 1, 2, 3, 4, 5, 3, 6, 2, 3, 7, 8, 3, 6, 8, 9]] = 1
@@ -1207,7 +1207,7 @@ class multipatch_misc(TestCase):
         domain, geom = mesh.multipatch(patches=patches, patchverts=patchverts, nelems=1)
         self.assertEqual(domain.connectivity.tolist(), [[1, -1,  2, -1], [-1, 0, 2, -1], [1, -1, -1, 0]])
         self.assertEqual(len(domain.interfaces['interpatch']), 3)
-        self.assertEqual(len(domain.basis('std', 1)), 7)
+        self.assertEqual(len(domain.basis('std', degree=1)), 7)
         self.assertAlmostEqual(domain.integrate(function.J(geom), degree=1), 1)
 
     def test_partial_ring(self):
@@ -1221,7 +1221,7 @@ class multipatch_misc(TestCase):
         domain, geom = mesh.multipatch(patches=patches, nelems=1)
         self.assertEqual(len(domain.interfaces['interpatch']), 5) # 5th interface via 15-12-5-1
         self.assertEqual(len(domain.boundary), 14)
-        self.assertEqual(len(domain.basis('std', 1)), 16)
+        self.assertEqual(len(domain.basis('std', degree=1)), 16)
         # this test fails if MultipatchTopology.basis_std delegates to
         # TransformChainsTopology.basis_std rather than MultipatchTopology.basis_spline.
 

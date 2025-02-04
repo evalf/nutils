@@ -406,10 +406,15 @@ class Quantity(metaclass=Dimension):
         dims, args = zip(*Quantity.__unpack(*args))
         return tuple(dim.wrap(ret) for (dim, ret) in zip(dims, op(*args, **kwargs)))
 
-    @register('dotarg')
-    def __dotarg(op, *args, **kwargs):
+    @register('field')
+    def __field(op, *args, **kwargs):
         dims, args = zip(*Quantity.__unpack(*args)) # we abuse the fact that unpack str returns dimensionless
         return functools.reduce(operator.mul, dims).wrap(op(*args, **kwargs))
+
+    @register('arguments_for')
+    def __attribute(op, *args, **kwargs):
+        __dims, args = zip(*Quantity.__unpack(*args))
+        return op(*args, **kwargs)
 
     del register
 

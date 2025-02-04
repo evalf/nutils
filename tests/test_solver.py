@@ -101,8 +101,8 @@ class laplace_field(TestCase):
         super().setUp()
         domain, geom = mesh.rectilinear([8, 8])
         basis = domain.basis('std', degree=1)
-        u = function.dotarg('u', basis)
-        v = function.dotarg('v', basis)
+        u = function.field('u', basis)
+        v = function.field('v', basis)
         sqr = domain.boundary['left'].integral(u**2, degree=2)
         self.cons = solver.optimize('u,', sqr)
         self.residual = domain.integral((v.grad(geom) @ u.grad(geom))*function.J(geom), degree=2) \
@@ -205,9 +205,9 @@ class finitestrain(TestCase):
         domain, geom = mesh.rectilinear([numpy.linspace(0, 1, 9)] * 2)
         ubasis = domain.basis('std', degree=2)
         if self.vector:
-            u = function.dotarg('dofs', ubasis.vector(2))
+            u = function.field('dofs', ubasis.vector(2))
         else:
-            u = function.dotarg('dofs', ubasis, shape=(2,))
+            u = function.field('dofs', ubasis, shape=(2,))
         Geom = geom * [1.1, 1] + u
         self.cons = solver.optimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
         self.boolcons = ~numpy.isnan(self.cons)
@@ -258,7 +258,7 @@ class optimize(TestCase):
         self.domain, geom = mesh.rectilinear([2, 2])
         self.ubasis = self.domain.basis('std', degree=1)
         self.ns = Namespace()
-        self.ns.u = function.dotarg('dofs', self.ubasis)
+        self.ns.u = function.field('dofs', self.ubasis)
 
     def test_linear(self):
         err = self.domain.boundary['bottom'].integral('(u - 1)^2' @ self.ns, degree=2)
@@ -337,8 +337,8 @@ class System(TestCase):
 
     def test_constant(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.dotarg('u', domain.basis('std', 1))
-        v = function.dotarg('v', domain.basis('std', 1))
+        u = function.field('u', domain.basis('std', degree=1))
+        v = function.field('v', domain.basis('std', degree=1))
         f = domain.integral(v * (1 + u) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u', test='v')
         self.assertTrue(sys.is_linear)
@@ -358,7 +358,7 @@ class System(TestCase):
 
     def test_constant_symmetric(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.dotarg('u', domain.basis('std', 1))
+        u = function.field('u', domain.basis('std', degree=1))
         f = domain.integral((1 + u - u**2) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u')
         self.assertTrue(sys.is_linear)
@@ -379,9 +379,9 @@ class System(TestCase):
 
     def test_constant_matrix(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.dotarg('u', domain.basis('std', 1))
-        v = function.dotarg('v', domain.basis('std', 1))
-        t = function.dotarg('t')
+        u = function.field('u', domain.basis('std', degree=1))
+        v = function.field('v', domain.basis('std', degree=1))
+        t = function.field('t')
         f = domain.integral(v * (t + u) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u', test='v')
         self.assertTrue(sys.is_linear)
@@ -401,9 +401,9 @@ class System(TestCase):
 
     def test_linear(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.dotarg('u', domain.basis('std', 1))
-        v = function.dotarg('v', domain.basis('std', 1))
-        t = function.dotarg('t')
+        u = function.field('u', domain.basis('std', degree=1))
+        v = function.field('v', domain.basis('std', degree=1))
+        t = function.field('t')
         f = domain.integral(v * (u * t + 1) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u', test='v')
         self.assertTrue(sys.is_linear)
@@ -419,9 +419,9 @@ class System(TestCase):
 
     def test_nonlinear(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.dotarg('u', domain.basis('std', 1))
-        v = function.dotarg('v', domain.basis('std', 1))
-        t = function.dotarg('t')
+        u = function.field('u', domain.basis('std', degree=1))
+        v = function.field('v', domain.basis('std', degree=1))
+        t = function.field('t')
         f = domain.integral(v * (u**2 + t) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u', test='v')
         self.assertFalse(sys.is_linear)
@@ -437,7 +437,7 @@ class System(TestCase):
 
     def test_nonlinear_symmetric(self):
         domain, geom = mesh.rectilinear([9])
-        u = function.dotarg('u', domain.basis('std', 1))
+        u = function.field('u', domain.basis('std', degree=1))
         f = domain.integral(numpy.exp(u) * function.J(geom), degree=2)
         sys = solver.System(f, trial='u')
         self.assertFalse(sys.is_linear)
@@ -457,7 +457,7 @@ class system_finitestrain(TestCase):
     def setUp(self):
         super().setUp()
         domain, geom = mesh.rectilinear([numpy.linspace(0, 1, 9)] * 2)
-        u = function.dotarg('u', domain.basis('std', degree=2), shape=(2,))
+        u = function.field('u', domain.basis('std', degree=2), shape=(2,))
         Geom = geom * [1.1, 1] + u
         self.cons = solver.optimize('u,', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
         strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
@@ -497,10 +497,10 @@ class system_navierstokes(TestCase):
         dx = function.J(geom)
         ubasis = domain.basis('std', degree=2)
         pbasis = domain.basis('std', degree=1)
-        u = function.dotarg('u', ubasis, shape=(2,))
-        v = function.dotarg('v', ubasis, shape=(2,))
-        p = function.dotarg('p', pbasis)
-        q = function.dotarg('q', pbasis)
+        u = function.field('u', ubasis, shape=(2,))
+        v = function.field('v', ubasis, shape=(2,))
+        p = function.field('p', pbasis)
+        q = function.field('q', pbasis)
         self.cons = solver.optimize('u,', domain.boundary['top,bottom'].integral((u**2).sum(), degree=4), droptol=1e-10)
         self.cons = solver.optimize('u,', domain.boundary['left'].integral((u[0]-uin)**2 + u[1]**2, degree=4), droptol=1e-10, constrain=self.cons)
         res = gauss.integral((viscosity * numpy.einsum('ij,ij', v.grad(geom), u.grad(geom) + u.grad(geom).T) - v.div(geom) * p + q * u.div(geom)) * dx)
