@@ -560,27 +560,27 @@ class Namespace(TestCase):
     def test_add_single_field(self):
         ns = expression_v2.Namespace()
         ns.add_field('u', numpy.array([1,2,3]))
-        self.assertEqual(ns.u.argshapes, dict(u=(3,)))
+        self.assertEqual({a.name: a.shape for a in function.arguments_for(ns.u).values()}, dict(u=(3,)))
         self.assertEqual(ns.u.shape, ())
 
     def test_add_multiple_fields(self):
         ns = expression_v2.Namespace()
         ns.add_field(('u', 'v'), numpy.array([1,2,3]))
-        self.assertEqual(ns.u.argshapes, dict(u=(3,)))
+        self.assertEqual({a.name: a.shape for a in function.arguments_for(ns.u).values()}, dict(u=(3,)))
         self.assertEqual(ns.u.shape, ())
-        self.assertEqual(ns.v.argshapes, dict(v=(3,)))
+        self.assertEqual({a.name: a.shape for a in function.arguments_for(ns.v).values()}, dict(v=(3,)))
         self.assertEqual(ns.v.shape, ())
 
     def test_add_single_field_multiple_bases(self):
         ns = expression_v2.Namespace()
         ns.add_field('u', numpy.array([1,2,3]), numpy.array([4,5,6,7]))
-        self.assertEqual(ns.u.argshapes, dict(u=(3,4)))
+        self.assertEqual({a.name: a.shape for a in function.arguments_for(ns.u).values()}, dict(u=(3,4)))
         self.assertEqual(ns.u.shape, ())
 
     def test_add_single_field_with_shape(self):
         ns = expression_v2.Namespace()
         ns.add_field('u', numpy.array([1,2,3]), shape=(2,))
-        self.assertEqual(ns.u.argshapes, dict(u=(3,2)))
+        self.assertEqual({a.name: a.shape for a in function.arguments_for(ns.u).values()}, dict(u=(3,2)))
         self.assertEqual(ns.u.shape, (2,))
 
     def test_copy(self):

@@ -1002,9 +1002,8 @@ def _split_trial_test(target):
 def _target_helper(target, *args):
     trial, test = _split_trial_test(target)
     if test is not None:
-        arguments = function._join_arguments(arg.arguments for arg in args)
-        testargs = [function.Argument(t, *arguments[t]) for t in test]
-        args = [map(arg.derivative, testargs) for arg in args]
+        arguments = function.arguments_for(*args)
+        args = [[arg.derivative(arguments[t]) for t in test] for arg in args]
     elif len(args) > 1:
         shapes = [{f.shape for f in ziparg if f is not None} for ziparg in zip(*args)]
         if any(len(arg) != len(shapes) for arg in args) or any(len(shape) != 1 for shape in shapes):

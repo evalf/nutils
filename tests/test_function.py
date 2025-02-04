@@ -128,7 +128,7 @@ class integral_compatibility(TestCase):
         a = function.Argument('a', (2, 3), dtype=int)
         b = function.Argument('b', (3,), dtype=int)
         f = (a * b[None]).sum(-1)
-        self.assertEqual(dict(f.argshapes), dict(a=(2, 3), b=(3,)))
+        self.assertEqual({a.name: a.shape for a in function.arguments_for(f).values()}, dict(a=(2, 3), b=(3,)))
 
     def test_argshapes_shape_mismatch(self):
         with self.assertRaises(Exception):
@@ -425,7 +425,7 @@ class Unlower(TestCase):
         f = function._Unlower(e, frozenset(), arguments, function.LowerArgs((2, 3), {}, {}))
         self.assertEqual(f.shape, (4, 5))
         self.assertEqual(f.dtype, int)
-        self.assertEqual(f.arguments, arguments)
+        self.assertEqual(f._arguments, arguments)
         self.assertEqual(f.lower(function.LowerArgs((2, 3), {}, {})), e)
         with self.assertRaises(ValueError):
             f.lower(function.LowerArgs((3, 4), {}, {}))
