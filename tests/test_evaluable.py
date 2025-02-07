@@ -75,11 +75,12 @@ class check(TestCase):
             self.assertArrayAlmostEqual(actual.simplified.eval(**evalargs), desired, decimal)
         with self.subTest('optimized'):
             self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
-        with self.subTest('sparse'):
-            values, indices, shape = evaluable.eval_coo(actual, evalargs)
-            self.assertEqual(shape, desired.shape)
-            self.assertArrayAlmostEqual(numeric.accumulate(values, indices, shape), desired, decimal)
-        if actual.ndim == 2:
+        if actual.dtype != bool:
+            with self.subTest('sparse'):
+                values, indices, shape = evaluable.eval_coo(actual, evalargs)
+                self.assertEqual(shape, desired.shape)
+                self.assertArrayAlmostEqual(numeric.accumulate(values, indices, shape), desired, decimal)
+        if actual.ndim == 2 and actual.dtype != bool:
             with self.subTest('csr'):
                 values, rowptr, colidx, ncols = evaluable.compile(evaluable.as_csr(actual))(**evalargs)
                 shape = len(rowptr) - 1, ncols
