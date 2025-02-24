@@ -781,7 +781,7 @@ class _CustomEvaluable(evaluable.Array):
 
     @property
     def dependencies(self):
-        return evaluable.Tuple(self.lower_args.points_shape), *(arg for arg in self.args if isinstance(arg, evaluable.Array))
+        return *self.lower_args.points_shape, *(arg for arg in self.args if isinstance(arg, evaluable.Array))
 
     @cached_property
     def shape(self):
@@ -791,13 +791,13 @@ class _CustomEvaluable(evaluable.Array):
     def _node_details(self) -> str:
         return self.name
 
-    def evalf(self, points_shape: Tuple[numpy.ndarray, ...], *args: Any) -> numpy.ndarray:
-        points_shape = tuple(n.__index__() for n in points_shape)
+    def evalf(self, *args: Any) -> numpy.ndarray:
+        points_shape = tuple(n.__index__() for n in args[:self.points_dim])
         npoints = util.product(points_shape, 1)
         # Flatten the points axes of the evaluable arguments, merge with the
         # unevaluable arguments and call `custom_evalf`.
         flattened = []
-        args = iter(args)
+        args = iter(args[self.points_dim:])
         for arg in self.args:
             if isinstance(arg, evaluable.Array):
                 arg = next(args)
