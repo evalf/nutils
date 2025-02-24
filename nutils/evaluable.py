@@ -6543,7 +6543,6 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
                 rerun_evaluables.add(evaluable)
                 return evaluable_deps.get(evaluable, ())
         util.tree_walk(collect, *evaluable_deps[None])
-        cache_vars = tuple(cache[evaluable] for evaluable in cache_evaluables)
         # Find all blocks that are to be omitted for a rerun: the blocks of all
         # compiled evaluables that are not part of `rerun_evaluables`.
         rerun_skip_evaluables = util.IDSet(evaluable_block_map) - rerun_evaluables
@@ -6552,14 +6551,15 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
         main_rerun = main.filter(lambda stmts: _pyast.Block() if stmts in rerun_skip_blocks else None)
         first_run = _pyast.Variable('first_run')
         # Make all cached results immutable.
-        for v in cache_vars:
-            main.append(_pyast.Exec(v.get_attr('setflags').call(write=_pyast.LiteralBool(False))))
+        global_vars = [first_run]
+        for evaluable in cache_evaluables:
+            v = cache[evaluable]
+            global_vars.append(v)
+            if isinstance(evaluable, Array):
+                main.append(_pyast.Exec(v.get_attr('setflags').call(write=_pyast.LiteralBool(False))))
         # Combine `main` (for the first run) and `main_rerun` into `main`.
         main.append(_pyast.Assign(first_run, _pyast.LiteralBool(False)))
-        main = _pyast.Block([
-            _pyast.Global((first_run,) + cache_vars),
-            _pyast.If(first_run, main, main_rerun),
-        ])
+        main = _pyast.Block([_pyast.Global(tuple(global_vars)), _pyast.If(first_run, main, main_rerun)])
 
     if compile_parallel:
         main = _pyast.Block([
