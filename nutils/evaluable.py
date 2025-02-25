@@ -6536,7 +6536,7 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
         rerun_evaluables = util.IDSet()
         cache_evaluables = util.IDSet()
         def collect(evaluable):
-            if evaluable.isconstant:
+            if isinstance(evaluable, Array) and evaluable.isconstant:
                 cache_evaluables.add(evaluable)
                 return ()
             else:
