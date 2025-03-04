@@ -183,12 +183,18 @@ jobs:
         with:
           name: python-package
           path: dist/
+      - name: Install Gmsh
+        # install gmsh via pip on windows and macos and via apt on linux, as
+        # the latter version is dynamically linked and requires libgl etc.
+        run: |
+          ${{ matrix.os == 'ubuntu' && 'sudo apt install gmsh' || 'python -um pip install gmsh' }}
+          echo "NUTILS_TESTING_REQUIRES=$NUTILS_TESTING_REQUIRES app:gmsh" >> $GITHUB_ENV
       - name: Install Nutils and dependencies
         id: install
         run: |
           python -um pip install --upgrade --upgrade-strategy eager wheel
           # Install Nutils from `dist` dir created in job `build-python-package`.
-          python -um pip install "$_wheel[matrix_scipy,export_mpl]"
+          python -um pip install "$_wheel[import-gmsh,matrix-scipy,export-mpl]"
       - name: Test
         run: python -um unittest discover -b -q -t . -s examples
   test-sphinx:
