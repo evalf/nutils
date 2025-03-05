@@ -464,20 +464,25 @@ class Quantity(metaclass=Dimension):
     ## DISPATCH THIRD PARTY CALLS
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        if method != '__call__' or ufunc.__name__ not in self.__DISPATCH_TABLE:
+        if method != '__call__':
             return NotImplemented
-        return self.__DISPATCH_TABLE[ufunc.__name__](ufunc, *inputs, **kwargs)
+        f = self.__DISPATCH_TABLE.get(ufunc.__name__)
+        if f is None:
+            return NotImplemented
+        return f(ufunc, *inputs, **kwargs)
 
     def __array_function__(self, func, types, args, kwargs):
-        if func.__name__ not in self.__DISPATCH_TABLE:
+        f = self.__DISPATCH_TABLE.get(func.__name__)
+        if f is None:
             return NotImplemented
-        return self.__DISPATCH_TABLE[func.__name__](func, *args, **kwargs)
+        return f(func, *args, **kwargs)
 
     @classmethod
     def __nutils_dispatch__(cls, func, args, kwargs):
-        if func.__name__ not in cls.__DISPATCH_TABLE:
+        f = cls.__DISPATCH_TABLE.get(func.__name__)
+        if f is None:
             return NotImplemented
-        return cls.__DISPATCH_TABLE[func.__name__](func, *args, **kwargs)
+        return f(func, *args, **kwargs)
 
 
 class Units(dict):
