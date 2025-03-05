@@ -274,3 +274,12 @@ class Quantity(unittest.TestCase):
         F = numpy.array([3.,4.]) * SI.units.N
         Fnorm = numpy.linalg.norm(F, axis=0)
         self.assertEqual(Fnorm, SI.Force('5N'))
+
+    def test_interp(self):
+        xp = numpy.array([0., 1., 3.]) * SI.units.m
+        fp = numpy.array([10., 12., 12.]) * SI.units.N
+        x = numpy.array([.5, 1.5]) * SI.units.m
+        f = numpy.interp(x, xp, fp)
+        self.assertEqual(numpy.shape(f), (2,))
+        self.assertEqual(f[0], SI.Force('11N'))
+        self.assertEqual(f[1], SI.Force('12N'))
