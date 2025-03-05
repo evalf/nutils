@@ -491,6 +491,14 @@ class Quantity(metaclass=Dimension):
         __dims, args = zip(*Quantity.__unpack(*args))
         return op(*args, **kwargs)
 
+    @register(numpy.interp)
+    def __interp(op, x, xp, fp, *args, **kwargs):
+        (dimx, x), (dimxp, xp), (dimfp, fp) = Quantity.__unpack(x, xp, fp)
+        if dimx != dimxp:
+            raise DimensionError(f'incompatible arguments for {op.__name__}: {dimx.__name__}, {dimxp.__name__}')
+        f = op(x, xp, fp, *args, **kwargs)
+        return dimfp.wrap(f)
+
     del register
 
     ## DEFINE OPERATORS
