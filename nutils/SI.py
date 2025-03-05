@@ -534,6 +534,20 @@ class Quantity(metaclass=Dimension):
             return self.__value / self.__class__(other).__value
         return self.__truediv(other)
 
+    # PASS ON NUMPY PROPERTIES FOR CONVENIENCE
+
+    @property
+    def shape(self):
+        return self.__value.shape
+
+    @property
+    def ndim(self):
+        return self.__value.ndim
+
+    @property
+    def T(self):
+        return type(self).wrap(self.__value.T)
+
     ## DISPATCH THIRD PARTY CALLS
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
