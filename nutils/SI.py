@@ -123,7 +123,9 @@ specific unit. The new Angle dimension makes this unit explicit:
 import fractions
 import operator
 import typing
-import functools
+import numpy
+from functools import partial, partialmethod, reduce
+from . import function
 
 
 class DimensionError(TypeError):
@@ -260,6 +262,17 @@ def parse(s):
     return q
 
 
+def _try_or_noimp(self, func, *args):
+    try:
+        return func(self, *args)
+    except DimensionError:
+        return NotImplemented
+
+
+def _reverse(self, func, arg):
+    return func(arg, self)
+
+
 class Quantity(metaclass=Dimension):
 
     def __init__(self, value):
@@ -322,96 +335,156 @@ class Quantity(metaclass=Dimension):
 
     ## POPULATE DISPATCH TABLE
 
-    def register(*names, __table=__DISPATCH_TABLE):
-        assert not any(name in __table for name in names)
-        return lambda f: __table.update(dict.fromkeys(names, f))
+    def register(func, __table=__DISPATCH_TABLE):
+        def r(dispatch_func):
+            __table[func] = partial(dispatch_func, func)
+            return dispatch_func
+        return r
 
-    @register('neg', 'negative', 'pos', 'positive', 'abs', 'absolute', 'sum',
-              'trace', 'ptp', 'amax', 'amin', 'max', 'min', 'mean', 'take',
-              'broadcast_to', 'transpose', 'getitem', 'opposite', 'jump',
-              'replace_arguments', 'linearize', 'derivative', 'integral',
-              'sample', 'scatter', 'kronecker', 'real', 'imag', 'conjugate',
-              'factor')
+    @register(function.derivative)
+    @register(function.factor)
+    @register(function.integral)
+    @register(function.jump)
+    @register(function.kronecker)
+    @register(function.linearize)
+    @register(function.opposite)
+    @register(function.replace_arguments)
+    @register(function.sample)
+    @register(function.scatter)
+    @register(numpy.absolute)
+    @register(numpy.amax)
+    @register(numpy.amin)
+    @register(numpy.broadcast_to)
+    @register(numpy.conjugate)
+    @register(numpy.imag)
+    @register(numpy.max)
+    @register(numpy.mean)
+    @register(numpy.min)
+    @register(numpy.negative)
+    @register(numpy.positive)
+    @register(numpy.ptp)
+    @register(numpy.real)
+    @register(numpy.sum)
+    @register(numpy.take)
+    @register(numpy.trace)
+    @register(numpy.transpose)
+    @register(operator.abs)
+    @register(operator.getitem)
+    @register(operator.neg)
+    @register(operator.pos)
     def __unary(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
         return dim0.wrap(op(arg0, *args[1:], **kwargs))
 
-    @register('add', 'sub', 'subtract', 'hypot', 'mod', 'maximum', 'minimum')
+    @register(numpy.add)
+    @register(numpy.hypot)
+    @register(numpy.maximum)
+    @register(numpy.minimum)
+    @register(numpy.subtract)
+    @register(operator.add)
+    @register(operator.mod)
+    @register(operator.sub)
     def __add_like(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         if dim0 != dim1:
             raise DimensionError(f'incompatible arguments for {op.__name__}: {dim0.__name__}, {dim1.__name__}')
         return dim0.wrap(op(arg0, arg1, *args[2:], **kwargs))
 
-    @register('mul', 'multiply', 'matmul')
+    @register(numpy.matmul)
+    @register(numpy.multiply)
+    @register(operator.matmul)
+    @register(operator.mul)
     def __mul_like(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         return (dim0 * dim1).wrap(op(arg0, arg1, *args[2:], **kwargs))
 
-    @register('truediv', 'true_divide', 'divide', 'grad', 'surfgrad', 'div',
-              'curl')
+    @register(function.curl)
+    @register(function.div)
+    @register(function.grad)
+    @register(function.surfgrad)
+    @register(numpy.divide)
+    @register(operator.truediv)
     def __div_like(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         return (dim0 / dim1).wrap(op(arg0, arg1, *args[2:], **kwargs))
 
-    @register('laplace')
+    @register(function.laplace)
     def __laplace(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         return (dim0 / dim1**2).wrap(op(arg0, arg1, *args[2:], **kwargs))
 
-    @register('sqrt')
+    @register(numpy.sqrt)
     def __sqrt(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
         return (dim0**fractions.Fraction(1,2)).wrap(op(arg0, *args[1:], **kwargs))
 
-    @register('setitem')
+    @register(operator.setitem)
     def __setitem(op, *args, **kwargs):
         (dim0, arg0), (dim2, arg2) = Quantity.__unpack(args[0], args[2])
         if dim0 != dim2:
             raise DimensionError(f'cannot assign {dim2.__name__} to {dim0.__name__}')
         return dim0.wrap(op(arg0, args[1], arg2, *args[3:], **kwargs))
 
-    @register('pow', 'power', 'jacobian')
+    @register(function.jacobian)
+    @register(numpy.power)
+    @register(operator.pow)
     def __pow_like(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
         return (dim0**args[1]).wrap(op(arg0, *args[1:], **kwargs))
 
-    @register('isfinite', 'isnan', 'shape', 'ndim', 'size', 'normal', 'normalized')
+    @register(function.normal)
+    @register(function.normalized)
+    @register(numpy.isfinite)
+    @register(numpy.isnan)
+    @register(numpy.ndim)
+    @register(numpy.shape)
+    @register(numpy.size)
     def __unary_op(op, *args, **kwargs):
         (_dim0, arg0), = Quantity.__unpack(args[0])
         return op(arg0, *args[1:], **kwargs)
 
-    @register('lt', 'le', 'eq', 'ne', 'gt', 'ge', 'equal', 'not_equal', 'less',
-              'less_equal', 'greater', 'greater_equal')
+    @register(numpy.equal)
+    @register(numpy.greater)
+    @register(numpy.greater_equal)
+    @register(numpy.less)
+    @register(numpy.less_equal)
+    @register(numpy.not_equal)
+    @register(operator.eq)
+    @register(operator.ge)
+    @register(operator.gt)
+    @register(operator.le)
+    @register(operator.lt)
+    @register(operator.ne)
     def __binary_op(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         if dim0 != dim1:
             raise DimensionError(f'incompatible arguments for {op.__name__}: {dim0.__name__}, {dim1.__name__}')
         return op(arg0, arg1, *args[2:], **kwargs)
 
-    @register('stack', 'concatenate')
+    @register(numpy.stack)
+    @register(numpy.concatenate)
     def __stack_like(op, *args, **kwargs):
         dims, arg0 = zip(*Quantity.__unpack(*args[0]))
         if any(dim != dims[0] for dim in dims[1:]):
             raise DimensionError(f'incompatible arguments for {op.__name__}: ' + ', '.join(dim.__name__ for dim in dims))
         return dims[0].wrap(op(arg0, *args[1:], **kwargs))
 
-    @register('curvature')
+    @register(function.curvature)
     def __evaluate(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
         return (dim0**-1).wrap(op(*args, **kwargs))
 
-    @register('evaluate')
+    @register(function.evaluate)
     def __evaluate(op, *args, **kwargs):
         dims, args = zip(*Quantity.__unpack(*args))
         return tuple(dim.wrap(ret) for (dim, ret) in zip(dims, op(*args, **kwargs)))
 
-    @register('field')
+    @register(function.field)
     def __field(op, *args, **kwargs):
         dims, args = zip(*Quantity.__unpack(*args)) # we abuse the fact that unpack str returns dimensionless
-        return functools.reduce(operator.mul, dims).wrap(op(*args, **kwargs))
+        return reduce(operator.mul, dims).wrap(op(*args, **kwargs))
 
-    @register('arguments_for')
+    @register(function.arguments_for)
     def __attribute(op, *args, **kwargs):
         __dims, args = zip(*Quantity.__unpack(*args))
         return op(*args, **kwargs)
@@ -420,41 +493,31 @@ class Quantity(metaclass=Dimension):
 
     ## DEFINE OPERATORS
 
-    def op(name, __table=__DISPATCH_TABLE):
-        dispatch, op = __table[name], getattr(operator, name)
-        return lambda *args: dispatch(op, *args)
-
-    __getitem__ = op('getitem')
-    __setitem__ = op('setitem')
-    __neg__ = op('neg')
-    __pos__ = op('pos')
-    __abs__ = op('abs')
-
-    def op(name, __table=__DISPATCH_TABLE):
-        dispatch, op = __table[name], getattr(operator, name)
-        return lambda *args: _try_or_noimp(dispatch, op, *args)
-
-    __lt__ = op('lt')
-    __le__ = op('le')
-    __eq__ = op('eq')
-    __ne__ = op('ne')
-    __gt__ = op('gt')
-    __ge__ = op('ge')
-
-    def op(name, __table=__DISPATCH_TABLE):
-        dispatch, op = __table[name], getattr(operator, name)
-        return lambda self, other: _try_or_noimp(dispatch, op, self, other), \
-               lambda self, other: _try_or_noimp(dispatch, op, other, self)
-
-    __add__, __radd__ = op('add')
-    __sub__, __rsub__ = op('sub')
-    __mul__, __rmul__ = op('mul')
-    __matmul__, __rmatmul__ = op('matmul')
-    __truediv, __rtruediv__ = op('truediv')
-    __mod__, __rmod__ = op('mod')
-    __pow__, __rpow__ = op('pow')
-
-    del op
+    __getitem__ = partialmethod(__DISPATCH_TABLE[operator.getitem])
+    __setitem__ = partialmethod(__DISPATCH_TABLE[operator.setitem])
+    __neg__ = partialmethod(__DISPATCH_TABLE[operator.neg])
+    __pos__ = partialmethod(__DISPATCH_TABLE[operator.pos])
+    __abs__ = partialmethod(__DISPATCH_TABLE[operator.abs])
+    __lt__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.lt])
+    __le__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.le])
+    __eq__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.eq])
+    __ne__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.ne])
+    __gt__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.gt])
+    __ge__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.ge])
+    __add__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.add])
+    __radd__ = partialmethod(_try_or_noimp, _reverse, __DISPATCH_TABLE[operator.add])
+    __sub__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.sub])
+    __rsub__ = partialmethod(_try_or_noimp, _reverse, __DISPATCH_TABLE[operator.sub])
+    __mul__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.mul])
+    __rmul__ = partialmethod(_try_or_noimp, _reverse, __DISPATCH_TABLE[operator.mul])
+    __matmul__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.matmul])
+    __rmatmul__ = partialmethod(_try_or_noimp, _reverse, __DISPATCH_TABLE[operator.matmul])
+    __truediv = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.truediv])
+    __rtruediv__ = partialmethod(_try_or_noimp, _reverse,__DISPATCH_TABLE[operator.truediv])
+    __mod__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.mod])
+    __rmod__ = partialmethod(_try_or_noimp, _reverse, __DISPATCH_TABLE[operator.mod])
+    __pow__ = partialmethod(_try_or_noimp, __DISPATCH_TABLE[operator.pow])
+    __rpow__ = partialmethod(_try_or_noimp, _reverse, __DISPATCH_TABLE[operator.pow])
 
     def __truediv__(self, other):
         if type(other) is str:
@@ -466,23 +529,23 @@ class Quantity(metaclass=Dimension):
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if method != '__call__':
             return NotImplemented
-        f = self.__DISPATCH_TABLE.get(ufunc.__name__)
+        f = self.__DISPATCH_TABLE.get(ufunc)
         if f is None:
             return NotImplemented
-        return f(ufunc, *inputs, **kwargs)
+        return f(*inputs, **kwargs)
 
     def __array_function__(self, func, types, args, kwargs):
-        f = self.__DISPATCH_TABLE.get(func.__name__)
+        f = self.__DISPATCH_TABLE.get(func)
         if f is None:
             return NotImplemented
-        return f(func, *args, **kwargs)
+        return f(*args, **kwargs)
 
     @classmethod
     def __nutils_dispatch__(cls, func, args, kwargs):
-        f = cls.__DISPATCH_TABLE.get(func.__name__)
+        f = cls.__DISPATCH_TABLE.get(func)
         if f is None:
             return NotImplemented
-        return f(func, *args, **kwargs)
+        return f(*args, **kwargs)
 
 
 class Units(dict):
@@ -520,13 +583,6 @@ def _split_factors(s):
                 power = fractions.Fraction(int(numer or 1), int(denom or 1))
                 yield base, power, isnumer
             isnumer = False
-
-
-def _try_or_noimp(func, *args):
-    try:
-        return func(*args)
-    except DimensionError:
-        return NotImplemented
 
 
 ## SI DIMENSIONS
