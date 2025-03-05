@@ -269,3 +269,8 @@ class Quantity(unittest.TestCase):
         self.assertEqual(F23[1, 0], SI.Force('4N'))
         self.assertEqual(F23[1, 1], SI.Force('5N'))
         self.assertEqual(F23[1, 2], SI.Force('6N'))
+
+    def test_norm(self):
+        F = numpy.array([3.,4.]) * SI.units.N
+        Fnorm = numpy.linalg.norm(F, axis=0)
+        self.assertEqual(Fnorm, SI.Force('5N'))

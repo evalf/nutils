@@ -357,6 +357,7 @@ class Quantity(metaclass=Dimension):
     @register(numpy.broadcast_to)
     @register(numpy.conjugate)
     @register(numpy.imag)
+    @register(numpy.linalg.norm)
     @register(numpy.max)
     @register(numpy.mean)
     @register(numpy.min)
