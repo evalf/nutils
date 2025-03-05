@@ -364,6 +364,7 @@ class Quantity(metaclass=Dimension):
     @register(numpy.positive)
     @register(numpy.ptp)
     @register(numpy.real)
+    @register(numpy.reshape)
     @register(numpy.sum)
     @register(numpy.take)
     @register(numpy.trace)

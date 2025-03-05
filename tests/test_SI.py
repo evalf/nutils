@@ -258,3 +258,14 @@ class Quantity(unittest.TestCase):
     def test_hash(self):
         v = SI.Velocity('2m/s')
         h = hash(v)
+
+    def test_reshape(self):
+        F32 = numpy.array([[1.,2.,3.],[4.,5.,6.]]) * SI.units.N
+        F23 = numpy.reshape(F32, (2,3))
+        self.assertEqual(numpy.shape(F23), (2, 3))
+        self.assertEqual(F23[0, 0], SI.Force('1N'))
+        self.assertEqual(F23[0, 1], SI.Force('2N'))
+        self.assertEqual(F23[0, 2], SI.Force('3N'))
+        self.assertEqual(F23[1, 0], SI.Force('4N'))
+        self.assertEqual(F23[1, 1], SI.Force('5N'))
+        self.assertEqual(F23[1, 2], SI.Force('6N'))
