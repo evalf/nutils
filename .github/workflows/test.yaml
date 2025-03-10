@@ -280,7 +280,5 @@ jobs:
               fi
               ;;
           esac
-          # Login without exposing the password via the command line as recommended by GitHub
-          # (https://docs.github.com/en/free-pro-team@latest/actions/reference/encrypted-secrets#using-encrypted-secrets-in-a-workflow).
-          printenv _password | podman login --username "$_username" --password-stdin "${_repository%%/*}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login --username ${{ github.actor }} --password-stdin "${_repository%%/*}"
           podman push "$_image_id" "docker://$_repository:$_tag"
