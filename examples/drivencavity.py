@@ -151,6 +151,11 @@ def main(nelems: int = 32,
         args1 = System(res, trial='u,p', test='v,q').solve(arguments=args0, constrain=cons, tol=1e-10, method=LinesearchNewton())
         postprocess(domain, ns, **args1)
 
+    u, ω = domain.locate(ns.x, [[.5, .5], [0, .95]], tol=1e-14).eval(['u_i', 'ω'] @ ns, **args1)
+    log.info(f'center velocity: {u[0,0]}, {u[0,1]}')
+    log.info(f'center vorticity: {ω[0]}')
+    log.info(f'upper-left (0,.95) vorticity: {ω[1]}')
+
     return args0, args1
 
 
