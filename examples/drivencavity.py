@@ -1,6 +1,7 @@
 from nutils import mesh, function, export, testing
 from nutils.solver import System, LinesearchNewton
 from nutils.expression_v2 import Namespace
+from matplotlib.collections import LineCollection
 import treelog as log
 import numpy
 
@@ -90,6 +91,8 @@ def main(nelems: int = 32,
         raise Exception(f'compatible mode requires square elements and weak boundary conditions')
 
     domain, geom = mesh.unitsquare(nelems, etype)
+    domain.center_hor = domain.trim(geom[1] - .5, maxrefine=0).boundary['trimmed'].sample('bezier', 9)
+    domain.center_ver = domain.trim(geom[0] - .5, maxrefine=0).boundary['trimmed'].sample('bezier', 9)
 
     ns = Namespace()
     ns.δ = function.eye(domain.ndims)
@@ -176,23 +179,23 @@ def postprocess(domain, ns, **arguments):
         fig.colorbar(im, label='vorticity')
         ax.tricontour(*x.T, bezier.tri, ω, levels=numpy.arange(-5, 6), colors='k', linestyles='solid', linewidths=.5, zorder=9)
 
-    x = numpy.linspace(0, 1, 1001)
-    v = domain.locate(ns.x, numpy.stack([x, numpy.repeat(.5, len(x))], 1), tol=1e-10).eval(ns.u[1], **arguments)
-    imin = numpy.argmin(v)
-    imax = numpy.argmax(v)
+    xv = numpy.stack(domain.center_hor.eval(['x_0', 'u_1'] @ ns, **arguments), axis=1)
+    xmin, vmin = xv[numpy.argmin(xv[:,1])]
+    xmax, vmax = xv[numpy.argmax(xv[:,1])]
     with export.mplfigure('cross-hor.png', dpi=150) as fig:
         ax = fig.add_subplot(111, xlim=(0,1), title='horizontal cross section at y=0.5', xlabel='x-coordinate', ylabel='vertical velocity')
-        ax.plot(x, v)
-        ax.annotate(f'x={x[imax]:.3f}\nv={v[imax]:.3f}', xy=(x[imax], v[imax]), xytext=(x[imax], 0), arrowprops=dict(arrowstyle="->"), ha='center', va='center')
-        ax.annotate(f'x={x[imin]:.3f}\nv={v[imin]:.3f}', xy=(x[imin], v[imin]), xytext=(x[imin], 0), arrowprops=dict(arrowstyle="->"), ha='center', va='center')
+        ax.add_collection(LineCollection(xv[domain.center_hor.tri]))
+        ax.autoscale(enable=True, axis='y')
+        ax.annotate(f'x={xmax:.5f}\nv={vmax:.5f}', xy=(xmax, vmax), xytext=(xmax, 0), arrowprops=dict(arrowstyle="->"), ha='center', va='center')
+        ax.annotate(f'x={xmin:.5f}\nv={vmin:.5f}', xy=(xmin, vmin), xytext=(xmin, 0), arrowprops=dict(arrowstyle="->"), ha='center', va='center')
 
-    y = numpy.linspace(0, 1, 1001)
-    u = domain.locate(ns.x, numpy.stack([numpy.repeat(.5, len(y)), y], 1), tol=1e-10).eval(ns.u[0], **arguments)
-    imin = numpy.argmin(u)
+    uy = numpy.stack(domain.center_ver.eval(['u_0', 'x_1'] @ ns, **arguments), axis=1)
+    umin, ymin = uy[numpy.argmin(uy[:,0])]
     with export.mplfigure('cross-ver.png', dpi=150) as fig:
         ax = fig.add_subplot(111, ylim=(0,1), title='vertical cross section at x=0.5', ylabel='y-coordinate', xlabel='horizontal velocity')
-        ax.plot(u, y)
-        ax.annotate(f'y={y[imin]:.3f}\nu={u[imin]:.3f}', xy=(u[imin], y[imin]), xytext=(0, y[imin]), arrowprops=dict(arrowstyle="->"), ha='left', va='center')
+        ax.add_collection(LineCollection(uy[domain.center_hor.tri]))
+        ax.autoscale(enable=True, axis='x')
+        ax.annotate(f'y={ymin:.5f}\nu={umin:.5f}', xy=(umin, ymin), xytext=(0, ymin), arrowprops=dict(arrowstyle="->"), ha='left', va='center')
 
 
 class test(testing.TestCase):
