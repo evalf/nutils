@@ -15,7 +15,7 @@ out in element loops. For lower level operations topologies can be used as
 """
 
 from . import element, function, evaluable, _util as util, parallel, numeric, cache, transform, transformseq, warnings, types, points, sparse
-from ._util import single_or_multiple
+from ._util import single_or_multiple, nutils_dispatch
 from functools import cached_property
 from .elementseq import References
 from .pointsseq import PointsSequence
@@ -781,6 +781,7 @@ class Topology:
         selected = types.frozenarray(numpy.unique(ielem[isactive]))
         return self[selected]
 
+    @nutils_dispatch
     @log.withcontext
     def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False) -> Sample:
         '''Create a sample based on physical coordinates.

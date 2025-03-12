@@ -125,7 +125,7 @@ import operator
 import typing
 import numpy
 from functools import partial, partialmethod, reduce
-from . import function
+from . import function, topology
 
 
 class DimensionError(TypeError):
@@ -498,6 +498,17 @@ class Quantity(metaclass=Dimension):
             raise DimensionError(f'incompatible arguments for {op.__name__}: {dimx.__name__}, {dimxp.__name__}')
         f = op(x, xp, fp, *args, **kwargs)
         return dimfp.wrap(f)
+
+    @register(topology.Topology.locate)
+    def __locate(op, topo, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False):
+        (dimgeom, geom), (dimcoords, coords), (dimtol, tol), (dimmaxdist, maxdist) = Quantity.__unpack(geom, coords, tol, maxdist)
+        if dimgeom != dimcoords:
+            raise DimensionError(f'incompatible arguments for locate: {dimgeom.__name__}, {dimcoords.__name__}')
+        if not (dimtol == Dimensionless and tol is None or dimtol == dimgeom):
+            raise DimensionError(f'invalid dimension for tol: got {dimtol.__name__}, expected {dimgeom.__name__}')
+        if not (dimmaxdist == Dimensionless and maxdist is None or dimmaxdist == dimgeom):
+            raise DimensionError(f'invalid dimension for maxdist: got {dimmaxdist.__name__}, expected {dimgeom.__name__}')
+        return op(topo, geom, coords, tol=tol, eps=eps, maxiter=maxiter, arguments=arguments, weights=weights, maxdist=maxdist, ischeme=ischeme, scale=scale, skip_missing=skip_missing)
 
     del register
 

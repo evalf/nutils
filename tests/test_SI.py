@@ -1,4 +1,4 @@
-from nutils import SI
+from nutils import SI, mesh
 
 import numpy
 import pickle
@@ -283,3 +283,22 @@ class Quantity(unittest.TestCase):
         self.assertEqual(numpy.shape(f), (2,))
         self.assertEqual(f[0], SI.Force('11N'))
         self.assertEqual(f[1], SI.Force('12N'))
+
+
+class Locate(unittest.TestCase):
+
+    def test_ok(self):
+        topo, geom = mesh.rectilinear([2,3])
+        geom *= SI.Length('10m')
+        a = numpy.array([15, 25]) * SI.Length('m')
+        b = numpy.array([1, 1]) * SI.Length('m')
+        tol = SI.Length('1nm')
+        sample = topo.locate(geom, numpy.stack([a, b]), tol=tol)
+        a_, b_ = sample.eval(geom)
+        self.assertLess(numpy.linalg.norm(a - a_), tol)
+        self.assertLess(numpy.linalg.norm(b - b_), tol)
+
+    def test_not_ok(self):
+        topo, geom = mesh.rectilinear([2,3])
+        with self.assertRaises(SI.DimensionError):
+            topo.locate(geom * SI.Length('10m'), numpy.array([[15, 25]]) * SI.Mass('kg'))
