@@ -1,6 +1,7 @@
 from nutils import mesh, function, export, testing
 from nutils.solver import System, LinesearchNewton
 from nutils.expression_v2 import Namespace
+from matplotlib.collections import LineCollection
 import treelog as log
 import numpy
 
@@ -90,6 +91,8 @@ def main(nelems: int = 32,
         raise Exception(f'compatible mode requires square elements and weak boundary conditions')
 
     domain, geom = mesh.unitsquare(nelems, etype)
+    domain.center_hor = domain.trim(geom[1] - .5, maxrefine=0).boundary['trimmed'].sample('bezier', 9)
+    domain.center_ver = domain.trim(geom[0] - .5, maxrefine=0).boundary['trimmed'].sample('bezier', 9)
 
     ns = Namespace()
     ns.δ = function.eye(domain.ndims)
@@ -110,6 +113,7 @@ def main(nelems: int = 32,
     ns.v = function.replace_arguments(ns.u, 'u:v')
     ns.q = function.replace_arguments(ns.p, 'p:q')
     ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
+    ns.ω = 'ε_ij ∇_i(u_j)' # vorticity
 
     # weak formulation for Stokes flow, over-integrating for improved
     # efficiency when we turn this to Navier-Stokes later on
@@ -134,8 +138,8 @@ def main(nelems: int = 32,
         res += domain.boundary.integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=2*degree)
 
     with log.context('stokes'):
-        args0 = System(res, trial='u,p', test='v,q').solve(constrain=cons)
-        postprocess(domain, ns, **args0)
+        args = System(res, trial='u,p', test='v,q').solve(constrain=cons)
+        postprocess(domain, ns, **args)
 
     # change to Navier-Stokes by adding convection
     res += domain.integral('v_i ∇_j(u_i) u_j dV' @ ns, degree=degree*3)
@@ -144,10 +148,15 @@ def main(nelems: int = 32,
         res += domain.integral('.5 u_i v_i ∇_j(u_j) dV' @ ns, degree=degree*3)
 
     with log.context('navier-stokes'):
-        args1 = System(res, trial='u,p', test='v,q').solve(arguments=args0, constrain=cons, tol=1e-10, method=LinesearchNewton())
-        postprocess(domain, ns, **args1)
+        args = System(res, trial='u,p', test='v,q').solve(arguments=args, constrain=cons, tol=1e-10, method=LinesearchNewton())
+        postprocess(domain, ns, **args)
 
-    return args0, args1
+    u, ω = domain.locate(ns.x, [[.5, .5], [0, .95]], tol=1e-14).eval(['u_i', 'ω'] @ ns, **args)
+    log.info(f'center velocity: {u[0,0]}, {u[0,1]}')
+    log.info(f'center vorticity: {ω[0]}')
+    log.info(f'upper-left (0,.95) vorticity: {ω[1]}')
+
+    return u, ω
 
 
 # Postprocessing in this script is separated so that it can be reused for the
@@ -162,113 +171,75 @@ def postprocess(domain, ns, **arguments):
     consψ.flat[0] = True # point constraint
     arguments = System(sqr, trial='ψ').solve(arguments=arguments, constrain={'ψ': consψ})
 
-    bezier = domain.sample('bezier', 9)
-    x, u, p, ψ = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'p', 'ψ'] @ ns, **arguments)
-
-    with export.mplfigure('flow.png', dpi=150) as fig: # plot velocity as field, pressure as contours, streamlines as dashed
-        ax = fig.add_subplot(111, aspect='equal')
+    bezier = domain.sample('bezier', 4)
+    x, u, ψ, ω = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'ψ', 'ω'] @ ns, **arguments)
+    with export.mplfigure('velocity.png', dpi=150) as fig: # plot velocity as field, streamlines as contours
+        ax = fig.add_subplot(111)
         im = export.triplot(ax, x, u, tri=bezier.tri, hull=bezier.hull, cmap='hot_r', clim=(0,1))
         fig.colorbar(im, label='velocity')
-        ax.tricontour(x[:, 0], x[:, 1], bezier.tri, ψ, levels=numpy.percentile(ψ, numpy.arange(2,100,3)), colors='k', linestyles='solid', linewidths=.5, zorder=9)
+        ax.tricontour(*x.T, bezier.tri, ψ, levels=numpy.unique(numpy.percentile(ψ, numpy.arange(2,100,3))), colors='k', linestyles='solid', linewidths=.5, zorder=9)
+    with export.mplfigure('vorticity.png', dpi=150) as fig: # plot vorticity as field with contours
+        ax = fig.add_subplot(111)
+        im = export.triplot(ax, x, ω, tri=bezier.tri, hull=bezier.hull, cmap='bwr', clim=(-5,5))
+        fig.colorbar(im, label='vorticity')
+        ax.tricontour(*x.T, bezier.tri, ω, levels=numpy.arange(-5, 6), colors='k', linestyles='solid', linewidths=.5, zorder=9)
 
-    x = numpy.linspace(0, 1, 1001)
-    v = domain.locate(ns.x, numpy.stack([x, numpy.repeat(.5, len(x))], 1), tol=1e-10).eval(ns.u[1], **arguments)
-    imin = numpy.argmin(v)
-    imax = numpy.argmax(v)
+    xv = numpy.stack(domain.center_hor.eval(['x_0', 'u_1'] @ ns, **arguments), axis=1)
+    xmin, vmin = xv[numpy.argmin(xv[:,1])]
+    xmax, vmax = xv[numpy.argmax(xv[:,1])]
     with export.mplfigure('cross-hor.png', dpi=150) as fig:
         ax = fig.add_subplot(111, xlim=(0,1), title='horizontal cross section at y=0.5', xlabel='x-coordinate', ylabel='vertical velocity')
-        ax.plot(x, v)
-        ax.annotate(f'x={x[imax]:.3f}\nv={v[imax]:.3f}', xy=(x[imax], v[imax]), xytext=(x[imax], 0), arrowprops=dict(arrowstyle="->"), ha='center', va='center')
-        ax.annotate(f'x={x[imin]:.3f}\nv={v[imin]:.3f}', xy=(x[imin], v[imin]), xytext=(x[imin], 0), arrowprops=dict(arrowstyle="->"), ha='center', va='center')
+        ax.add_collection(LineCollection(xv[domain.center_hor.tri]))
+        ax.autoscale(enable=True, axis='y')
+        ax.annotate(f'x={xmax:.5f}\nv={vmax:.5f}', xy=(xmax, vmax), xytext=(xmax, 0), arrowprops=dict(arrowstyle="->"), ha='center', va='center')
+        ax.annotate(f'x={xmin:.5f}\nv={vmin:.5f}', xy=(xmin, vmin), xytext=(xmin, 0), arrowprops=dict(arrowstyle="->"), ha='center', va='center')
 
-    y = numpy.linspace(0, 1, 1001)
-    u = domain.locate(ns.x, numpy.stack([numpy.repeat(.5, len(y)), y], 1), tol=1e-10).eval(ns.u[0], **arguments)
-    imin = numpy.argmin(u)
+    uy = numpy.stack(domain.center_ver.eval(['u_0', 'x_1'] @ ns, **arguments), axis=1)
+    umin, ymin = uy[numpy.argmin(uy[:,0])]
     with export.mplfigure('cross-ver.png', dpi=150) as fig:
         ax = fig.add_subplot(111, ylim=(0,1), title='vertical cross section at x=0.5', ylabel='y-coordinate', xlabel='horizontal velocity')
-        ax.plot(u, y)
-        ax.annotate(f'y={y[imin]:.3f}\nu={u[imin]:.3f}', xy=(u[imin], y[imin]), xytext=(0, y[imin]), arrowprops=dict(arrowstyle="->"), ha='left', va='center')
+        ax.add_collection(LineCollection(uy[domain.center_hor.tri]))
+        ax.autoscale(enable=True, axis='x')
+        ax.annotate(f'y={ymin:.5f}\nu={umin:.5f}', xy=(umin, ymin), xytext=(0, ymin), arrowprops=dict(arrowstyle="->"), ha='left', va='center')
 
 
 class test(testing.TestCase):
 
     def test_baseline(self):
-        args0, args1 = main(nelems=3, degree=2, reynolds=100.)
-        with self.subTest('stokes-velocity'):
-            self.assertAlmostEqual64(args0['u'], '''
-                eNo9jSsLwlAcxQ82gwOjoFZ1ONA9NK6vC2Ky2cU2QeziFxDBJIKfZLv/O92DYRqo6waDGBR3GXjKgfPg
-                Bwh9A6AYA80TMOwCU0OkcwVonGMl8Uaa5C90i9+MipP2tn1gEgFXvgpDGqgRK+smPTWbaqqcdWMfeBPw
-                YcDGBdLMJR3Y/X+zdkhHHrEHM6lENt25+OU8OUi8PUn+klm87lacqiN4uQrZ4tUCLh3g4AFrV6Q/uctG
-                gQ==''')
-        with self.subTest('stokes-pressure'):
-            self.assertAlmostEqual64(args0['p'][1:], '''
-                eNoBHgDh/+vVsNEXy6jTbiq1z7Av9C0mLJkw1NDTLEEtEC/xNAwED0s=''')
-        with self.subTest('navier-stokes-velocity'):
-            self.assertAlmostEqual64(args1['u'], '''
-                eNpjYAABz4sMDP81GRh69BgYTgBxkQlIdCVQ5Nb5R/oSV+KNW8/+NXlidMOE4WS+mZM5A8M1JQaGuLMt
-                ejPOpBgtOs1vonRe0IT59ErjfWZAuasMDB1n9M9vOG2kL3B6l1H0uUXGRQZXjVYB9a2/xMCQfW7FueVn
-                nM/5nf5xevqZxDOq5w4bCwLlOoD6XDV/n1t//s5ZvjPzTjmdDjx55+Slky/MGaDgHFB3vz4DgynQfS9O
-                A3WcBIkCAB7aSkk=''')
-        with self.subTest('navier-stokes-pressure'):
-            self.assertAlmostEqual64(args1['p'][1:], '''
-                eNpz01W9oHVmuU7SJYtzgherdcr0n59dfiZT11yP97yCGQDN0Azu''')
+        (ucc, uul), (ωcc, ωul) = main(nelems=3, degree=2, reynolds=100.)
+        self.assertAlmostEqual(ucc[0], -0.19499, places=5)
+        self.assertAlmostEqual(ucc[1], 0.04884, places=5)
+        self.assertAlmostEqual(ωcc, -1.22863, places=5)
+        self.assertEqual(uul[0], 0)
+        self.assertAlmostEqual(uul[1], 0.05882, places=5)
+        self.assertAlmostEqual(ωul, 0.65710, places=5)
 
     def test_mixed(self):
-        args0, args1 = main(nelems=3, etype='mixed', degree=2, reynolds=100.)
-        with self.subTest('stokes-velocity'):
-            self.assertAlmostEqual64(args0['u'], '''
-                eNpjYAABHx0Ghrbz+lcYGJZpR2hrnDtm/EObgWHvWSGD1WeuGTIwmJ9jYLAwnH32p8nKMzFmFqfVTJTP
-                aBszMOw0AenebmJh9tuMgWHGWX9jQ3MGhr9nLA35zxRcWHOm4mzOBQaG55cZGCTPGV6fdUrhwtEzvhe2
-                n+Y8k3RG+Mwio99nuoHqg4G48WzCmTignYUXDfXNzoedATuL4bMeA0Op9qczWqfXnTl2ioHhINAdHufv
-                ntx18qoZSH7FSRAJAB13Sc0=''')
-        with self.subTest('stokes-pressure'):
-            self.assertAlmostEqual64(args0['p'][1:], '''
-                eNp7pKl+nf1KznmxS62ns/W+az/TNTL4ondU1/46t6GKKQDiJg1H''')
-        with self.subTest('navier-stokes-velocity'):
-            self.assertAlmostEqual64(args1['u'], '''
-                eNpjYACBVVcYGH5fZAKSChcLLv05p2jsp8XA4Hhe4YrV2QmGDAxHzzMwuBpknHcz4T3nYGp7JslY+ewy
-                YwaGamOQ7jyjzaZJZgwMYaeFTR4D6TfnvhgUnanXTzuz4WzmBQaG6MsMDEcueOpxnF5iwHZ+kfHaUypn
-                n5xefpbrzEYjZ3MGhiogDr/YYbxbjYHhrH6lYcY55zNgZzGcNWBgUL0Uctr3zLzTt08xMOScZmCYdnbl
-                qQMnpcxB8konQSQACVZG3A==''')
-        with self.subTest('navier-stokes-pressure'):
-            self.assertAlmostEqual64(args1['p'][1:], '''
-                eNrbqjVZs1/ry/n48z1nSrW9L83RkTmneNZMO/TCOUNbMwDktQ3z''')
+        (ucc, uul), (ωcc, ωul) = main(nelems=3, etype='mixed', degree=2, reynolds=100.)
+        self.assertAlmostEqual(ucc[0], -0.19341, places=5)
+        self.assertAlmostEqual(ucc[1], 0.03757, places=5)
+        self.assertAlmostEqual(ωcc, -0.71609, places=5)
+        self.assertEqual(uul[0], 0)
+        self.assertAlmostEqual(uul[1], 0.03627, places=5)
+        self.assertAlmostEqual(ωul, 1.79983, places=5)
 
     def test_compatible(self):
-        args0, args1 = main(nelems=3, degree=2, reynolds=100., compatible=True)
-        with self.subTest('stokes-velocity'):
-            self.assertAlmostEqual64(args0['u'], '''
-                eNpjYIAAvwvdBr9O2Zk90E8+rXQ6yxzGZ4CDTfr3z0H45hc2mjSagFgn9f1P15+G6Fc0PHSSgQEAx7kX
-                6A==''')
-        with self.subTest('stokes-pressure'):
-            self.assertAlmostEqual64(args0['p'][1:], '''
-                eNoL1u+7NOfUR929ugvORxlU6W7V1TcUuyiif/PKCf1yUwDfRw2t''')
-        with self.subTest('navier-stokes-velocity'):
-            self.assertAlmostEqual64(args1['u'], '''
-                eNpjYICA1HNRRkGnZ5r26m86bX3awvyBftS5C6dOmDHAwWxDmbMzTUEsrfMrTA6YgFjKV53OOJ0FsR7o
-                F561OMnAAAC5tRfX''')
-        with self.subTest('navier-stokes-pressure'):
-            self.assertAlmostEqual64(args1['p'][1:], '''
-                eNoz1VYx3HT6t16w/uKz73Uv6R7RNzx35swh7XdXrQ0TzADbMQ6l''')
+        (ucc, uul), (ωcc, ωul) = main(nelems=3, degree=2, reynolds=100., compatible=True)
+        self.assertAlmostEqual(ucc[0], -0.21725, places=5)
+        self.assertAlmostEqual(ucc[1], 0.04419, places=5)
+        self.assertAlmostEqual(ωcc, -0.69778, places=5)
+        self.assertEqual(uul[0], 0)
+        self.assertAlmostEqual(uul[1], 0.10897, places=5)
+        self.assertAlmostEqual(ωul, -0.10411, places=5)
 
     def test_strong(self):
-        args0, args1 = main(nelems=3, degree=2, reynolds=100., strongbc=True)
-        with self.subTest('stokes-velocity'):
-            self.assertAlmostEqual64(args0['u'], '''
-                eNpjYMAPDl2wNEg9p2D8QeOQcafBJ9OTJ6abB5lD5E6eVb348oyVkfSZf8YFZ6RNZp6+ZwiTO3KGgUEP
-                iNedYmDoPc3AsMGEgQGh77beyzPHzkqfYTpTcObp6Zmnlc7B5A5dOH4+9dyDMx807M50GvCdOnki8wRM
-                DhcAAEYiNtQ=''')
-        with self.subTest('stokes-pressure'):
-            self.assertAlmostEqual64(args0['p'][1:], '''
-                eNoBHgDh/3fRlNYxy7PR0NVKz1ktVi1E1HowsdGJ07Qt/9PINA6QEUk=''')
-        with self.subTest('navier-stokes-velocity'):
-            self.assertAlmostEqual64(args1['u'], '''
-                eNpjYMAPAs4H6M8zaDJOO91vKma628TihKx5kDlEbv2Z5fqFZ24aKZ/mNplmmGJy5eRbY5jcpdOGF+tP
-                /9BPPW1gXH6W2eSpkds5mBz72fvnUs/EnHt+etXpCWdZzgSd3W8Ck1M9L3zGGyi/4Pz80+ZnNp44c9L8
-                BEwOFwAA4RM3QA==''')
-        with self.subTest('navier-stokes-pressure'):
-            self.assertAlmostEqual64(args1['p'][1:], '''
-                eNoBHgDh//ot489SzMEsntHezWTPAC+jL+XN/8wF02UxTc1JNhf0ELc=''')
+        (ucc, uul), (ωcc, ωul) = main(nelems=3, degree=2, reynolds=100., strongbc=True)
+        self.assertAlmostEqual(ucc[0], -0.18231, places=5)
+        self.assertAlmostEqual(ucc[1], 0.05775, places=5)
+        self.assertAlmostEqual(ωcc, -1.44979, places=5)
+        self.assertEqual(uul[0], 0)
+        self.assertEqual(uul[1], 0)
+        self.assertAlmostEqual(ωul, 1.41277, places=5)
 
 
 if __name__ == '__main__':
@@ -276,4 +247,4 @@ if __name__ == '__main__':
     cli.run(main)
 
 
-# example:tags=Stokes,Navier-Stokes,Taylor-Hood,Raviard-Thomas:thumbnail=0
+# example:tags=benchmark,Navier-Stokes,Taylor-Hood,Raviard-Thomas:thumbnail=0
