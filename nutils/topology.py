@@ -781,6 +781,7 @@ class Topology:
         selected = types.frozenarray(numpy.unique(ielem[isactive]))
         return self[selected]
 
+    @log.withcontext
     def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False) -> Sample:
         '''Create a sample based on physical coordinates.
 
@@ -839,6 +840,10 @@ class Topology:
         located : :class:`nutils.sample.Sample`
         '''
 
+        if ischeme is not None:
+            warnings.deprecation('the ischeme argument for locate is no longer used and will be removed in Nutils 10')
+        if scale is not None:
+            warnings.deprecation('the scale argument for locate is no longer used and will be removed in Nutils 10')
         if max(tol, eps) <= 0:
             raise ValueError('locate requires either tol or eps to be strictly positive')
         coords = numpy.asarray(coords, dtype=float)
@@ -849,7 +854,10 @@ class Topology:
             raise ValueError('invalid geometry or point shape for {}D topology'.format(self.ndims))
         if skip_missing and weights is not None:
             raise ValueError('weights and skip_missing are mutually exclusive')
-        arguments = dict(arguments or ())
+        ielems, points = self._locate(geom, coords, tol, eps, dict(arguments or ()), maxiter, maxdist, skip_missing)
+        return self._sample(ielems, points, weights)
+
+    def _locate(self, geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing):
         centroids = self.sample('_centroid', None).eval(geom, **arguments)
         assert len(centroids) == len(self)
         ielems = parallel.shempty(len(coords), dtype=int)
@@ -900,12 +908,13 @@ class Topology:
                         # loop and subsequently raise from the main process.
                         for ipoint in ipoints:
                             pass
-        if -1 not in ielems: # all points are found
-            return self._sample(ielems, points, weights)
-        elif skip_missing: # not all points are found and that's ok, we just leave those out
-            return self._sample(ielems[ielems != -1], points[ielems != -1])
-        else: # not all points are found and that's an error
+        if -1 not in ielems:
+            found = ... # all
+        elif skip_missing:
+            found = ielems != -1
+        else:
             raise LocateError(f'failed to locate point: {coords[ielems==-1][0]}')
+        return ielems[found], points[found]
 
     def _lower_args(self, ielem, point):
         raise NotImplementedError
@@ -1455,8 +1464,8 @@ class _WithGroupAliases(_TensorialTopology):
         else:
             return super().indicator(subtopo)
 
-    def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False) -> Sample:
-        return self.parent.locate(geom, coords, tol=tol, eps=eps, maxiter=maxiter, arguments=arguments, weights=weights, maxdist=maxdist, ischeme=ischeme, scale=scale, skip_missing=skip_missing)
+    def _locate(self, geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing):
+        return self.parent._locate(geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing)
 
     def boundary_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
         return _WithGroupAliases(self.parent.boundary_spaces_unchecked(spaces), self.bgroups, types.frozendict({}), types.frozendict({}))
@@ -1910,8 +1919,8 @@ class WithGroupsTopology(TransformChainsTopology):
         groups = [{name: topo.refined if isinstance(topo, TransformChainsTopology) else topo for name, topo in groups.items()} for groups in (self.vgroups, self.bgroups, self.igroups, self.pgroups)]
         return self.basetopo.refined.withgroups(*groups)
 
-    def locate(self, geom, coords, **kwargs):
-        return self.basetopo.locate(geom, coords, **kwargs)
+    def _locate(self, geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing):
+        return self.basetopo._locate(geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing)
 
 
 class OppositeTopology(TransformChainsTopology):
@@ -2374,27 +2383,6 @@ class StructuredTopology(TransformChainsTopology):
         axes = [axis.refined for axis in self.axes]
         return StructuredTopology(self.space, self.root, axes, self.nrefine+1, bnames=self._bnames)
 
-    def locate(self, geom, coords, *, tol=0, eps=0, weights=None, skip_missing=False, arguments=None, **kwargs):
-        coords = numpy.asarray(coords, dtype=float)
-        if geom.ndim == 0:
-            geom = geom[_]
-            coords = coords[..., _]
-        if not geom.shape == coords.shape[1:] == (self.ndims,):
-            raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
-        if tol or eps:
-            if arguments:
-                geom0, scale, error = self._asaffine(geom, arguments)
-            elif geom is getattr(self, '_asaffine_geom', None):
-                log.debug('locate found previously computed affine values')
-                geom0, scale, error = self._asaffine_retval
-            else:
-                self._asaffine_geom = geom
-                geom0, scale, error = self._asaffine_retval = self._asaffine(geom, {})
-            if all(error <= numpy.maximum(tol, eps * scale)):
-                log.debug('locate detected linear geometry: x = {} + {} xi ~{}'.format(geom0, scale, error))
-                return self._locate(geom0, scale, coords, eps=eps, weights=weights, skip_missing=skip_missing)
-        return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, skip_missing=skip_missing, arguments=arguments, **kwargs)
-
     def _asaffine(self, geom, arguments):
         # determine geom0, scale, error such that geom ~= geom0 + index * scale + error
         n = 2 + (1 in self.shape) # number of sample points required to establish nonlinearity
@@ -2411,19 +2399,25 @@ class StructuredTopology(TransformChainsTopology):
             geom_[...,idim] -= xmin[idim] + dx[idim] * numpy.arange(sampleshape[idim]).reshape([-1 if i == idim else 1 for i in range(self.ndims)])
         return xmin - dx/2, dx * n, numpy.abs(geom_).reshape(-1, self.ndims).max(axis=0)
 
-    def _locate(self, geom0, scale, coords, *, eps=0, weights=None, skip_missing=False):
+    def _locate(self, geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing):
+        geom0, scale, error = affine = self._asaffine_retval if getattr(self, '_asaffine_geom', None) is geom else self._asaffine(geom, arguments)
+        if any(error > numpy.maximum(tol, eps * scale)):
+            return super()._locate(geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing)
+        if not arguments: # store for next time
+            self._asaffine_geom = geom
+            self._asaffine_retval = affine
+        log.debug('locate detected linear geometry: x = {} + {} xi ~{}'.format(geom0, scale, error))
         mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)
         missing = numpy.any(numpy.less(coords, mincoords - eps) | numpy.greater(coords, maxcoords + eps), axis=1)
-        if not skip_missing and missing.any():
-            raise LocateError('failed to locate {}/{} points'.format(missing.sum(), len(coords)))
         xi = (coords - geom0) / scale
+        if missing.any():
+            if not skip_missing:
+                raise LocateError('failed to locate {}/{} points'.format(missing.sum(), len(coords)))
+            xi = xi[~missing]
         ielem = numpy.minimum(numpy.maximum(xi.astype(int), 0), numpy.array(self.shape)-1)
         ielems = numpy.ravel_multi_index(ielem.T, self.shape)
         points = xi - ielem
-        if skip_missing:
-            ielems = ielems[~missing]
-            points = points[~missing]
-        return self._sample(ielems, points, weights)
+        return ielems, points
 
     def __str__(self):
         'string representation'
@@ -2742,37 +2736,20 @@ class SubsetTopology(TransformChainsTopology):
         basis = self.basetopo.basis(btype, **kwargs)
         yield function.PrunedBasis(basis, self._indices, self.f_index, self.f_coords)
 
-    def locate(self, geom, coords, *, eps=0, skip_missing=False, **kwargs):
-        sample = self.basetopo.locate(geom, coords, eps=eps, skip_missing=skip_missing, **kwargs)
-        missing = []
-        for isampleelem, (transforms, points_) in enumerate(zip(sample.transforms[0], sample.points)):
-            ielem = self.basetopo.transforms.index(transforms)
-            ref = self.refs[ielem]
-            if ref != self.basetopo.references[ielem]:
-                for i, coord in enumerate(points_.coords):
-                    if not ref.inside(coord, eps):
-                        if not skip_missing:
-                            raise LocateError('failed to locate point: {}'.format(coords[sample.getindex(isampleelem)[i]]))
-                        missing.append((isampleelem, i))
-        if not missing:
-            return sample
-        selection = numpy.ones(len(sample.points), dtype=bool)
-        newpoints = []
-        for isampleelem, points_ in enumerate(sample.points):
-            mymissing = [] # collect missing points for current element
-            for isampleelem_, i in missing[:points_.npoints]:
-                if isampleelem_ != isampleelem:
-                    break
-                mymissing.append(i)
-            if not mymissing: # no points are missing -> keep existing points object
-                newpoints.append(points_)
-            elif len(mymissing) < points_.npoints: # some points are missing -> create new CoordsPoints object
-                newpoints.append(points.CoordsPoints(types.arraydata(points_.coords[~numeric.asboolean(mymissing, points_.npoints)])))
-            else: # all points are missing -> remove element from return sample
-                selection[isampleelem] = False
-            del missing[:len(mymissing)]
-        assert not missing
-        return Sample.new(sample.space, [trans[selection] for trans in sample.transforms], PointsSequence.from_iter(newpoints, sample.ndims))
+    def _locate(self, geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing):
+        ibaseelems, points = self.basetopo._locate(geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing)
+        ielems = numpy.empty_like(ibaseelems)
+        for i, (ibaseelem, point) in enumerate(zip(ibaseelems, points)):
+            ref = self.refs[ibaseelem]
+            if ref == self.basetopo.references[ibaseelem] or ref.inside(point, eps):
+                ielems[i] = self._indices.searchsorted(ibaseelem)
+            elif skip_missing:
+                ielems[i] = -1
+            else:
+                assert len(ibaseelems) == len(coords)
+                raise LocateError(f'failed to locate point: {coords[i]}')
+        found = (ielems != -1) if skip_missing and -1 in ielems else ...
+        return ielems[found], points[found]
 
 
 class RefinedTopology(TransformChainsTopology):
