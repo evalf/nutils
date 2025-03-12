@@ -247,4 +247,4 @@ if __name__ == '__main__':
     cli.run(main)
 
 
-# example:tags=Stokes,Navier-Stokes,Taylor-Hood,Raviard-Thomas:thumbnail=0
+# example:tags=benchmark,Navier-Stokes,Taylor-Hood,Raviard-Thomas:thumbnail=0
