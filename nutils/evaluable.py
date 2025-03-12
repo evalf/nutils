@@ -6521,7 +6521,7 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
         if len(loop_id) == 1 and compile_parallel:
             iter_context = _pyast.Variable('parallel').get_attr('ctxrange').call(loop_name, py_length)
         else:
-            iter_context = _pyast.Variable('treelog').get_attr('iter').get_attr('wrap').call(_pyast.Variable('parallel').get_attr('_pct').call(loop_name, py_length), _pyast.Variable('range').call(py_length))
+            iter_context = _pyast.Variable('treelog').get_attr('iter').get_attr('percentage').call(loop_name, _pyast.Variable('range').call(py_length))
         loop_block = _pyast.With(iter_context, as_=py_range, body=loop_block, omit_if_body_is_empty=True)
         blocks[loop_id].append(loop_block)
         blocks[loop_id].append(blocks.pop((*loop_id[:-1], loop_id[-1] + 1)))
