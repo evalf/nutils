@@ -110,6 +110,7 @@ def main(nelems: int = 32,
     ns.v = function.replace_arguments(ns.u, 'u:v')
     ns.q = function.replace_arguments(ns.p, 'p:q')
     ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
+    ns.ω = 'ε_ij ∇_i(u_j)' # vorticity
 
     # weak formulation for Stokes flow, over-integrating for improved
     # efficiency when we turn this to Navier-Stokes later on
@@ -163,12 +164,17 @@ def postprocess(domain, ns, **arguments):
     arguments = System(sqr, trial='ψ').solve(arguments=arguments, constrain={'ψ': consψ})
 
     bezier = domain.sample('bezier', 4)
-    x, u, ψ = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'ψ'] @ ns, **arguments)
+    x, u, ψ, ω = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'ψ', 'ω'] @ ns, **arguments)
     with export.mplfigure('velocity.png', dpi=150) as fig: # plot velocity as field, streamlines as contours
         ax = fig.add_subplot(111)
         im = export.triplot(ax, x, u, tri=bezier.tri, hull=bezier.hull, cmap='hot_r', clim=(0,1))
         fig.colorbar(im, label='velocity')
         ax.tricontour(*x.T, bezier.tri, ψ, levels=numpy.unique(numpy.percentile(ψ, numpy.arange(2,100,3))), colors='k', linestyles='solid', linewidths=.5, zorder=9)
+    with export.mplfigure('vorticity.png', dpi=150) as fig: # plot vorticity as field with contours
+        ax = fig.add_subplot(111)
+        im = export.triplot(ax, x, ω, tri=bezier.tri, hull=bezier.hull, cmap='bwr', clim=(-5,5))
+        fig.colorbar(im, label='vorticity')
+        ax.tricontour(*x.T, bezier.tri, ω, levels=numpy.arange(-5, 6), colors='k', linestyles='solid', linewidths=.5, zorder=9)
 
     x = numpy.linspace(0, 1, 1001)
     v = domain.locate(ns.x, numpy.stack([x, numpy.repeat(.5, len(x))], 1), tol=1e-10).eval(ns.u[1], **arguments)
