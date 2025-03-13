@@ -22,7 +22,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - name: Install build dependencies
         run: python -um pip install flit
       - name: Build package
@@ -46,21 +46,21 @@ jobs:
     strategy:
       matrix:
         include:
-          - {name: "baseline", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1}
-          - {name: "windows", os: windows-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1}
-          - {name: "macos", os: macos-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1}
-          - {name: "python 3.8", os: ubuntu-latest, python-version: "3.8", matrix-backend: numpy, nprocs: 1}
+          - {name: "baseline", os: ubuntu-latest, python-version: "3.13", matrix-backend: numpy, nprocs: 1}
+          - {name: "windows", os: windows-latest, python-version: "3.13", matrix-backend: numpy, nprocs: 1}
+          - {name: "macos", os: macos-latest, python-version: "3.13", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.9", os: ubuntu-latest, python-version: "3.9", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.10", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.11", os: ubuntu-latest, python-version: "3.11", matrix-backend: numpy, nprocs: 1}
-          - {name: "scipy matrix", os: ubuntu-latest, python-version: "3.12", matrix-backend: scipy, nprocs: 1}
-          - {name: "mkl linux", os: ubuntu-latest, python-version: "3.12", matrix-backend: mkl, nprocs: 1}
-          - {name: "mkl linux parallel", os: ubuntu-latest, python-version: "3.12", matrix-backend: mkl, nprocs: 2}
-          - {name: "mkl windows", os: windows-latest, python-version: "3.12", matrix-backend: mkl, nprocs: 1}
-          - {name: "parallel", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 2}
-          - {name: "numpy 1.17", os: ubuntu-latest, python-version: "3.8", matrix-backend: numpy, nprocs: 1, numpy-version: ==1.17.3}
-          - {name: "numpy 1.x", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1, numpy-version: <2}
-          - {name: "tensorial", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1, tensorial: test}
+          - {name: "python 3.12", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1}
+          - {name: "scipy matrix", os: ubuntu-latest, python-version: "3.13", matrix-backend: scipy, nprocs: 1}
+          - {name: "mkl linux", os: ubuntu-latest, python-version: "3.13", matrix-backend: mkl, nprocs: 1}
+          - {name: "mkl linux parallel", os: ubuntu-latest, python-version: "3.13", matrix-backend: mkl, nprocs: 2}
+          - {name: "mkl windows", os: windows-latest, python-version: "3.13", matrix-backend: mkl, nprocs: 1}
+          - {name: "parallel", os: ubuntu-latest, python-version: "3.13", matrix-backend: numpy, nprocs: 2}
+          - {name: "numpy 1.21", os: ubuntu-latest, python-version: "3.9", matrix-backend: numpy, nprocs: 1, numpy-version: ==1.17.3}
+          - {name: "numpy 1.x", os: ubuntu-latest, python-version: "3.13", matrix-backend: numpy, nprocs: 1, numpy-version: <2}
+          - {name: "tensorial", os: ubuntu-latest, python-version: "3.13", matrix-backend: numpy, nprocs: 1, tensorial: test}
       fail-fast: false
     env:
       _wheel: ${{ needs.build-python-package.outputs.wheel }}
@@ -177,7 +177,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - name: Download Python package artifact
         uses: actions/download-artifact@v4
         with:
@@ -206,7 +206,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - name: Install dependencies
         run: |
           python -um pip install setuptools wheel
