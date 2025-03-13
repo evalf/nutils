@@ -851,7 +851,7 @@ class Topology:
         if geom.ndim == 0:
             geom = geom[_]
             coords = coords[..., _]
-        if not geom.shape == coords.shape[1:] == (self.ndims,):
+        if not (geom.ndim == 1 and coords.ndim == 2 and coords.shape[1] == geom.shape[0] >= self.ndims):
             raise ValueError('invalid geometry or point shape for {}D topology'.format(self.ndims))
         if skip_missing and weights is not None:
             raise ValueError('weights and skip_missing are mutually exclusive')
@@ -862,11 +862,15 @@ class Topology:
         centroids = self.sample('_centroid', None).eval(geom, **arguments)
         assert len(centroids) == len(self)
         ielems = parallel.shempty(len(coords), dtype=int)
-        points = parallel.shempty((len(coords), len(geom)), dtype=float)
+        points = parallel.shempty((len(coords), self.ndims), dtype=float)
         _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
         _point = evaluable.Argument('_locate_point', shape=(evaluable.constant(self.ndims),))
         egeom = geom.lower(self._lower_args(_ielem, _point))
         xJ = evaluable.compile((egeom, evaluable.derivative(egeom, _point)), stats=False)
+        if geom.shape[0] == self.ndims:
+            solve = numpy.linalg.solve
+        elif geom.shape[0] > self.ndims:
+            solve = lambda A, b: numpy.linalg.lstsq(A, b, rcond=None)[0]
         with parallel.ctxrange('locating', len(coords)) as ipoints:
             for ipoint in ipoints:
                 xt = coords[ipoint]  # target
@@ -889,7 +893,7 @@ class Topology:
                         if ex >= ex0:
                             break  # newton is diverging
                         try:
-                            dp = numpy.linalg.solve(Jp, dx)
+                            dp = solve(Jp, dx)
                         except numpy.linalg.LinAlgError:
                             break  # jacobian is singular
                         ep = numpy.linalg.norm(dp)
@@ -2401,6 +2405,8 @@ class StructuredTopology(TransformChainsTopology):
         return xmin - dx/2, dx * n, numpy.abs(geom_).reshape(-1, self.ndims).max(axis=0)
 
     def _locate(self, geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing):
+        if geom.shape[0] != self.ndims:
+            return super()._locate(geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing)
         geom0, scale, error = affine = self._asaffine_retval if getattr(self, '_asaffine_geom', None) is geom else self._asaffine(geom, arguments)
         if any(error > numpy.maximum(tol, eps * scale)):
             return super()._locate(geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing)
