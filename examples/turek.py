@@ -328,11 +328,11 @@ def main(domain: Domain = Domain(), solid: Optional[Solid] = Solid(), fluid: Opt
         # Zero initial velocity
         args['u'] = numpy.zeros(function.arguments_for(res)['u'].shape)
 
-        u_bz = function.factor(bezier(ns.u))
-        p_bz = function.factor(bezier(ns.p)) - topo.points['B'].sample('gauss', 1)(ns.p)[0]
+        u_bz = function.factor(bezier.bind(ns.u))
+        p_bz = function.factor(bezier.bind(ns.p)) - topo.points['B'].sample('gauss', 1).bind(ns.p)[0]
 
-    x_bz = function.factor(bezier(ns.x))
-    x_bbz = function.factor(bbezier(ns.x))
+    x_bz = function.factor(bezier.bind(ns.x))
+    x_bbz = function.factor(bbezier.bind(ns.x))
 
     trial = 'upd'[0 if fluid else 2:2 if not solid else 3]
     system = System(res, trial=list(trial), test=[t+'test' for t in trial])

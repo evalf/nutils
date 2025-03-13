@@ -2219,7 +2219,6 @@ def integral(func: IntoArray, sample) -> Array:
     return sample._integral(Array.cast(func))
 
 
-@nutils_dispatch
 def sample(func: IntoArray, sample) -> Array:
     '''Evaluate a function in all sample points.
 
@@ -2231,7 +2230,8 @@ def sample(func: IntoArray, sample) -> Array:
         The integration sample.
     '''
 
-    return sample._sample(Array.cast(func))
+    warnings.deprecation("function.sample is deprecated and will be removed in Nutils 10, please use the sample's .bind method instead")
+    return sample.bind(func)
 
 
 def isarray(__arg: Any) -> bool:

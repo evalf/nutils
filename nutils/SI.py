@@ -125,7 +125,7 @@ import operator
 import typing
 import numpy
 from functools import partial, partialmethod, reduce
-from . import function, topology
+from . import function, topology, sample
 
 
 class DimensionError(TypeError):
@@ -349,7 +349,6 @@ class Quantity(metaclass=Dimension):
     @register(function.linearize)
     @register(function.opposite)
     @register(function.replace_arguments)
-    @register(function.sample)
     @register(function.scatter)
     @register(numpy.absolute)
     @register(numpy.amax)
@@ -509,6 +508,11 @@ class Quantity(metaclass=Dimension):
         if not (dimmaxdist == Dimensionless and maxdist is None or dimmaxdist == dimgeom):
             raise DimensionError(f'invalid dimension for maxdist: got {dimmaxdist.__name__}, expected {dimgeom.__name__}')
         return op(topo, geom, coords, tol=tol, eps=eps, maxiter=maxiter, arguments=arguments, weights=weights, maxdist=maxdist, ischeme=ischeme, scale=scale, skip_missing=skip_missing)
+
+    @register(sample.Sample.bind)
+    def __sample(op, sample, func):
+        (dim, func), = Quantity.__unpack(func)
+        return dim.wrap(op(sample, func))
 
     del register
 
