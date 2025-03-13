@@ -993,6 +993,17 @@ for etype in 'square', 'triangle', 'mixed':
         locate(etype=etype, mode=mode, tol=1e-12)
 
 
+class locate_manifold(TestCase):
+
+    def test(self):
+        topo, geom = mesh.line(numpy.linspace(0, 2*numpy.pi, 5), periodic=True)
+        unit_circle = lambda θ: numpy.stack([numpy.cos(θ), numpy.sin(θ)], axis=-1)
+        target = numpy.array([1., 2., 4., 6.])
+        sample = topo.locate(unit_circle(geom), unit_circle(target), eps=1e-15)
+        located = sample.eval(geom)
+        self.assertAllAlmostEqual(located, target)
+
+
 @parametrize
 class hierarchical(TestCase, TopologyAssertions):
 
