@@ -4821,6 +4821,8 @@ class TransformLinear(Array):
     def _simplified(self):
         if self.target == self.source:
             return diagonalize(ones((constant(self.source.fromdims),), dtype=float))
+        if self.source._linear_is_constant and (self.target is None or self.target._linear_is_constant):
+            return constant(self.evalf(0))
 
 
 class TransformBasis(Array):
@@ -4880,6 +4882,8 @@ class TransformBasis(Array):
             # `Transform` is assumed to be injective), we can return the unit
             # vectors here.
             return diagonalize(ones((self.source.fromdims,), dtype=float))
+        if self.source._linear_is_constant:
+            return constant(self.evalf(0))
 
 
 class _LoopId(types.Singleton):
