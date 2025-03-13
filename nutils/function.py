@@ -3407,7 +3407,10 @@ class __implementations__:
             _fp[0] = left
         if right is not None:
             _fp[-1] = right
-        return _Constant(_fp)[index] + _Constant(_gp)[index] * (x - _Constant(_xp)[index])
+        def take_index(a):
+            a = _Constant(a)
+            return _Wrapper(evaluable.Take, _WithoutPoints(a), index, shape=index.shape, dtype=a.dtype)
+        return take_index(_fp) + take_index(_gp) * (x - take_index(_xp))
 
     @implements(numpy.choose)
     def choose(a, choices):
