@@ -862,7 +862,8 @@ class _Zip(Sample):
             argsi = samplei.get_lower_args(evaluable.Take(evaluable.Constant(ielemsi), __ielem))
             slicei = evaluable.Take(evaluable.Constant(ilocalsi), self._getslice(__ielem))
             transform_chains.update(argsi.transform_chains)
-            coordinates.update({space: evaluable._take(coords, slicei, axis=0) for space, coords in argsi.coordinates.items()})
+            for space, coords in argsi.coordinates.items():
+                coordinates[space] = evaluable.Transpose.to_end(evaluable.Take(evaluable._flat(evaluable.Transpose.from_end(coords, 0), ndim=2), slicei), 0)
         return function.LowerArgs(points_shape, transform_chains, coordinates)
 
     def get_evaluable_indices(self, ielem):
@@ -872,7 +873,7 @@ class _Zip(Sample):
         ielem0 = evaluable.Take(evaluable.Constant(self._ielems[0]), ielem)
         slice0 = evaluable.Take(evaluable.Constant(self._ilocals[0]), self._getslice(ielem))
         weights = self._samples[0].get_evaluable_weights(ielem0)
-        return evaluable._take(weights, slice0, axis=0)
+        return evaluable._take(evaluable._flat(weights), slice0, axis=0)
 
 
 class _TakeElements(_TensorialSample):

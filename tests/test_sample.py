@@ -315,6 +315,16 @@ class ZipCornerCases(TestCase):
         # Assert we get the correct weights (issue #791).
         self.assertAllAlmostEqual(zipped.integrate(x * function.J(x)), 12)
 
+    def test_tensorial_locate(self):
+        A, a = mesh.line([0, 1, 2], space='A')
+        B, b = mesh.line([0, 1, 2], space='B')
+        C, c = mesh.line([0, 0.75, 2], space='C')
+        D, d = mesh.line([0, 1.25, 2], space='D')
+        smpl = (A * B).sample('gauss', 0)
+        zipped = smpl.zip((C * D).locate(numpy.stack([c, d]), smpl.eval(numpy.stack([a, b])), tol=1e-10))
+        self.assertAllAlmostEqual(zipped.eval(a), zipped.eval(c))
+        self.assertAllAlmostEqual(zipped.eval(b), zipped.eval(d))
+
 
 class TakeElements(TestCase, Common):
 
