@@ -1491,6 +1491,7 @@ def diagonalize(__arg: IntoArray, __axis: int = -1, __newaxis: int = -1) -> Arra
 def outer(arg1, arg2=None, axis=0):
     'outer product'
 
+    warnings.deprecation('function.outer is deprecated and will be repurposed in Nutils 10, please use alternatives like numpy.einsum instead')
     if arg2 is None:
         arg2 = arg1
     elif arg1.ndim != arg2.ndim:

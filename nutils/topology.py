@@ -479,10 +479,10 @@ class Topology:
             assert ischeme is not None, 'please specify an integration scheme for lsqr-projection'
             fun2 = function.asarray(fun)**2
             if len(onto.shape) == 1:
-                Afun = function.outer(onto)
+                Afun = numpy.einsum('i,j', onto, onto)
                 bfun = onto * fun
             elif len(onto.shape) == 2:
-                Afun = function.outer(onto).sum(2)
+                Afun = numpy.einsum('ik,jk', onto, onto)
                 bfun = function.sum(onto * fun, -1)
                 if fun2.ndim:
                     fun2 = fun2.sum(-1)

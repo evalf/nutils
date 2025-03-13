@@ -373,8 +373,6 @@ _check('cross2', lambda a, b: numpy.cross(a, function.Array.cast(b)), numpy.cros
 _check('cross3', lambda a, b: numpy.cross(a, function.Array.cast(b)), numpy.cross, ANY(2,3), 1+ANY(2,3))
 _check('cross3-complex', lambda a, b: numpy.cross(function.Array.cast(a), b), numpy.cross, ANC(2,3), 1-1j+ANC(2,3))
 _check('cross3-axes', lambda a, b: numpy.cross(a, function.Array.cast(b), axisa=2, axisb=0, axisc=1), lambda a, b: numpy.cross(a, b, axisa=2, axisb=0, axisc=1), ANY(2,1,3), ANY(3,1,4))
-_check('outer', function.outer, lambda a, b: a[:, None]*b[None, :], ANY(2, 3), ANY(4, 3))
-_check('outer_self', function.outer, lambda a: a[:, None]*a[None, :], ANY(2, 3))
 _check('square', lambda a: numpy.square(function.Array.cast(a)), numpy.square, ANY(4))
 _check('hypot', lambda a, b: numpy.hypot(a, function.Array.cast(b)), numpy.hypot, ANY(4, 4), ANY(4, 4))
 
