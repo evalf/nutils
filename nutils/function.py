@@ -2204,7 +2204,6 @@ def evaluate(*arrays, _post=sparse.toarray, arguments={}):
     return tuple(map(_post, sparse_arrays))
 
 
-@nutils_dispatch
 def integral(func: IntoArray, sample) -> Array:
     '''Integrate a function over a sample.
 
@@ -2216,7 +2215,8 @@ def integral(func: IntoArray, sample) -> Array:
         The integration sample.
     '''
 
-    return sample._integral(Array.cast(func))
+    warnings.deprecation("function.integral is deprecated and will be removed in Nutils 10, please use the sample's .integral method instead")
+    return sample.integral(func)
 
 
 def sample(func: IntoArray, sample) -> Array:

@@ -343,7 +343,6 @@ class Quantity(metaclass=Dimension):
 
     @register(function.derivative)
     @register(function.factor)
-    @register(function.integral)
     @register(function.jump)
     @register(function.kronecker)
     @register(function.linearize)
@@ -510,6 +509,7 @@ class Quantity(metaclass=Dimension):
         return op(topo, geom, coords, tol=tol, eps=eps, maxiter=maxiter, arguments=arguments, weights=weights, maxdist=maxdist, ischeme=ischeme, scale=scale, skip_missing=skip_missing)
 
     @register(sample.Sample.bind)
+    @register(sample.Sample.integral)
     def __sample(op, sample, func):
         (dim, func), = Quantity.__unpack(func)
         return dim.wrap(op(sample, func))

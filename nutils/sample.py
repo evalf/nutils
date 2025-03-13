@@ -183,8 +183,12 @@ class Sample(types.Singleton):
 
         return function.evaluate(*map(self.integral, funcs), _post=lambda x: x, arguments=arguments)
 
+    @util.nutils_dispatch
     def integral(self, __func: function.IntoArray) -> function.Array:
         '''Create Integral object for postponed integration.
+
+        The following two expressions are equivalent: ``sample.integrate(f)``
+        and ``sample.integral(f).eval()``.
 
         Args
         ----
@@ -192,7 +196,7 @@ class Sample(types.Singleton):
             Integrand.
         '''
 
-        return function.integral(__func, self)
+        return self._integral(function.Array.cast(__func))
 
     @util.single_or_multiple
     def eval(self, funcs, /, **arguments):
