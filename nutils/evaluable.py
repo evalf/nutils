@@ -4695,10 +4695,14 @@ class TransformCoords(Array):
     dtype = float
 
     def __post_init__(self):
+        if self.target is not None and self.target.todims != self.source.todims:
+            raise ValueError('the source and target sequences have different todims')
         if self.index.dtype != int or self.index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
-        if self.coords.dtype != float:
+        if self.coords.dtype != float or self.coords.ndim == 0:
             raise ValueError('argument `coords` must be a real-valued array with at least one axis')
+        if _certainly_different(self.coords.shape[-1], constant(self.source.fromdims)):
+            raise ValueError('the last axis of argument `coords` must match the `fromdims` of the `source` transform chains sequence')
 
     @property
     def dependencies(self):
@@ -4750,6 +4754,8 @@ class TransformIndex(Array):
     shape = ()
 
     def __post_init__(self):
+        if self.target.todims != self.source.todims:
+            raise ValueError('the source and target sequences have different todims')
         if self.index.dtype != int or self.index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
 
@@ -4790,6 +4796,8 @@ class TransformLinear(Array):
     dtype = float
 
     def __post_init__(self):
+        if self.target is not None and self.target.todims != self.source.todims:
+            raise ValueError('the source and target sequences have different todims')
         if self.index.dtype != int or self.index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
 
