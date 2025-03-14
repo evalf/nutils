@@ -4,10 +4,10 @@ readme = "README.md"
 authors = [
     { name = "Evalf", email = "info@evalf.com" },
 ]
-requires-python = '>=3.8'
+requires-python = '>=3.9'
 dependencies = [
     "appdirs >=1,<2",
-    "numpy >=1.17,<3",
+    "numpy >=1.21,<3",
     "nutils-poly >=1,<2",
     "stringly",
     "treelog >=1,<2",

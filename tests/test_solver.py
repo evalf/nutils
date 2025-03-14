@@ -211,7 +211,8 @@ class finitestrain(TestCase):
         Geom = geom * [1.1, 1] + u
         self.cons = solver.optimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
         self.boolcons = ~numpy.isnan(self.cons)
-        strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
+        grad = Geom.grad(geom)
+        strain = .5 * (numpy.einsum('ki,kj->ij', grad, grad) - function.eye(2))
         self.energy = domain.integral(((strain**2).sum([0, 1]) + 20*(numpy.linalg.det(Geom.grad(geom))-1)**2)*function.J(geom), degree=6)
         self.residual = self.energy.derivative('dofs')
         self.tol = 1e-10
@@ -460,7 +461,8 @@ class system_finitestrain(TestCase):
         u = function.field('u', domain.basis('std', degree=2), shape=(2,))
         Geom = geom * [1.1, 1] + u
         self.cons = solver.optimize('u,', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
-        strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
+        grad = Geom.grad(geom)
+        strain = .5 * (numpy.einsum('ki,kj->ij', grad, grad) - function.eye(2))
         energy = domain.integral(((strain**2).sum([0, 1]) + 20*(numpy.linalg.det(Geom.grad(geom))-1)**2)*function.J(geom), degree=6)
         self.system = solver.System(energy, trial='u')
         self.residual = evaluable.compile(energy.derivative('u').as_evaluable_array)

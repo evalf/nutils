@@ -51,6 +51,9 @@ suite = loader.discover('tests', top_level_dir='.')
 runner = unittest.TextTestRunner(buffer=True)
 result = runner.run(suite)
 
+if hasattr(sys, 'monitoring'):
+    sys.monitoring.free_tool_id(sys.monitoring.COVERAGE_ID)
+
 coverage = {file_name[len(source) - 7:].replace('\\', '/'): file_coverage for file_name, file_coverage in coverage.items()}
 cov_dir = (Path() / 'target' / 'coverage')
 cov_dir.mkdir(parents=True, exist_ok=True)

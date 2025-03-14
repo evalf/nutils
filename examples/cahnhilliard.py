@@ -171,11 +171,11 @@ def main(size: Length = parse('10cm'),
 
     bezier = domain.sample('bezier', 5) # sample for surface plots
     bezier_x = bezier.eval(ns.x)
-    bezier_φ = function.factor(bezier(ns.φ))
+    bezier_φ = function.factor(bezier.bind(ns.φ))
     if showflux:
         grid = domain.locate(geom, numeric.simplex_grid([1, 1], 1/40), maxdist=1/nelems, skip_missing=True, tol=1e-5) # sample for quivers
         grid_x = grid.eval(ns.x)
-        grid_v = function.factor(grid(ns.v))
+        grid_v = function.factor(grid.bind(ns.v))
 
     system = System(nrg / tol, trial='φ,η')
 

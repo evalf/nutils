@@ -183,8 +183,12 @@ class Sample(types.Singleton):
 
         return function.evaluate(*map(self.integral, funcs), _post=lambda x: x, arguments=arguments)
 
+    @util.nutils_dispatch
     def integral(self, __func: function.IntoArray) -> function.Array:
         '''Create Integral object for postponed integration.
+
+        The following two expressions are equivalent: ``sample.integrate(f)``
+        and ``sample.integral(f).eval()``.
 
         Args
         ----
@@ -192,7 +196,7 @@ class Sample(types.Singleton):
             Integrand.
         '''
 
-        return function.integral(__func, self)
+        return self._integral(function.Array.cast(__func))
 
     @util.single_or_multiple
     def eval(self, funcs, /, **arguments):
@@ -206,7 +210,7 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function.evaluate(*map(self, funcs), arguments=arguments)
+        return function.evaluate(*map(self.bind, funcs), arguments=arguments)
 
     @util.single_or_multiple
     def eval_sparse(self, funcs, /, **arguments):
@@ -234,9 +238,27 @@ class Sample(types.Singleton):
         return _Integral(func, self)
 
     def __call__(self, __func: function.IntoArray) -> function.Array:
-        return function.sample(__func, self)
+        warnings.deprecation('using a sample as a callable is deprecated, please use the .bind method instead')
+        return self.bind(__func)
 
-    def _sample(self, func: function.Array) -> function.Array:
+    @util.nutils_dispatch
+    def bind(self, func, /) -> function.Array:
+        '''Bind sample to function array.
+
+        This method produces a function array that evaluates to the argument's
+        function values in all the sample points, adding a point dimension
+        before the existing array dimensions. The following two expressions are
+        equivalent: ``sample.eval(f)`` and ``sample.bind(f).eval()``.
+
+        Args
+        ----
+        func : :class:`nutils.function.Array`
+            Function to bind the the sample.
+        '''
+
+        return self._bind(function.Array.cast(func))
+
+    def _bind(self, func: function.Array) -> function.Array:
         ielem = evaluable.loop_index('_sample_' + '_'.join(self.spaces), self.nelems)
         indices = evaluable.loop_concatenate(evaluable._flat(self.get_evaluable_indices(ielem)), ielem)
         return _ReorderPoints(_ConcatenatePoints(func, self), indices)
@@ -445,7 +467,7 @@ class _DefaultIndex(_TransformChainsSample):
         offset = evaluable.get(_offsets(self.points), 0, ielem)
         return evaluable.Range(npoints) + offset
 
-    def _sample(self, func: function.Array) -> function.Array:
+    def _bind(self, func: function.Array) -> function.Array:
         return _ConcatenatePoints(func, self)
 
 
@@ -535,7 +557,7 @@ class _Empty(_TensorialSample):
     def _integral(self, func: function.Array) -> function.Array:
         return function.zeros(func.shape, func.dtype)
 
-    def _sample(self, func: function.Array) -> function.Array:
+    def _bind(self, func: function.Array) -> function.Array:
         return function.zeros((0, *func.shape), func.dtype)
 
     def basis(self, interpolation: str = 'none') -> function.Array:
@@ -585,8 +607,8 @@ class _Add(_TensorialSample):
     def _integral(self, func: function.Array) -> function.Array:
         return self._sample1.integral(func) + self._sample2.integral(func)
 
-    def _sample(self, func: function.Array) -> function.Array:
-        return numpy.concatenate([self._sample1(func), self._sample2(func)])
+    def _bind(self, func: function.Array) -> function.Array:
+        return numpy.concatenate([self._sample1._bind(func), self._sample2._bind(func)])
 
 
 def _simplex_strip(strip):
@@ -785,8 +807,8 @@ class _Mul(_TensorialSample):
     def _integral(self, func: function.Array) -> function.Array:
         return self._sample1.integral(self._sample2.integral(func))
 
-    def _sample(self, func: function.Array) -> function.Array:
-        return numpy.reshape(self._sample1(self._sample2(func)), (-1, *func.shape))
+    def _bind(self, func: function.Array) -> function.Array:
+        return numpy.reshape(self._sample1._bind(self._sample2._bind(func)), (-1, *func.shape))
 
     def basis(self, interpolation: str = 'none') -> Sample:
         basis1 = self._sample1.basis(interpolation)
@@ -840,7 +862,8 @@ class _Zip(Sample):
             argsi = samplei.get_lower_args(evaluable.Take(evaluable.Constant(ielemsi), __ielem))
             slicei = evaluable.Take(evaluable.Constant(ilocalsi), self._getslice(__ielem))
             transform_chains.update(argsi.transform_chains)
-            coordinates.update({space: evaluable._take(coords, slicei, axis=0) for space, coords in argsi.coordinates.items()})
+            for space, coords in argsi.coordinates.items():
+                coordinates[space] = evaluable.Transpose.to_end(evaluable.Take(evaluable._flat(evaluable.Transpose.from_end(coords, 0), ndim=2), slicei), 0)
         return function.LowerArgs(points_shape, transform_chains, coordinates)
 
     def get_evaluable_indices(self, ielem):
@@ -850,7 +873,7 @@ class _Zip(Sample):
         ielem0 = evaluable.Take(evaluable.Constant(self._ielems[0]), ielem)
         slice0 = evaluable.Take(evaluable.Constant(self._ilocals[0]), self._getslice(ielem))
         weights = self._samples[0].get_evaluable_weights(ielem0)
-        return evaluable._take(weights, slice0, axis=0)
+        return evaluable._take(evaluable._flat(weights), slice0, axis=0)
 
 
 class _TakeElements(_TensorialSample):

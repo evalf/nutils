@@ -1491,6 +1491,7 @@ def diagonalize(__arg: IntoArray, __axis: int = -1, __newaxis: int = -1) -> Arra
 def outer(arg1, arg2=None, axis=0):
     'outer product'
 
+    warnings.deprecation('function.outer is deprecated and will be repurposed in Nutils 10, please use alternatives like numpy.einsum instead')
     if arg2 is None:
         arg2 = arg1
     elif arg1.ndim != arg2.ndim:
@@ -2203,7 +2204,6 @@ def evaluate(*arrays, _post=sparse.toarray, arguments={}):
     return tuple(map(_post, sparse_arrays))
 
 
-@nutils_dispatch
 def integral(func: IntoArray, sample) -> Array:
     '''Integrate a function over a sample.
 
@@ -2215,10 +2215,10 @@ def integral(func: IntoArray, sample) -> Array:
         The integration sample.
     '''
 
-    return sample._integral(Array.cast(func))
+    warnings.deprecation("function.integral is deprecated and will be removed in Nutils 10, please use the sample's .integral method instead")
+    return sample.integral(func)
 
 
-@nutils_dispatch
 def sample(func: IntoArray, sample) -> Array:
     '''Evaluate a function in all sample points.
 
@@ -2230,7 +2230,8 @@ def sample(func: IntoArray, sample) -> Array:
         The integration sample.
     '''
 
-    return sample._sample(Array.cast(func))
+    warnings.deprecation("function.sample is deprecated and will be removed in Nutils 10, please use the sample's .bind method instead")
+    return sample.bind(func)
 
 
 def isarray(__arg: Any) -> bool:
@@ -3406,7 +3407,10 @@ class __implementations__:
             _fp[0] = left
         if right is not None:
             _fp[-1] = right
-        return _Constant(_fp)[index] + _Constant(_gp)[index] * (x - _Constant(_xp)[index])
+        def take_index(a):
+            a = _Constant(a)
+            return _Wrapper(evaluable.Take, _WithoutPoints(a), index, shape=index.shape, dtype=a.dtype)
+        return take_index(_fp) + take_index(_gp) * (x - take_index(_xp))
 
     @implements(numpy.choose)
     def choose(a, choices):
