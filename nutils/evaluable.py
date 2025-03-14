@@ -4734,16 +4734,15 @@ class TransformIndex(Array):
 
     Args
     ----
-    target : :class:`nutils.transformseq.Transforms`, optional
-        The target coordinate system. If `None` the target is the root
-        coordinate system.
+    target : :class:`nutils.transformseq.Transforms`
+        The target coordinate system.
     source : :class:`nutils.transformseq.Transforms`
         The source coordinate system.
     index : scalar, integer :class:`Array`
         The index part of the source coordinates.
     '''
 
-    target: typing.Optional['transformseq.Transforms']
+    target: 'transformseq.Transforms'
     source: 'transformseq.Transforms'
     index: Array
 
@@ -4759,20 +4758,14 @@ class TransformIndex(Array):
         return self.index,
 
     def evalf(self, index):
-        if self.target is not None:
-            index, _ = self.target.index_with_tail(self.source[index.__index__()])
-        else:
-            index = 0
+        index, _ = self.target.index_with_tail(self.source[index.__index__()])
         return numpy.array(index)
 
     def _intbounds_impl(self):
-        len_target = 1 if self.target is None else len(self.target)
-        return 0, len_target - 1
+        return 0, len(self.target) - 1
 
     def _simplified(self):
-        if self.target is None:
-            return ones((1,), dtype=int)
-        elif self.target == self.source:
+        if self.target == self.source:
             return self.index
 
 
