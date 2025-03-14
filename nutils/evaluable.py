@@ -4928,14 +4928,19 @@ class Loop(Array):
         if (cached := cache.get(self)) is not None:
             return cached
 
-        # Populate the `cache` with objects that do not depend on `self.index`.
-        stack = [self.length, *self.init_args, *self.body_args]
+        # To prevent drawing descendents that do not depend on `self.index`
+        # inside the subgraph for this loop, we populate the `cache` with
+        # descendents that do no depend on this loop's index or indices of
+        # nested loops (the `inside_indices`).
+        stack = [(func, frozenset({self.index})) for func in [self.length, *self.init_args, *self.body_args]]
         while stack:
-            func = stack.pop()
-            if self.index in func.arguments:
-                stack.extend(func.dependencies)
-            else:
+            func, inside_indices = stack.pop()
+            if inside_indices.isdisjoint(frozenset(func.arguments)):
                 func._node(cache, subgraph, times, unique_loop_ids)
+            else:
+                if isinstance(func, Loop):
+                    inside_indices = inside_indices | frozenset({func.index})
+                stack.extend([(dep, inside_indices) for dep in func.dependencies])
 
         if unique_loop_ids:
             loopcache = cache
