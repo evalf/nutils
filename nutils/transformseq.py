@@ -306,6 +306,12 @@ class Transforms(types.Singleton):
 
         yield self
 
+    @property
+    def _linear_is_constant(self):
+        '''`True` if all transformation matrices of the flattened transform chains of this sequence are equal.'''
+
+        return False
+
 
 class EmptyTransforms(Transforms):
     '''An empty sequence.'''
@@ -423,6 +429,10 @@ class IndexTransforms(Transforms):
         if root.fromdims == self.fromdims and isinstance(root, transform.Index) and 0 <= root.index - self._offset < self._length:
             return root.index - self._offset, trans[1:]
         raise ValueError
+
+    @property
+    def _linear_is_constant(self):
+        return True
 
 
 class Axis(types.Singleton):
@@ -604,6 +614,10 @@ class StructuredTransforms(Transforms):
 
         return flatindex, tail
 
+    @property
+    def _linear_is_constant(self):
+        return True
+
 
 class MaskedTransforms(Transforms):
     '''An order preserving subset of another :class:`Transforms` object.
@@ -643,6 +657,10 @@ class MaskedTransforms(Transforms):
         else:
             return int(index), tail
 
+    @property
+    def _linear_is_constant(self):
+        return self._parent._linear_is_constant
+
 
 class ReorderedTransforms(Transforms):
     '''A reordered :class:`Transforms` object.
@@ -681,6 +699,10 @@ class ReorderedTransforms(Transforms):
     def index_with_tail(self, trans):
         parent_index, tail = self._parent.index_with_tail(trans)
         return int(self._rindices[parent_index]), tail
+
+    @property
+    def _linear_is_constant(self):
+        return self._parent._linear_is_constant
 
 
 class DerivedTransforms(Transforms):
@@ -807,6 +829,10 @@ class UniformDerivedTransforms(Transforms):
             tail = transform.canonical(tail)
         iderived = self._derived_transforms.index(tail[0])
         return iparent*len(self._derived_transforms) + iderived, tail[1:]
+
+    @property
+    def _linear_is_constant(self):
+        return self._parent._linear_is_constant and all(numpy.equal(self._derived_transforms[0].linear, trans.linear).all() for trans in self._derived_transforms[1:])
 
 
 class ChainedTransforms(Transforms):

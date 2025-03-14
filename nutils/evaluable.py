@@ -4695,10 +4695,14 @@ class TransformCoords(Array):
     dtype = float
 
     def __post_init__(self):
+        if self.target is not None and self.target.todims != self.source.todims:
+            raise ValueError('the source and target sequences have different todims')
         if self.index.dtype != int or self.index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
-        if self.coords.dtype != float:
+        if self.coords.dtype != float or self.coords.ndim == 0:
             raise ValueError('argument `coords` must be a real-valued array with at least one axis')
+        if _certainly_different(self.coords.shape[-1], constant(self.source.fromdims)):
+            raise ValueError('the last axis of argument `coords` must match the `fromdims` of the `source` transform chains sequence')
 
     @property
     def dependencies(self):
@@ -4721,8 +4725,12 @@ class TransformCoords(Array):
         return einsum('ij,AjB->AiB', linear, dcoords, A=self.coords.ndim - 1, B=var.ndim)
 
     def _simplified(self):
+        from nutils.transformseq import MaskedTransforms
         if self.target == self.source:
             return self.coords
+        if isinstance(self.source, MaskedTransforms):
+            index = Take(constant(self.source._indices), self.index)
+            return TransformCoords(self.target, self.source._parent, index, self.coords)
         cax = self.ndim - 1
         coords, where = unalign(self.coords, naxes=cax)
         if len(where) < cax:
@@ -4734,16 +4742,15 @@ class TransformIndex(Array):
 
     Args
     ----
-    target : :class:`nutils.transformseq.Transforms`, optional
-        The target coordinate system. If `None` the target is the root
-        coordinate system.
+    target : :class:`nutils.transformseq.Transforms`
+        The target coordinate system.
     source : :class:`nutils.transformseq.Transforms`
         The source coordinate system.
     index : scalar, integer :class:`Array`
         The index part of the source coordinates.
     '''
 
-    target: typing.Optional['transformseq.Transforms']
+    target: 'transformseq.Transforms'
     source: 'transformseq.Transforms'
     index: Array
 
@@ -4751,6 +4758,8 @@ class TransformIndex(Array):
     shape = ()
 
     def __post_init__(self):
+        if self.target.todims != self.source.todims:
+            raise ValueError('the source and target sequences have different todims')
         if self.index.dtype != int or self.index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
 
@@ -4759,21 +4768,19 @@ class TransformIndex(Array):
         return self.index,
 
     def evalf(self, index):
-        if self.target is not None:
-            index, _ = self.target.index_with_tail(self.source[index.__index__()])
-        else:
-            index = 0
+        index, _ = self.target.index_with_tail(self.source[index.__index__()])
         return numpy.array(index)
 
     def _intbounds_impl(self):
-        len_target = 1 if self.target is None else len(self.target)
-        return 0, len_target - 1
+        return 0, len(self.target) - 1
 
     def _simplified(self):
-        if self.target is None:
-            return ones((1,), dtype=int)
-        elif self.target == self.source:
+        from nutils.transformseq import MaskedTransforms
+        if self.target == self.source:
             return self.index
+        if isinstance(self.source, MaskedTransforms):
+            index = Take(constant(self.source._indices), self.index)
+            return TransformIndex(self.target, self.source._parent, index)
 
 
 class TransformLinear(Array):
@@ -4797,6 +4804,8 @@ class TransformLinear(Array):
     dtype = float
 
     def __post_init__(self):
+        if self.target is not None and self.target.todims != self.source.todims:
+            raise ValueError('the source and target sequences have different todims')
         if self.index.dtype != int or self.index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
 
@@ -4819,8 +4828,14 @@ class TransformLinear(Array):
             return numpy.eye(self.source.fromdims)
 
     def _simplified(self):
+        from nutils.transformseq import MaskedTransforms
         if self.target == self.source:
             return diagonalize(ones((constant(self.source.fromdims),), dtype=float))
+        if isinstance(self.source, MaskedTransforms):
+            index = Take(constant(self.source._indices), self.index)
+            return TransformLinear(self.target, self.source._parent, index)
+        if self.source._linear_is_constant and (self.target is None or self.target._linear_is_constant):
+            return constant(self.evalf(0))
 
 
 class TransformBasis(Array):
@@ -4874,12 +4889,18 @@ class TransformBasis(Array):
         return linear
 
     def _simplified(self):
+        from nutils.transformseq import MaskedTransforms
         if self.source.todims == self.source.fromdims:
             # Since we only guarantee that the basis spans the space of source
             # coordinates mapped to the root and the map is a bijection (every
             # `Transform` is assumed to be injective), we can return the unit
             # vectors here.
             return diagonalize(ones((self.source.fromdims,), dtype=float))
+        if isinstance(self.source, MaskedTransforms):
+            index = Take(constant(self.source._indices), self.index)
+            return TransformBasis(self.source._parent, index)
+        if self.source._linear_is_constant:
+            return constant(self.evalf(0))
 
 
 class _LoopId(types.Singleton):
