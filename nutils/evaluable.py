@@ -2044,6 +2044,14 @@ class Take(Array):
             if axis == self.func.ndim - 1:
                 return util.sum(Inflate(func, dofmap, self.func.shape[-1])._take(self.indices, self.func.ndim - 1) for dofmap, func in parts.items())
 
+    def _optimized_for_numpy(self):
+        if isinstance(self.indices, Range):
+            return _TakeSlice(self.func, self.indices.length, constant(0))
+        if self.indices.ndim == 1 and isinstance(self.indices, Add) and len(self.indices.funcs) == 2:
+            for a, b in self.indices.funcs, tuple(self.indices.funcs)[::-1]:
+                if isinstance(a, Range) and isinstance(b, InsertAxis) and _isindex(b.func):
+                    return _TakeSlice(self.func, a.length, b.func)
+
     def _compile_expression(self, py_self, arr, indices):
         return _pyast.Variable('numpy').get_attr('take').call(arr, indices, axis=_pyast.LiteralInt(-1))
 
@@ -2071,6 +2079,39 @@ class Take(Array):
     def _argument_degree(self, argument):
         if argument not in self.indices.arguments:
             return self.func.argument_degree(argument)
+
+
+class _TakeSlice(Array):
+    # To be used by `_optimized_for_numpy` only.
+
+    func: Array
+    length: Array
+    offset: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.ndim > 0, f'func={self.func!r}'
+        assert _isindex(self.length), f'length={self.length!r}'
+        assert _isindex(self.offset), f'offset={self.offset!r}'
+
+    @property
+    def dependencies(self):
+        return self.func, self.length, self.offset
+
+    @cached_property
+    def dtype(self):
+        return self.func.dtype
+
+    @cached_property
+    def shape(self):
+        return self.func.shape[:-1] + (self.length,)
+
+    def _compile_expression(self, py_self, arr, length, offset):
+        slices = [_pyast.Variable('slice').call(_pyast.Variable('None'))] * (self.ndim - 1)
+        slices.append(_pyast.Variable('slice').call(offset, _pyast.BinOp(offset, '+', length)))
+        return arr.get_item(_pyast.Tuple(tuple(slices)))
+
+    def _intbounds_impl(self):
+        return self.func._intbounds
 
 
 class Power(Array):
