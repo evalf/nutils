@@ -2241,6 +2241,7 @@ def isarray(__arg: Any) -> bool:
 
 def rootcoords(space: str, __dim: int) -> Array:
     'Return the root coordinates.'
+    warnings.deprecation('function.rootcoords is deprecated and will be removed in Nutils 10')
     return _RootCoords(space, __dim)
 
 

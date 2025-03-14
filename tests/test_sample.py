@@ -376,7 +376,7 @@ class DefaultIndex(TestCase, Common):
         self.desired_indices = [0, 1, 2, 3], [4, 5, 6], [7, 8, 9, 10]
 
     def test_at(self):
-        self.geom = function.rootcoords('a', 2) + numpy.array([0, 2]) * function.transforms_index('a', self.transforms)
+        self.geom = function.transforms_coords('a', self.transforms) + numpy.array([0, 2]) * function.transforms_index('a', self.transforms)
         actual = self.sample.bind(self.geom).as_evaluable_array.eval()
         desired = numpy.array([[0, 0], [0, 1], [1, 0], [1, 1], [0, 2], [1, 2], [0, 3], [0, 4], [0, 5], [1, 4], [1, 5]])
         self.assertAllAlmostEqual(actual, desired)
@@ -390,7 +390,7 @@ class DefaultIndex(TestCase, Common):
         unisample = Sample.new('a', (self.transforms, self.transforms),
             PointsSequence.uniform((element.getsimplex(1)**2).getpoints('uniform', 2), 3))
         self.assertEqual(unisample.npoints, 12)
-        coords = function.rootcoords('a', 2)
+        coords = function.transforms_coords('a', self.transforms)
         bezierpoints = self.sample.eval(coords)
         uniformpoints = unisample.eval(coords)
         # Unisample consists of 3 times 4 points occupying the centers of the
@@ -424,7 +424,7 @@ class CustomIndex(TestCase, Common):
         self.desired_points = [[p] for p in points]
 
     def test_at(self):
-        self.geom = function.rootcoords('a', 2) + numpy.array([0, 2]) * function.transforms_index('a', self.transforms)
+        self.geom = function.transforms_coords('a', self.transforms) + numpy.array([0, 2]) * function.transforms_index('a', self.transforms)
         actual = self.sample.bind(self.geom).as_evaluable_array.eval()
         desired = numpy.array([[0, 0], [0, 1], [1, 0], [1, 1], [0, 2], [1, 2], [0, 3], [0, 4], [0, 5], [1, 4], [1, 5]])
         desired = numpy.take(desired, numpy.argsort(numpy.concatenate(self.desired_indices), axis=0), axis=0)

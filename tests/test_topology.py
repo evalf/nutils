@@ -422,7 +422,7 @@ class NewEmpty(TestCase, CommonTests, ConformingTests):
         self.desired_space_dims = 1, 2
         self.desired_ndims = 3
         self.topo = topology.Topology.empty(self.desired_spaces, self.desired_space_dims, self.desired_ndims)
-        self.geom = numpy.concatenate([function.rootcoords(space, dim) for space, dim in zip(self.desired_spaces, self.desired_space_dims)])
+        self.geom = numpy.concatenate([function.transforms_coords(space, transformseq.EmptyTransforms(dim, dim)) for space, dim in zip(self.desired_spaces, self.desired_space_dims)])
         self.desired_nelems = 0
         self.desired_volumes = []
         self.desired_references = []
@@ -832,8 +832,9 @@ class refined(TestCase):
     def test_boundary_gradient(self):
         ref = _refined_refs[self.etype]
         space = 'test'
-        domain = topology.ConnectedTopology(space, References.uniform(ref, 1), transformseq.IndexTransforms(ref.ndims, 1), transformseq.IndexTransforms(ref.ndims, 1), [numpy.repeat(-1, ref.nedges)]).refine(self.ref0)
-        geom = function.rootcoords(space, ref.ndims)
+        transforms = transformseq.IndexTransforms(ref.ndims, 1)
+        domain = topology.ConnectedTopology(space, References.uniform(ref, 1), transforms, transforms, [numpy.repeat(-1, ref.nedges)]).refine(self.ref0)
+        geom = function.transforms_coords(space, transforms)
         basis = domain.basis('std', degree=1)
         u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)
         bpoints = domain.refine(self.ref1).boundary.refine(self.ref2).sample('uniform', 1)
