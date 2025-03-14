@@ -9,7 +9,7 @@ import operator
 import contextlib
 import treelog
 import functools
-import importlib
+import importlib.util
 import doctest
 import re
 import zlib
