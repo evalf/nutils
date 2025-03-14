@@ -4725,8 +4725,12 @@ class TransformCoords(Array):
         return einsum('ij,AjB->AiB', linear, dcoords, A=self.coords.ndim - 1, B=var.ndim)
 
     def _simplified(self):
+        from nutils.transformseq import MaskedTransforms
         if self.target == self.source:
             return self.coords
+        if isinstance(self.source, MaskedTransforms):
+            index = Take(constant(self.source._indices), self.index)
+            return TransformCoords(self.target, self.source._parent, index, self.coords)
         cax = self.ndim - 1
         coords, where = unalign(self.coords, naxes=cax)
         if len(where) < cax:
@@ -4771,8 +4775,12 @@ class TransformIndex(Array):
         return 0, len(self.target) - 1
 
     def _simplified(self):
+        from nutils.transformseq import MaskedTransforms
         if self.target == self.source:
             return self.index
+        if isinstance(self.source, MaskedTransforms):
+            index = Take(constant(self.source._indices), self.index)
+            return TransformIndex(self.target, self.source._parent, index)
 
 
 class TransformLinear(Array):
@@ -4820,8 +4828,12 @@ class TransformLinear(Array):
             return numpy.eye(self.source.fromdims)
 
     def _simplified(self):
+        from nutils.transformseq import MaskedTransforms
         if self.target == self.source:
             return diagonalize(ones((constant(self.source.fromdims),), dtype=float))
+        if isinstance(self.source, MaskedTransforms):
+            index = Take(constant(self.source._indices), self.index)
+            return TransformLinear(self.target, self.source._parent, index)
         if self.source._linear_is_constant and (self.target is None or self.target._linear_is_constant):
             return constant(self.evalf(0))
 
@@ -4877,12 +4889,16 @@ class TransformBasis(Array):
         return linear
 
     def _simplified(self):
+        from nutils.transformseq import MaskedTransforms
         if self.source.todims == self.source.fromdims:
             # Since we only guarantee that the basis spans the space of source
             # coordinates mapped to the root and the map is a bijection (every
             # `Transform` is assumed to be injective), we can return the unit
             # vectors here.
             return diagonalize(ones((self.source.fromdims,), dtype=float))
+        if isinstance(self.source, MaskedTransforms):
+            index = Take(constant(self.source._indices), self.index)
+            return TransformBasis(self.source._parent, index)
         if self.source._linear_is_constant:
             return constant(self.evalf(0))
 
