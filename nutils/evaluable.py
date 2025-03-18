@@ -2060,6 +2060,8 @@ class Take(Array):
                 return util.sum(Inflate(func, dofmap, self.func.shape[-1])._take(self.indices, self.func.ndim - 1) for dofmap, func in parts.items())
 
     def _optimized_for_numpy(self):
+        if self.indices.ndim == 0:
+            return _Get(self.func, self.indices)
         if isinstance(self.indices, Range):
             return _TakeSlice(self.func, self.indices.length, constant(0))
         if self.indices.ndim == 1 and isinstance(self.indices, Add) and len(self.indices.funcs) == 2:
@@ -2124,6 +2126,39 @@ class _TakeSlice(Array):
         slices = [_pyast.Variable('slice').call(_pyast.Variable('None'))] * (self.ndim - 1)
         slices.append(_pyast.Variable('slice').call(offset, _pyast.BinOp(offset, '+', length)))
         return arr.get_item(_pyast.Tuple(tuple(slices)))
+
+    def _intbounds_impl(self):
+        return self.func._intbounds
+
+
+class _Get(Array):
+    # To be used by `_optimized_for_numpy` only.
+
+    func: Array
+    index: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.ndim > 0, f'func={self.func!r}'
+        assert _isindex(self.index) and self.index.ndim == 0, f'index={self.index!r}'
+
+    @property
+    def dependencies(self):
+        return self.func, self.index
+
+    @cached_property
+    def dtype(self):
+        return self.func.dtype
+
+    @cached_property
+    def shape(self):
+        return self.func.shape[:-1]
+
+    def _compile_expression(self, py_self, arr, index):
+        return arr.get_item(_pyast.Tuple((_pyast.Raw('...'), index)))
+
+    def _simplified(self):
+        if (try_take := self.func._take(self.index, self.ndim)) is not None:
+            return try_take
 
     def _intbounds_impl(self):
         return self.func._intbounds
