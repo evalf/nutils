@@ -5553,6 +5553,9 @@ class ArgSort(Array):
         # numpy.dtype(int), so we type cast it for consistency
         return index.get_attr('astype').call(_pyast.Variable('int'), copy=_pyast.LiteralBool(False))
 
+    def _intbounds_impl(self):
+        return 0, max(0, self.array.shape[-1]._intbounds[1] - 1)
+
 
 class UniqueMask(Array):
 
