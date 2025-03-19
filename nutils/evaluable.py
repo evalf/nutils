@@ -4155,6 +4155,9 @@ class Unravel(Array):
         if argument not in self.sh1.arguments and argument not in self.sh2.arguments:
             return self.func.argument_degree(argument)
 
+    def _intbounds_impl(self):
+        return self.func._intbounds
+
 
 class RavelIndex(Array):
 
