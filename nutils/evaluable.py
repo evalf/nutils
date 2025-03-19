@@ -1904,6 +1904,21 @@ class Einsum(Array):
                 continue
             return Einsum(self.args[:i]+(arg.func,)+self.args[i+1:], self.args_idx[:i]+(idx,)+self.args_idx[i+1:], self.out_idx)
 
+    def _intbounds_impl(self):
+        sum_lengths = {i: n._intbounds[1] for arg, idx in zip(self.args, self.args_idx) for i, n in zip(idx, arg.shape) if i not in self.out_idx}.values()
+        if 0 in sum_lengths:
+            return 0, 0
+        # We can safely multiply all elements of `sum_lengths` without risking
+        # nans from multiplying zero with inf, because there are no zeros.
+        lower = upper = util.product(sum_lengths, 1)
+        for arg in self.args:
+            # To prevent nans from multiplying zero with inf, if either b1 or
+            # b2 is zero the multiple should be zero (an inf bound actually
+            # means an arbitary large, but finite bound).
+            extrema = [b1 and b2 and b1 * b2 for b1 in (lower, upper) for b2 in arg._intbounds]
+            lower, upper = min(extrema), max(extrema)
+        return lower, upper
+
 
 class Sum(Array):
 
