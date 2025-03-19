@@ -2030,7 +2030,7 @@ class Take(Array):
 
     def __post_init__(self):
         assert isinstance(self.func, Array) and self.func.ndim > 0, f'func={self.func!r}'
-        assert isinstance(self.indices, Array) and self.indices.dtype == int, f'indices={self.indices!r}'
+        assert isinstance(self.indices, Array) and self.indices.dtype == int and self.indices._intbounds[0] >= 0, f'indices={self.indices!r}'
 
     @property
     def dependencies(self):
@@ -6089,7 +6089,7 @@ def take(arg: Array, index: Array, axis: int):
             return _take(arg, constant(index_ + ineg * int(length)), axis)
         elif numpy.greater_equal(index_, int(length)).any():
             raise IndexError('indices out of bounds: {} >= {}'.format(index_, int(length)))
-    return _take(arg, index, axis)
+    return _take(arg, InRange(index, length), axis)
 
 
 def _take(arg: Array, index: Array, axis: int):
