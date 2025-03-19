@@ -158,7 +158,7 @@ class Evaluable(types.DataClass):
     def __str__(self):
         return self.__class__.__name__
 
-    @property
+    @cached_property
     def eval(self):
         '''Evaluate function on a specified element, point set.'''
 
@@ -3798,6 +3798,12 @@ class Argument(DerivativeTargetBase):
     def __str__(self):
         return '{} {!r} <{}>'.format(self.__class__.__name__, self.name, self._shape_str(form=str))
 
+    @cached_property
+    def eval(self):
+        '''Evaluate function on a specified element, point set.'''
+
+        return compile(self, simplify=False, stats=False, cache_const_intermediates=True)
+
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
@@ -6339,7 +6345,6 @@ def eval_coo(funcs: AsEvaluableArray, arguments: typing.Mapping[str, numpy.ndarr
     return f(**arguments)
 
 
-@functools.lru_cache(32)
 @log.withcontext
 def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = None, cache_const_intermediates: bool = True):
     '''Returns a callable that evaluates ``func``.
