@@ -3789,6 +3789,9 @@ class Find(Array):
             indices, = self.where.value.nonzero()
             return constant(indices)
 
+    def _intbounds_impl(self):
+        return 0, max(0, self.where.shape[0]._intbounds[1] - 1)
+
 
 class DerivativeTargetBase(Array):
     'base class for derivative targets'
