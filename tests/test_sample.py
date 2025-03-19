@@ -42,20 +42,20 @@ class Common:
 
     def test_get_evaluable_indices(self):
         assert len(self.desired_indices) == self.desired_nelems
-        actual = evaluable.compile(self.sample.get_evaluable_indices(evaluable.Argument('ielem', (), int)))
+        actual = evaluable.compile(self.sample.get_evaluable_indices(evaluable.InRange(evaluable.Argument('ielem', (), int), evaluable.constant(self.desired_nelems))))
         for ielem, desired in enumerate(self.desired_indices):
             self.assertEqual(actual(dict(ielem=ielem)).tolist(), desired)
 
     def test_get_evaluable_weights(self):
         assert len(self.desired_points) == self.desired_nelems
-        actual = evaluable.compile(self.sample.get_evaluable_weights(evaluable.Argument('ielem', (), int)))
+        actual = evaluable.compile(self.sample.get_evaluable_weights(evaluable.InRange(evaluable.Argument('ielem', (), int), evaluable.constant(self.desired_nelems))))
         for ielem, points in enumerate(self.desired_points):
             desired = functools.reduce(lambda l, r: numpy.einsum('...,i->...i', l, r), (p.weights for p in points))
             self.assertAllAlmostEqual(actual(dict(ielem=ielem)).tolist(), desired.tolist())
 
     def test_get_lower_args(self):
         assert len(self.desired_transform_chains) == len(self.desired_points) == self.desired_nelems
-        args = self.sample.get_lower_args(evaluable.Argument('ielem', (), int))
+        args = self.sample.get_lower_args(evaluable.InRange(evaluable.Argument('ielem', (), int), evaluable.constant(self.desired_nelems)))
         actual_shape = evaluable.compile(args.points_shape)
         for ielem, (desired_chains, desired_points) in enumerate(zip(self.desired_transform_chains, self.desired_points)):
             assert len(desired_chains) == len(desired_points) == len(self.desired_spaces)
@@ -72,7 +72,7 @@ class Common:
                 self.assertAllAlmostEqual(actual_coords, desired_coords)
                 offset += desired_point.coords.ndim - 1
         with self.assertRaisesRegex(ValueError, '^Nested'):
-            args | self.sample.get_lower_args(evaluable.Argument('ielem2', (), int))
+            args | self.sample.get_lower_args(evaluable.InRange(evaluable.Argument('ielem2', (), int), evaluable.constant(self.desired_nelems)))
 
     @property
     def _desired_element_tri(self):
@@ -126,7 +126,7 @@ class Common:
             take = self.sample.take_elements(numpy.array([ielem]))
             self.assertEqual(take.nelems, 1)
             self.assertEqual(take.ndims, self.desired_ndims)
-            args = take.get_lower_args(evaluable.Argument('ielem', (), int))
+            args = take.get_lower_args(evaluable.InRange(evaluable.Argument('ielem', (), int), evaluable.constant(1)))
             for space, desired_chain in zip(self.desired_spaces, self.desired_transform_chains[ielem]):
                 (chain, *_), index = args.transform_chains[space]
                 self.assertEqual(chain[evaluable.eval_once(index, arguments=dict(ielem=0)).__index__()], desired_chain)

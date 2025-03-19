@@ -1311,7 +1311,7 @@ class CommonBasis:
         ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
         points = ref.getpoints('bezier', 4)
         coordinates = evaluable.constant(points.coords)
-        lowerargs = function.LowerArgs.for_space('X', (self.checktransforms,), evaluable.Argument('ielem', (), int), coordinates)
+        lowerargs = function.LowerArgs.for_space('X', (self.checktransforms,), evaluable.InRange(evaluable.Argument('ielem', (), int), evaluable.constant(self.basis.nelems)), coordinates)
         lowered = evaluable.compile(self.basis.lower(lowerargs))
         with _builtin_warnings.catch_warnings():
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
