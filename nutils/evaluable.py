@@ -883,17 +883,20 @@ class Constant(Array):
         return tuple(constant(n) for n in self._value.shape)
 
     def _simplified(self):
-        if not self.value.any():
+        if not self.value.any(): # true if any axis is length 0
             return zeros_like(self)
-        if self.ndim == 1 and self.dtype == int and numpy.all(self.value == numpy.arange(self.value.shape[0])):
-            return Range(self.shape[0])
+        # At this point all axes are a least length 1
         for i, sh in enumerate(self.shape):
-            # Find and replace invariant axes with InsertAxis. Since `self.value.any()`
-            # is False for arrays with a zero-length axis, we can arrive here only if all
-            # axes have at least length one, hence the following statement should work.
-            first, *others = numpy.rollaxis(self.value, i)
-            if all(numpy.equal(first, other).all() for other in others):
+            pancake = iter(numpy.moveaxis(self.value, i, 0))
+            first = next(pancake)
+            if not first.ndim and numpy.all(self.value == first) or all(numpy.equal(first, other).all() for other in pancake):
                 return insertaxis(constant(first), i, sh)
+        # At this point all axes are a least length 2
+        if self.ndim == 1 and self.dtype == int and self.value[-1] == self.value[0] + self.value.size - 1 and numpy.all(self.value[1:] > self.value[:-1]):
+            r = Range(self.shape[0])
+            if self.value[0]:
+                r += self.value[0]
+            return r
 
     def eval(self, /, **evalargs):
         return self.value
