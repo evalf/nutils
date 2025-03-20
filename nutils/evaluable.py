@@ -1689,15 +1689,17 @@ class Add(Array):
             if axis not in func2_inflations:
                 continue
             parts2 = func2_inflations[axis]
-            dofmaps = set(parts1) | set(parts2)
-            if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
-                    and isinstance(self.shape[axis], Constant) and all(isinstance(dofmap, Constant) for dofmap in dofmaps)):
+            jointparts = parts1 | parts2
+            if (len(parts1) < len(jointparts) and len(parts2) < len(jointparts)  # neither set is a subset of the other; total may be dense
+                    and isinstance(self.shape[axis], Constant) and all(isinstance(dofmap, Constant) for dofmap in jointparts)):
                 mask = numpy.zeros(self.shape[axis].value, dtype=bool)
-                for dofmap in dofmaps:
+                for dofmap in jointparts:
                     mask[dofmap.value] = True
                 if mask.all():  # axis adds up to dense
                     continue
-            inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
+            # fix overlap by concatenating values for common keys
+            jointparts.update((dofmap, part1 + part2) for dofmap, part1 in parts1.items() if (part2 := parts2.get(dofmap)) is not None)
+            inflations.append((axis, types.frozendict(jointparts)))
         return tuple(inflations)
 
     @property
