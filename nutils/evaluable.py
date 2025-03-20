@@ -28,7 +28,7 @@ if typing.TYPE_CHECKING:
 else:
     Protocol = object
 
-from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse, _pyast
+from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, _pyast
 from functools import cached_property
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph, TupleNode
 from statistics import geometric_mean
@@ -6289,40 +6289,6 @@ def einsum(fmt, *args, **dims):
     for i in range(len(sout), len(sall)):
         ret = Sum(ret)
     return ret
-
-
-@util.single_or_multiple
-def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.ndarray]) -> typing.Tuple[numpy.ndarray, ...]:
-    '''Evaluate one or several Array objects as sparse data.
-
-    Args
-    ----
-    funcs : :class:`tuple` of Array objects
-        Arrays to be evaluated.
-    arguments : :class:`dict` (default: None)
-        Optional arguments for function evaluation.
-
-    Returns
-    -------
-    results : :class:`tuple` of sparse data arrays
-    '''
-
-    funcs = [func.as_evaluable_array for func in funcs]
-    shape_chunks = compile(tuple(builtins.sum(func.simplified._assparse, func.shape) for func in funcs))
-    for func, args in zip(funcs, shape_chunks(**arguments)):
-        shape = tuple(map(int, args[:func.ndim]))
-        chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
-        length = builtins.sum(values.size for *indices, values in chunks)
-        data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
-        start = 0
-        for *indices, values in chunks:
-            stop = start + values.size
-            d = data[start:stop].reshape(values.shape)
-            d['value'] = values
-            for idim, ii in enumerate(indices):
-                d['index']['i'+str(idim)] = ii
-            start = stop
-        yield data
 
 
 def eval_once(func: AsEvaluableArray, simplify: bool = True, stats: typing.Optional[str] = None, arguments: typing.Mapping[str, numpy.ndarray] = {}) -> typing.Tuple[numpy.ndarray, ...]:
