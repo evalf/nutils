@@ -5931,6 +5931,8 @@ def insertaxis(arg, n, length):
 
 
 def concatenate(args, axis=0):
+    if len(args) == 1:
+        return args[0]
     lengths = [arg.shape[axis] for arg in args]
     *offsets, totlength = util.cumsum(lengths + [0])
     return Transpose.from_end(util.sum(Inflate(Transpose.to_end(arg, axis), Range(length) + offset, totlength) for arg, length, offset in zip(args, lengths, offsets)), axis)
