@@ -5645,14 +5645,7 @@ def factor(array):
             values = values[nz]
             indices = [index[nz] for index in indices]
 
-        info = f'{len(values):,} coefficients for {len(shape)}-tensor'
-        if shape:
-            # The fill ratio is based on the geometric mean of the shape of the
-            # tensor to be insensitive to reshapes, as the geometric mean of
-            # (a, b, c, d) is equal to that of (a * b, c * d).
-            fill = len(values) / geometric_mean(shape)
-            info += f' ({100*fill:.0f}% full)' if .01 <= fill <= 1 else f' (bandwidth {fill:.0f})'
-        log.info(info)
+        log.info(f'{len(values):,} coefficients for {shape or "scalar"} array ({100*len(values)/numpy.prod(shape):.1f}% full)')
 
         if not len(values):
             continue
