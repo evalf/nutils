@@ -78,6 +78,13 @@ class check(TestCase):
         with self.subTest('sparse'):
             values, indices, shape = evaluable.eval_once(actual.simplified.assparse, arguments=evalargs)
             self.assertEqual(shape, desired.shape)
+            self.assertEqual(values.ndim, 1)
+            self.assertEqual(len(indices), len(shape))
+            if shape:
+                flatindex = numpy.ravel_multi_index(indices, shape)
+                self.assertTrue(numpy.all(flatindex[1:] > flatindex[:-1]))
+            else:
+                self.assertEqual(len(values), 1)
             self.assertArrayAlmostEqual(numeric.accumulate(values, indices, shape), desired, decimal)
         if actual.ndim == 2:
             with self.subTest('csr'):

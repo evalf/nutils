@@ -601,14 +601,26 @@ class Array(Evaluable):
 
     @property
     def assparse(self):
-        if not self.ndim:
-            return InsertAxis(self, constant(1)), (), ()
-        sparse = self._assparse
-        if not sparse:
-            indices = [zeros((constant(0),), int)] * self.ndim
-            values = zeros((constant(0),), self.dtype)
-        else:
-            *indices, values = tuple(concatenate([_flat(array) for array in arrays]) for arrays in zip(*sparse))
+        if self.ndim:
+            value_parts = []
+            index_parts = []
+            for flatindex, *indices, values in self._assparse:
+                for n, index in zip(self.shape[1:], indices):
+                    flatindex = flatindex * n + index
+                value_parts.append(_flat(values))
+                index_parts.append(_flat(flatindex))
+            if value_parts:
+                flatindex, inverse = unique(concatenate(index_parts), return_inverse=True)
+                values = Inflate(concatenate(value_parts), inverse, flatindex.shape[0])
+                indices = [flatindex]
+                for n in reversed(self.shape[1:]):
+                    indices[:1] = divmod(indices[0], n)
+            else:
+                indices = [zeros((constant(0),), int)] * self.ndim
+                values = zeros((constant(0),), self.dtype)
+        else: # scalar
+            values = InsertAxis(self, constant(1))
+            indices = ()
         return values, tuple(indices), self.shape
 
     @cached_property
@@ -5470,12 +5482,8 @@ class CompressIndices(Array):
 
 def as_csr(array):
     assert array.ndim == 2
-    values, (rowindices, colindices), (nrows, ncols) = array.simplified.assparse
-    indices, inverse = unique(rowindices * ncols + colindices, return_inverse=True)
-    rowidx, colidx = divmod(indices, ncols)
-    rowptr = CompressIndices(rowidx, nrows)
-    values = Inflate(values, inverse, indices.shape[0])
-    return values, rowptr, colidx, ncols
+    values, (rowidx, colidx), (nrows, ncols) = array.simplified.assparse
+    return values, CompressIndices(rowidx, nrows), colidx, ncols
 
 
 @util.shallow_replace
@@ -5629,7 +5637,10 @@ def factor(array):
     nvals = 0
 
     for args, (values, indices, shape) in log.iter.fraction('monomial', m_args, eval_once(m_coeffs)):
-        indices, values = _sort_and_prune(shape, indices, values)
+        if not values.all(): # prune zeros
+            nz, = values.nonzero()
+            values = values[nz]
+            indices = [index[nz] for index in indices]
 
         info = f'{len(values):,} coefficients for {len(shape)}-tensor'
         if shape:
@@ -5733,19 +5744,6 @@ def _make_loop_ids_unique(funcs: typing.Tuple[Evaluable, ...]) -> typing.Tuple[E
         return new_obj
 
     return tuple(map(replace_inner, funcs))
-
-
-def _sort_and_prune(shape, indices, values):
-    assert len(shape) == len(indices)
-    if not shape:
-        v = values.sum()
-        return (), v[None] if v else numpy.zeros(0, int)
-    flat_index, inverse = numpy.unique(numpy.ravel_multi_index(indices, shape), return_inverse=True)
-    values = numeric.accumulate(values, [inverse], flat_index.shape)
-    nonzero = values != 0
-    if nonzero.all():
-        nonzero = slice(None)
-    return numpy.unravel_index(flat_index[nonzero], shape), values[nonzero]
 
 
 class _Stats:
