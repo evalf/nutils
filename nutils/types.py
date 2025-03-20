@@ -388,7 +388,10 @@ class arraydata(Singleton):
         if isinstance(arg, cls):
             return arg
         orig = numpy.asarray(arg)
-        dtype = dict(b=bool, u=int, i=int, f=float, c=complex)[orig.dtype.kind]
+        try:
+            dtype = dict(b=bool, u=int, i=int, f=float, c=complex)[orig.dtype.kind]
+        except KeyError:
+            raise ValueError(f'argument {arg!r} does not represent valid array data') from None
         array = orig.astype(dtype, copy=False)
         if array.dtype != orig.dtype and not numpy.equal(array, orig).all():
             raise ValueError('cannot cast array with dtype {orig.dtype} to native dtype {array.dtype} without truncation')
