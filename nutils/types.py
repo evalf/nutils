@@ -464,6 +464,7 @@ class frozendict(collections.abc.Mapping):
     __len__ = lambda self: self.__base.__len__()
     __hash__ = lambda self: self.__hash
     __contains__ = lambda self, key: self.__base.__contains__(key)
+    __or__ = lambda self, other: self.__base.__or__(other.__base if isinstance(other, frozendict) else other)
 
     copy = lambda self: self.__base.copy()
 
