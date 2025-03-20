@@ -82,6 +82,14 @@ def extract(data):
     return indices(data), values(data), shape(data)
 
 
+def compose(indices, values, shape):
+    data = numpy.empty(values.shape, dtype=dtype(shape, values.dtype))
+    data['value'] = values
+    for idim, ii in enumerate(indices):
+        data['index'][f'i{idim}'] = ii
+    return data
+
+
 def empty(shape, vtype=numpy.float64):
     '''Completely sparse array of given shape and data type.'''
 
