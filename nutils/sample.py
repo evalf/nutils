@@ -166,8 +166,7 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-
-        return function.evaluate(*map(self.integral, funcs), _post=function._convert, arguments=arguments)
+        return function._legacy_eval([self.integral(func) for func in funcs], **arguments)
 
     @util.single_or_multiple
     def integrate_sparse(self, funcs, /, **arguments):
@@ -181,7 +180,9 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function.evaluate(*map(self.integral, funcs), _post=lambda x: x, arguments=arguments)
+        from . import sparse
+        arrays = function.eval([function.as_coo(self.integral(func)) for func in funcs], **arguments)
+        return [sparse.compose(indices, values, func.shape) for func, (values, *indices) in zip(funcs, arrays)]
 
     @util.nutils_dispatch
     def integral(self, __func: function.IntoArray) -> function.Array:
@@ -210,7 +211,7 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function.evaluate(*map(self.bind, funcs), arguments=arguments)
+        return function.eval([self.bind(func) for func in funcs], **arguments)
 
     @util.single_or_multiple
     def eval_sparse(self, funcs, /, **arguments):
