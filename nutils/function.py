@@ -2204,6 +2204,29 @@ def evaluate(*arrays, _post=sparse.toarray, arguments={}):
     return tuple(map(_post, sparse_arrays))
 
 
+def as_coo(array):
+    '''Convert any array to an evaluable tuple of sparse COO data.
+
+    The tuple consists of the array values, followed by the corresponding
+    indices in all axes. Indices are lexicographically ordered and unique, but
+    values are not guaranteed to be nonzero.'''
+
+    values, indices, shape = array.as_evaluable_array.simplified.assparse
+    return values, *indices
+
+
+def as_csr(array):
+    '''Convert a 2D array to an evaluable tuple of sparse CSR data.
+
+    The tuple consists of the array values, row pointers, and column
+    indices.'''
+
+    if array.ndim != 2:
+        raise ValueError('as_csr requires a 2D argument')
+    values, rowptr, colidx, ncols = evaluable.as_csr(array.as_evaluable_array)
+    return values, rowptr, colidx
+
+
 def integral(func: IntoArray, sample) -> Array:
     '''Integrate a function over a sample.
 
