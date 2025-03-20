@@ -5,7 +5,7 @@ else:
     Protocol = object
 
 from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
-from . import evaluable, numeric, _util as util, types, warnings, debug_flags, sparse, matrix
+from . import evaluable, numeric, _util as util, types, warnings, debug_flags
 from ._util import nutils_dispatch
 from functools import cached_property
 from .transformseq import Transforms
@@ -471,7 +471,8 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def eval(self, /, **arguments) -> numpy.ndarray:
         'Evaluate this function.'
 
-        return evaluate(self, _post=_convert, arguments=arguments)[0]
+        retval, = _legacy_eval([self], **arguments)
+        return retval
 
     def derivative(self, __var: Union[str, 'Argument']) -> 'Array':
         'See :func:`derivative`.'
@@ -2162,19 +2163,19 @@ def nsymgrad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
 # MISC
 
 
-def _convert(data: numpy.ndarray, inplace: bool = True) -> Union[numpy.ndarray, matrix.Matrix]:
-    '''Convert a two-dimensional sparse object to an appropriate object.
-
-    The return type is determined based on dimension: a zero-dimensional object
-    becomes a scalar, a one-dimensional object a (dense) Numpy vector, a
-    two-dimensional object a Nutils matrix, and any higher dimensional object a
-    deduplicated and pruned sparse object.
-    '''
-
-    ndim = sparse.ndim(data)
-    return sparse.toarray(data) if ndim < 2 \
-        else matrix.fromsparse(data, inplace=inplace) if ndim == 2 \
-        else sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True)
+def _legacy_eval(funcs, **arguments):
+    from . import matrix, sparse
+    arrays = eval([func if func.ndim < 2 else as_csr(func) if func.ndim == 2 else as_coo(func) for func in funcs], **arguments)
+    for func, data in zip(funcs, arrays):
+        if func.ndim == 0:
+            data = data[()]
+        elif func.ndim == 2:
+            values, rowptr, colidx = data
+            data = matrix.assemble_csr(values, rowptr, colidx, func.shape[1])
+        elif func.ndim > 2:
+            values, *indices = data
+            data = sparse.compose(indices, values, func.shape)
+        yield data
 
 
 @util.single_or_multiple
@@ -2197,11 +2198,33 @@ def eval(funcs: evaluable.AsEvaluableArray, /, **arguments: numpy.ndarray) -> Tu
 
 
 @nutils_dispatch
-def evaluate(*arrays, _post=sparse.toarray, arguments={}):
+def evaluate(*arrays, arguments={}):
     if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], dict):
         arguments = arguments['arguments']
-    sparse_arrays = evaluable.eval_sparse(map(Array.cast, arrays), **arguments)
-    return tuple(map(_post, sparse_arrays))
+    return evaluable.eval_once(tuple(map(evaluable.asarray, arrays)), arguments=arguments)
+
+
+def as_coo(array):
+    '''Convert any array to an evaluable tuple of sparse COO data.
+
+    The tuple consists of the array values, followed by the corresponding
+    indices in all axes. Indices are lexicographically ordered and unique, but
+    values are not guaranteed to be nonzero.'''
+
+    values, indices, shape = array.as_evaluable_array.simplified.assparse
+    return values, *indices
+
+
+def as_csr(array):
+    '''Convert a 2D array to an evaluable tuple of sparse CSR data.
+
+    The tuple consists of the array values, row pointers, and column
+    indices.'''
+
+    if array.ndim != 2:
+        raise ValueError('as_csr requires a 2D argument')
+    values, rowptr, colidx, ncols = evaluable.as_csr(array.as_evaluable_array)
+    return values, rowptr, colidx
 
 
 def integral(func: IntoArray, sample) -> Array:

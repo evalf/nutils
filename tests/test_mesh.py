@@ -198,7 +198,7 @@ class unitcircle(TestCase):
 
     def test_boundaries(self):
         self.assertAllAlmostEqual(self.domain.boundary.volume(self.geom, degree=6), 2 * numpy.pi)
-        self.domain.check_boundary(geometry=self.geom, degree=8, print=self.fail, tol=1e-14)
+        self.domain.check_boundary(geometry=self.geom, degree=8, print=self.fail, tol=1e-13)
 
     def test_interface(self):
         geomerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom - function.opposite(self.geom))

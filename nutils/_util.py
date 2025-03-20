@@ -164,14 +164,27 @@ class single_or_multiple:
     def __get__(self, instance, owner):
         return single_or_multiple(self.__wrapped__.__get__(instance, owner))
 
-    def __call__(self, *args, **kwargs):
-        if not args:
-            raise TypeError('{} requires at least 1 positional argument'.format(self.__wrapped__.__name__))
-        ismultiple = isinstance(args[0], (list, tuple, map))
-        retvals = tuple(self.__wrapped__(tuple(args[0]) if ismultiple else args[:1], *args[1:], **kwargs))
-        if not ismultiple:
-            retvals, = retvals
-        return retvals
+    def __call__(self, arg, *args, **kwargs):
+        if isinstance(arg, map) or inspect.isgenerator(arg):
+            arg = tuple(arg)
+        # 1. flatten arg = [a, (b, [c, d]), e] to flatarg = [a, b, c, d, e].
+        flatarg = []
+        slices = []
+        stack = [arg]
+        while stack:
+            obj = stack.pop()
+            if isinstance(obj, (tuple, list)):
+                stack.extend(reversed(obj))
+                slices.append((len(flatarg), len(flatarg) + len(obj)))
+            else:
+                flatarg.append(obj)
+        # 2. call wrapped function with flattened first argument
+        retvals = tuple(self.__wrapped__(tuple(flatarg), *args, **kwargs))
+        # 3. reconstruct nested sequences as tuples
+        for i, j in reversed(slices):
+            retvals = *retvals[:i], retvals[i:j], *retvals[j:]
+        assert len(retvals) == 1
+        return retvals[0]
 
 
 def loadlib(name):

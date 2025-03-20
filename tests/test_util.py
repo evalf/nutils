@@ -79,13 +79,17 @@ class binaryfile(TestCase):
 
 class single_or_multiple(TestCase):
 
+    def check(self, square):
+        self.assertEqual(square(2), 4)
+        self.assertEqual(square([2, 3]), (4, 9))
+        self.assertEqual(square([2, [(3, 4), [[[[[[5, 6]]]]]]], 7]), (4, ((9, 16), ((((((25, 36),),),),),)), 49))
+
     def test_function(self):
         @util.single_or_multiple
         def square(values):
             self.assertIsInstance(values, tuple)
             return [value**2 for value in values]
-        self.assertEqual(square(2), 4)
-        self.assertEqual(square([2, 3]), (4, 9))
+        self.check(square)
 
     def test_method(self):
         class T:
@@ -94,9 +98,7 @@ class single_or_multiple(TestCase):
                 self.assertIsInstance(self_, T)
                 self.assertIsInstance(values, tuple)
                 return [value**2 for value in values]
-        t = T()
-        self.assertEqual(t.square(2), 4)
-        self.assertEqual(t.square([2, 3]), (4, 9))
+        self.check(T().square)
 
 
 class index(TestCase):

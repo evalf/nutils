@@ -76,8 +76,15 @@ class check(TestCase):
         with self.subTest('optimized'):
             self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
         with self.subTest('sparse'):
-            values, indices, shape = evaluable.eval_coo(actual, evalargs)
+            values, indices, shape = evaluable.eval_once(actual.simplified.assparse, arguments=evalargs)
             self.assertEqual(shape, desired.shape)
+            self.assertEqual(values.ndim, 1)
+            self.assertEqual(len(indices), len(shape))
+            if shape:
+                flatindex = numpy.ravel_multi_index(indices, shape)
+                self.assertTrue(numpy.all(flatindex[1:] > flatindex[:-1]))
+            else:
+                self.assertEqual(len(values), 1)
             self.assertArrayAlmostEqual(numeric.accumulate(values, indices, shape), desired, decimal)
         if actual.ndim == 2:
             with self.subTest('csr'):
@@ -1430,7 +1437,7 @@ class factor(TestCase):
         # check that the function tree produced by factor reveals its sparsity after derivative.
 
         v2 = evaluable.derivative(evaluable.derivative(evaluable.factor(self.integral(self.v * self.v)), self.varg), self.varg)
-        values, indices, shape = evaluable.eval_coo(v2)
+        values, indices, shape = evaluable.eval_once(v2.simplified.assparse)
         self.assertAllEqual(values,
             [2, 4, -6, 4, 10, -8, -6, -6, -8, 28, -8, -6, -6, -8, 28, -8, -6, -6, -8, 26, -12, -6, -12, 18])
         self.assertAllEqual(indices,
@@ -1439,7 +1446,7 @@ class factor(TestCase):
         self.assertEqual(shape, (6, 6))
 
         b2 = evaluable.derivative(evaluable.derivative(evaluable.factor(self.integral(evaluable.Sum(self.b * self.b))), self.barg), self.barg)
-        values, indices, shape = evaluable.eval_coo(b2)
+        values, indices, shape = evaluable.eval_once(b2.simplified.assparse)
         self.assertAllEqual(values,
             [2, 4, -6, 2, 4, -6, 4, 10, -8, -6, 4, 10, -8, -6, -6, -8, 28, -8, -6, -6, -8, 28, -8, -6, -6, -8, 28, -8, -6, -6, -8, 28, -8, -6, -6, -8, 26, -12, -6, -8, 26, -12, -6, -12, 18, -6, -12, 18])
         self.assertAllEqual(indices,

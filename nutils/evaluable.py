@@ -28,7 +28,7 @@ if typing.TYPE_CHECKING:
 else:
     Protocol = object
 
-from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse, _pyast
+from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, _pyast
 from functools import cached_property
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph, TupleNode
 from statistics import geometric_mean
@@ -158,7 +158,7 @@ class Evaluable(types.DataClass):
     def __str__(self):
         return self.__class__.__name__
 
-    @property
+    @cached_property
     def eval(self):
         '''Evaluate function on a specified element, point set.'''
 
@@ -601,14 +601,26 @@ class Array(Evaluable):
 
     @property
     def assparse(self):
-        if not self.ndim:
-            return InsertAxis(self, constant(1)), (), ()
-        sparse = self._assparse
-        if not sparse:
-            indices = [zeros((constant(0),), int)] * self.ndim
-            values = zeros((constant(0),), self.dtype)
-        else:
-            *indices, values = tuple(concatenate([_flat(array) for array in arrays]) for arrays in zip(*sparse))
+        if self.ndim:
+            value_parts = []
+            index_parts = []
+            for flatindex, *indices, values in self._assparse:
+                for n, index in zip(self.shape[1:], indices):
+                    flatindex = flatindex * n + index
+                value_parts.append(_flat(values))
+                index_parts.append(_flat(flatindex))
+            if value_parts:
+                flatindex, inverse = unique(concatenate(index_parts), return_inverse=True)
+                values = Inflate(concatenate(value_parts), inverse, flatindex.shape[0])
+                indices = [flatindex]
+                for n in reversed(self.shape[1:]):
+                    indices[:1] = divmod(indices[0], n)
+            else:
+                indices = [zeros((constant(0),), int)] * self.ndim
+                values = zeros((constant(0),), self.dtype)
+        else: # scalar
+            values = InsertAxis(self, constant(1))
+            indices = ()
         return values, tuple(indices), self.shape
 
     @cached_property
@@ -1689,15 +1701,17 @@ class Add(Array):
             if axis not in func2_inflations:
                 continue
             parts2 = func2_inflations[axis]
-            dofmaps = set(parts1) | set(parts2)
-            if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
-                    and isinstance(self.shape[axis], Constant) and all(isinstance(dofmap, Constant) for dofmap in dofmaps)):
+            jointparts = parts1 | parts2
+            if (len(parts1) < len(jointparts) and len(parts2) < len(jointparts)  # neither set is a subset of the other; total may be dense
+                    and isinstance(self.shape[axis], Constant) and all(isinstance(dofmap, Constant) for dofmap in jointparts)):
                 mask = numpy.zeros(self.shape[axis].value, dtype=bool)
-                for dofmap in dofmaps:
+                for dofmap in jointparts:
                     mask[dofmap.value] = True
                 if mask.all():  # axis adds up to dense
                     continue
-            inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
+            # fix overlap by concatenating values for common keys
+            jointparts.update((dofmap, part1 + part2) for dofmap, part1 in parts1.items() if (part2 := parts2.get(dofmap)) is not None)
+            inflations.append((axis, types.frozendict(jointparts)))
         return tuple(inflations)
 
     @property
@@ -3796,6 +3810,12 @@ class Argument(DerivativeTargetBase):
     def __str__(self):
         return '{} {!r} <{}>'.format(self.__class__.__name__, self.name, self._shape_str(form=str))
 
+    @cached_property
+    def eval(self):
+        '''Evaluate function on a specified element, point set.'''
+
+        return compile(self, simplify=False, stats=False, cache_const_intermediates=True)
+
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
@@ -5462,12 +5482,8 @@ class CompressIndices(Array):
 
 def as_csr(array):
     assert array.ndim == 2
-    values, (rowindices, colindices), (nrows, ncols) = array.simplified.assparse
-    indices, inverse = unique(rowindices * ncols + colindices, return_inverse=True)
-    rowidx, colidx = divmod(indices, ncols)
-    rowptr = CompressIndices(rowidx, nrows)
-    values = Inflate(values, inverse, indices.shape[0])
-    return values, rowptr, colidx, ncols
+    values, (rowidx, colidx), (nrows, ncols) = array.simplified.assparse
+    return values, CompressIndices(rowidx, nrows), colidx, ncols
 
 
 @util.shallow_replace
@@ -5597,7 +5613,7 @@ def factor(array):
         zeroed = zero_all_arguments(func).simplified
         if not iszero(zeroed):
             m_args.append(args)
-            m_coeffs.append(zeroed)
+            m_coeffs.append(zeroed.assparse)
         for arg in func.arguments: # as m_args grows, fewer arguments will remain in func
             # We keep only m_args that are alphabetically ordered to
             # deduplicate permutations of the same argument set:
@@ -5620,8 +5636,11 @@ def factor(array):
     polynomial = []
     nvals = 0
 
-    for args, (values, indices, shape) in log.iter.fraction('monomial', m_args, eval_coo(m_coeffs)):
-        indices, values = _sort_and_prune(shape, indices, values)
+    for args, (values, indices, shape) in log.iter.fraction('monomial', m_args, eval_once(m_coeffs)):
+        if not values.all(): # prune zeros
+            nz, = values.nonzero()
+            values = values[nz]
+            indices = [index[nz] for index in indices]
 
         info = f'{len(values):,} coefficients for {len(shape)}-tensor'
         if shape:
@@ -5725,19 +5744,6 @@ def _make_loop_ids_unique(funcs: typing.Tuple[Evaluable, ...]) -> typing.Tuple[E
         return new_obj
 
     return tuple(map(replace_inner, funcs))
-
-
-def _sort_and_prune(shape, indices, values):
-    assert len(shape) == len(indices)
-    if not shape:
-        v = values.sum()
-        return (), v[None] if v else numpy.zeros(0, int)
-    flat_index, inverse = numpy.unique(numpy.ravel_multi_index(indices, shape), return_inverse=True)
-    values = numeric.accumulate(values, [inverse], flat_index.shape)
-    nonzero = values != 0
-    if nonzero.all():
-        nonzero = slice(None)
-    return numpy.unravel_index(flat_index[nonzero], shape), values[nonzero]
 
 
 class _Stats:
@@ -5923,6 +5929,8 @@ def insertaxis(arg, n, length):
 
 
 def concatenate(args, axis=0):
+    if len(args) == 1:
+        return args[0]
     lengths = [arg.shape[axis] for arg in args]
     *offsets, totlength = util.cumsum(lengths + [0])
     return Transpose.from_end(util.sum(Inflate(Transpose.to_end(arg, axis), Range(length) + offset, totlength) for arg, length, offset in zip(args, lengths, offsets)), axis)
@@ -6283,48 +6291,18 @@ def einsum(fmt, *args, **dims):
     return ret
 
 
-@util.single_or_multiple
-def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.ndarray]) -> typing.Tuple[numpy.ndarray, ...]:
-    '''Evaluate one or several Array objects as sparse data.
+def eval_once(func: AsEvaluableArray, simplify: bool = True, stats: typing.Optional[str] = None, arguments: typing.Mapping[str, numpy.ndarray] = {}) -> typing.Tuple[numpy.ndarray, ...]:
+    '''Evaluate one or several Array objects by compiling it for single use.
 
     Args
     ----
-    funcs : :class:`tuple` of Array objects
-        Arrays to be evaluated.
-    arguments : :class:`dict` (default: None)
-        Optional arguments for function evaluation.
-
-    Returns
-    -------
-    results : :class:`tuple` of sparse data arrays
-    '''
-
-    funcs = [func.as_evaluable_array for func in funcs]
-    shape_chunks = compile(tuple(builtins.sum(func.simplified._assparse, func.shape) for func in funcs))
-    for func, args in zip(funcs, shape_chunks(**arguments)):
-        shape = tuple(map(int, args[:func.ndim]))
-        chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
-        length = builtins.sum(values.size for *indices, values in chunks)
-        data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
-        start = 0
-        for *indices, values in chunks:
-            stop = start + values.size
-            d = data[start:stop].reshape(values.shape)
-            d['value'] = values
-            for idim, ii in enumerate(indices):
-                d['index']['i'+str(idim)] = ii
-            start = stop
-        yield data
-
-
-@util.single_or_multiple
-def eval_coo(funcs: AsEvaluableArray, arguments: typing.Mapping[str, numpy.ndarray] = {}) -> typing.Tuple[numpy.ndarray, ...]:
-    '''Evaluate one or several Array objects as COO sparse data.
-
-    Args
-    ----
-    funcs : :class:`tuple` of Array objects
-        Arrays to be evaluated.
+    func : :class:`Evaluable` or (possibly nested) tuples of :class:`Evaluable`\\s
+        The function or functions to compile.
+    simplify : :class:`bool`
+        If true, functions will be simplified before compilation.
+    stats : ``'log'`` or ``None``
+        If ``'log'`` the compiled function will log the durations of individual
+        :class:`Evaluable`\\s referenced by ``func``.
     arguments : :class:`dict` (default: None)
         Optional arguments for function evaluation.
 
@@ -6333,11 +6311,10 @@ def eval_coo(funcs: AsEvaluableArray, arguments: typing.Mapping[str, numpy.ndarr
     results : :class:`tuple` of (values, indices, shape) triplets
     '''
 
-    f = compile(tuple(func.as_evaluable_array.simplified.assparse for func in funcs))
+    f = compile(func, simplify=simplify, stats=stats, cache_const_intermediates=False)
     return f(**arguments)
 
 
-@functools.lru_cache(32)
 @log.withcontext
 def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = None, cache_const_intermediates: bool = True):
     '''Returns a callable that evaluates ``func``.
@@ -6491,7 +6468,7 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
             funcs.append(obj)
             ret_fmt.append('{}')
         else:
-            raise ValueError('expected a `nutils.evaluable.Array`, `tuple` or `list` but got {obj!r}')
+            raise ValueError(f'expected a `nutils.evaluable.Array`, `tuple` or `list` but got {obj!r}')
     ret_fmt, = ret_fmt
 
     # Simplify and optimize `funcs`.
