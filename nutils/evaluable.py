@@ -6493,7 +6493,7 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
             funcs.append(obj)
             ret_fmt.append('{}')
         else:
-            raise ValueError('expected a `nutils.evaluable.Array`, `tuple` or `list` but got {obj!r}')
+            raise ValueError(f'expected a `nutils.evaluable.Array`, `tuple` or `list` but got {obj!r}')
     ret_fmt, = ret_fmt
 
     # Simplify and optimize `funcs`.
