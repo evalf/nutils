@@ -5605,7 +5605,7 @@ def factor(array):
         zeroed = zero_all_arguments(func).simplified
         if not iszero(zeroed):
             m_args.append(args)
-            m_coeffs.append(zeroed)
+            m_coeffs.append(zeroed.assparse)
         for arg in func.arguments: # as m_args grows, fewer arguments will remain in func
             # We keep only m_args that are alphabetically ordered to
             # deduplicate permutations of the same argument set:
@@ -5628,7 +5628,7 @@ def factor(array):
     polynomial = []
     nvals = 0
 
-    for args, (values, indices, shape) in log.iter.fraction('monomial', m_args, eval_coo(m_coeffs)):
+    for args, (values, indices, shape) in log.iter.fraction('monomial', m_args, eval_once(m_coeffs)):
         indices, values = _sort_and_prune(shape, indices, values)
 
         info = f'{len(values):,} coefficients for {len(shape)}-tensor'
@@ -6325,14 +6325,18 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
         yield data
 
 
-@util.single_or_multiple
-def eval_coo(funcs: AsEvaluableArray, arguments: typing.Mapping[str, numpy.ndarray] = {}) -> typing.Tuple[numpy.ndarray, ...]:
-    '''Evaluate one or several Array objects as COO sparse data.
+def eval_once(func: AsEvaluableArray, simplify: bool = True, stats: typing.Optional[str] = None, arguments: typing.Mapping[str, numpy.ndarray] = {}) -> typing.Tuple[numpy.ndarray, ...]:
+    '''Evaluate one or several Array objects by compiling it for single use.
 
     Args
     ----
-    funcs : :class:`tuple` of Array objects
-        Arrays to be evaluated.
+    func : :class:`Evaluable` or (possibly nested) tuples of :class:`Evaluable`\\s
+        The function or functions to compile.
+    simplify : :class:`bool`
+        If true, functions will be simplified before compilation.
+    stats : ``'log'`` or ``None``
+        If ``'log'`` the compiled function will log the durations of individual
+        :class:`Evaluable`\\s referenced by ``func``.
     arguments : :class:`dict` (default: None)
         Optional arguments for function evaluation.
 
@@ -6341,7 +6345,7 @@ def eval_coo(funcs: AsEvaluableArray, arguments: typing.Mapping[str, numpy.ndarr
     results : :class:`tuple` of (values, indices, shape) triplets
     '''
 
-    f = compile(tuple(func.as_evaluable_array.simplified.assparse for func in funcs))
+    f = compile(func, simplify=simplify, stats=stats, cache_const_intermediates=False)
     return f(**arguments)
 
 
