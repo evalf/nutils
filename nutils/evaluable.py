@@ -2745,8 +2745,10 @@ class Maximum(Pointwise):
     def dependencies(self):
         return self.x, self.y
 
-    evalf = staticmethod(numpy.maximum)
     deriv = lambda x, y: .5 + .5 * Sign(x - y), lambda x, y: .5 - .5 * Sign(x - y)
+
+    def _compile_expression(self, py_self, x, y):
+        return _pyast.Variable('numpy').get_attr('maximum').call(x, y)
 
     @cached_property
     def dtype(self):
