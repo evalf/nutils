@@ -787,10 +787,14 @@ class AssertEqual(Array):
     def dependencies(self):
         return self.a, self.b
 
-    def evalf(self, a, b):
+    @staticmethod
+    def evalf(a, b):
         if a.shape != b.shape or (a != b).any():
             raise Exception('values are not equal')
         return a
+
+    def _compile_expression(self, py_self, a, b):
+        return _pyast.Variable('evaluable').get_attr('AssertEqual').get_attr('evalf').call(a, b)
 
 
 class Orthonormal(Array):
