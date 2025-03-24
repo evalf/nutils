@@ -206,12 +206,12 @@ class Evaluable(types.DataClass):
         # calling `Evaluable._compile`, because the former caches the compiled
         # evaluables.
         args = builder.compile(self.dependencies)
-        expression = self._compile_expression(builder.get_evaluable_expr(self), *args)
+        expression = self._compile_expression(builder.get_evaluable_expr(self), builder.add_constant, *args)
         out = builder.get_variable_for_evaluable(self)
         builder.get_block_for_evaluable(self).assign_to(out, expression)
         return out
 
-    def _compile_expression(self, py_self: _pyast.Variable, *args: _pyast.Expression):
+    def _compile_expression(self, py_self: _pyast.Variable, add_constant, *args: _pyast.Expression):
         # Compiles this evaluable given compiled arguments.
         #
         # `py_self` is a variable that refers to `self`.
@@ -250,7 +250,7 @@ class Tuple(Evaluable):
     def dependencies(self):
         return self.items
 
-    def _compile_expression(self, py_self, *items):
+    def _compile_expression(self, py_self, add_constant, *items):
         return _pyast.Tuple(items)
 
     def __iter__(self):
@@ -1036,11 +1036,11 @@ class InsertAxis(Array):
         except ValueError:  # non-contiguous data
             return numpy.repeat(func[..., numpy.newaxis], length, -1)
 
-    def _compile_expression(self, py_self, func, length):
+    def _compile_expression(self, py_self, add_constant, func, length):
         if isunit(self.length):
             return func.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Variable('numpy').get_attr('newaxis'))))
         else:
-            return super()._compile_expression(py_self, func, length)
+            return super()._compile_expression(py_self, add_constant, func, length)
 
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
@@ -1189,7 +1189,7 @@ class Transpose(Array):
     def _simplified(self):
         return self.func._transpose(self.axes)
 
-    def _compile_expression(self, py_self, func):
+    def _compile_expression(self, py_self, add_constant, func):
         axes = _pyast.Tuple(tuple(map(_pyast.LiteralInt, self.axes)))
         return _pyast.Variable('numpy').get_attr('transpose').call(func, axes)
 
@@ -1358,7 +1358,7 @@ class Product(Array):
     def shape(self):
         return self.func.shape[:-1]
 
-    def _compile_expression(self, py_self, func):
+    def _compile_expression(self, py_self, add_constant, func):
         return _pyast.Variable('numpy').get_attr('all' if self.dtype == bool else 'prod').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
@@ -1539,7 +1539,7 @@ class Multiply(Array):
             r = tuple(range(self.ndim))
             return Einsum(tuple(self.funcs), (r, r), r)
 
-    def _compile_expression(self, py_self, func1, func2):
+    def _compile_expression(self, py_self, add_constant, func1, func2):
         return _pyast.BinOp(func1, '*', func2)
 
     def _sum(self, axis):
@@ -1763,7 +1763,7 @@ class Add(Array):
         else:
             return super()._compile(builder)
 
-    def _compile_expression(self, py_self, func1, func2):
+    def _compile_expression(self, py_self, add_constant, func1, func2):
         return _pyast.BinOp(func1, '+', func2)
 
     def _compile_with_out(self, builder, out, out_block_id, mode):
@@ -1858,7 +1858,7 @@ class Einsum(Array):
     def dtype(self):
         return self.args[0].dtype
 
-    def _compile_expression(self, py_self, *args):
+    def _compile_expression(self, py_self, add_constant, *args):
         return _pyast.Variable('numpy').get_attr('einsum').call(_pyast.LiteralStr(self._einsumfmt), *args)
 
     @property
@@ -1899,7 +1899,7 @@ class Sum(Array):
     def shape(self):
         return self.func.shape[:-1]
 
-    def _compile_expression(self, py_self, func):
+    def _compile_expression(self, py_self, add_constant, func):
         return _pyast.Variable('numpy').get_attr('any' if self.dtype == bool else 'sum').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
@@ -2000,7 +2000,7 @@ class TakeDiag(Array):
             axes = [i-(i>rmaxis) for i in axes[:-1]]
             return transpose(Einsum(func.args, args_idx, func.out_idx[:rmaxis] + func.out_idx[rmaxis+1:]), axes)
 
-    def _compile_expression(self, py_self, arr):
+    def _compile_expression(self, py_self, add_constant, arr):
         return _pyast.Variable('numpy').get_attr('einsum').call(_pyast.LiteralStr('...kk->...k'), arr)
 
     def _derivative(self, var, seen):
@@ -2066,7 +2066,7 @@ class Take(Array):
                 if isinstance(a, Range) and isinstance(b, InsertAxis) and _isindex(b.func):
                     return _TakeSlice(self.func, a.length, b.func)
 
-    def _compile_expression(self, py_self, arr, indices):
+    def _compile_expression(self, py_self, add_constant, arr, indices):
         return _pyast.Variable('numpy').get_attr('take').call(arr, indices, axis=_pyast.LiteralInt(-1))
 
     def _derivative(self, var, seen):
@@ -2119,7 +2119,7 @@ class _TakeSlice(Array):
     def shape(self):
         return self.func.shape[:-1] + (self.length,)
 
-    def _compile_expression(self, py_self, arr, length, offset):
+    def _compile_expression(self, py_self, add_constant, arr, length, offset):
         slices = [_pyast.Variable('slice').call(_pyast.Variable('None'))] * (self.ndim - 1)
         slices.append(_pyast.Variable('slice').call(offset, _pyast.BinOp(offset, '+', length)))
         return arr.get_item(_pyast.Tuple(tuple(slices)))
@@ -2168,7 +2168,7 @@ class Power(Array):
         elif p == -2:
             return Reciprocal(self.func * self.func)
 
-    def _compile_expression(self, py_self, func, power):
+    def _compile_expression(self, py_self, add_constant, func, power):
         return _pyast.Variable('numpy').get_attr('power').call(func, power)
 
     def _derivative(self, var, seen):
@@ -2300,13 +2300,13 @@ class Holomorphic(Pointwise):
 
 class Reciprocal(Holomorphic):
 
-    def _compile_expression(self, py_self, value):
+    def _compile_expression(self, py_self, add_constant, value):
         return _pyast.Variable('numpy').get_attr('reciprocal').call(value)
 
 
 class Negative(Holomorphic):
 
-    def _compile_expression(self, py_self, value):
+    def _compile_expression(self, py_self, add_constant, value):
         return _pyast.UnaryOp('-', value)
 
     @cached_property
@@ -2330,7 +2330,7 @@ class FloorDivide(Pointwise):
     def dependencies(self):
         return self.dividend, self.divisor
 
-    def _compile_expression(self, py_self, dividend, divisor):
+    def _compile_expression(self, py_self, add_constant, dividend, divisor):
         return _pyast.BinOp(dividend, '//', divisor)
 
     @cached_property
@@ -2370,7 +2370,7 @@ class Absolute(Pointwise):
     def dependencies(self):
         return self.arg,
 
-    def _compile_expression(self, py_self, value):
+    def _compile_expression(self, py_self, add_constant, value):
         return _pyast.Variable('numpy').get_attr('absolute').call(value)
 
     @cached_property
@@ -2490,7 +2490,7 @@ class Mod(Pointwise):
     def dependencies(self):
         return self.dividend, self.divisor
 
-    def _compile_expression(self, py_self, dividend, divisor):
+    def _compile_expression(self, py_self, add_constant, dividend, divisor):
         return _pyast.BinOp(dividend, '%', divisor)
 
     @cached_property
@@ -2796,7 +2796,7 @@ class Cast(Pointwise):
     def dependencies(self):
         return self.arg,
 
-    def _compile_expression(self, py_self, arg):
+    def _compile_expression(self, py_self, add_constant, arg):
         return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=_pyast.Variable(self.dtype.__name__))
 
     def _simplified(self):
@@ -3100,7 +3100,7 @@ class ArrayFromTuple(Array):
             # Tuple and its components be exposed to the function tree.
             return self.arrays[self.index]
 
-    def _compile_expression(self, py_self, arrays):
+    def _compile_expression(self, py_self, add_constant, arrays):
         return arrays.get_item(_pyast.LiteralInt(self.index))
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
@@ -3146,7 +3146,7 @@ class Zeros(Array):
     def _unaligned(self):
         return Zeros((), self.dtype), ()
 
-    def _compile_expression(self, py_self, *shape):
+    def _compile_expression(self, py_self, add_constant, *shape):
         return _pyast.Variable('numpy').get_attr('zeros').call(_pyast.Tuple(shape), dtype=_pyast.Variable(self.dtype.__name__))
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
@@ -3674,7 +3674,7 @@ class Find(Array):
     def shape(self):
         return Sum(BoolToInt(self.where)),
 
-    def _compile_expression(self, py_self, where):
+    def _compile_expression(self, py_self, add_constant, where):
         return _pyast.Variable('numpy').get_attr('nonzero').call(where).get_item(_pyast.LiteralInt(0))
 
     def _simplified(self):
@@ -4284,7 +4284,7 @@ class PolyDegree(Array):
     def dependencies(self):
         return self.ncoeffs,
 
-    def _compile_expression(self, py_self, ncoeffs):
+    def _compile_expression(self, py_self, add_constant, ncoeffs):
         ncoeffs = ncoeffs.get_attr('__index__').call()
         degree = _pyast.Variable('poly').get_attr('degree').call(_pyast.LiteralInt(self.nvars), ncoeffs)
         return _pyast.Variable('numpy').get_attr('int_').call(degree)
@@ -4332,7 +4332,7 @@ class PolyNCoeffs(Array):
     def dependencies(self):
         return self.degree,
 
-    def _compile_expression(self, py_self, degree):
+    def _compile_expression(self, py_self, add_constant, degree):
         degree = degree.get_attr('__index__').call()
         ncoeffs = _pyast.Variable('poly').get_attr('ncoeffs').call(_pyast.LiteralInt(self.nvars), degree)
         return _pyast.Variable('numpy').get_attr('int_').call(ncoeffs)
@@ -4591,7 +4591,7 @@ class Choose(Array):
     def shape(self):
         return self.index.shape
 
-    def _compile_expression(self, py_self, index, choices):
+    def _compile_expression(self, py_self, add_constant, index, choices):
         choices = _pyast.Variable('numpy').get_attr('moveaxis').call(choices, _pyast.LiteralInt(-1), _pyast.LiteralInt(0))
         return _pyast.Variable('numpy').get_attr('choose').call(index, choices)
 
