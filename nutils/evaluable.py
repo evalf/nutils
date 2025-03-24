@@ -5532,11 +5532,11 @@ class ArgSort(Array):
     def dependencies(self):
         return self.array,
 
-    def evalf(self, array):
-        index = numpy.argsort(array, -1, kind='stable')
-        # on some platforms (windows) argsort does not return indices as
+    def _compile_expression(self, py_self, array):
+        index = _pyast.Variable('numpy').get_attr('argsort').call(array, _pyast.LiteralInt(-1), kind=_pyast.LiteralStr('stable'))
+        # on some platforms (windows) searchsorted does not return indices as
         # numpy.dtype(int), so we type cast it for consistency
-        return index.astype(int, copy=False)
+        return index.get_attr('astype').call(_pyast.Variable('int'), copy=_pyast.LiteralBool(False))
 
 
 class UniqueMask(Array):
