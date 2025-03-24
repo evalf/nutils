@@ -4217,7 +4217,8 @@ class Range(Array):
         if length == self.length:
             return func
 
-    evalf = staticmethod(numpy.arange)
+    def _compile_expression(self, py_self, add_constant, length):
+        return _pyast.Variable('numpy').get_attr('arange').call(length)
 
     def _intbounds_impl(self):
         lower, upper = self.length._intbounds
