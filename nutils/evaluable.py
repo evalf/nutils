@@ -3048,9 +3048,8 @@ class Sampled(Array):
         assert isinstance(self.target, Array) and self.target.ndim == 2, f'target={self.target!r}'
         assert self.points.shape[1] == self.target.shape[1]
 
-    @property
-    def evalf(self):
-        return self.evalf_methods[self.interpolation]
+    def _compile_expression(self, py_self, points, targets):
+        return _pyast.Variable('evaluable').get_attr('Sampled').get_attr(f'evalf_{self.interpolation}').call(points, targets)
 
     @property
     def dependencies(self):
@@ -3060,16 +3059,16 @@ class Sampled(Array):
     def shape(self):
         return self.points.shape[0], self.target.shape[0]
 
+    @staticmethod
     def evalf_none(points, target):
         if points.shape != target.shape or not numpy.equal(points, target).all():
             raise ValueError('points do not correspond to the target sample; consider using "nearest" interpolation if this is desired')
         return numpy.eye(len(points))
 
+    @staticmethod
     def evalf_nearest(points, target):
         nearest = numpy.linalg.norm(points[:,numpy.newaxis,:] - target[numpy.newaxis,:,:], axis=2).argmin(axis=1)
         return numpy.eye(len(target))[nearest]
-
-    evalf_methods = dict(none=evalf_none, nearest=evalf_nearest)
 
 
 def Elemwise(data: typing.Tuple[types.arraydata, ...], index: Array, dtype: Dtype):
