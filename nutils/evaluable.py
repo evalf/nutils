@@ -4267,6 +4267,9 @@ class InRange(Array):
         assert index.size == 0 or 0 <= index.min() and index.max() < length
         return index
 
+    def _compile_expression(self, py_self,  index, length):
+        return _pyast.Variable('evaluable').get_attr('InRange').get_attr('evalf').call(index, length)
+
     def _simplified(self):
         lower_length, upper_length = self.length._intbounds
         lower_index, upper_index = self.index._intbounds
