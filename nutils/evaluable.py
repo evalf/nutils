@@ -2489,8 +2489,10 @@ class Sinc(Holomorphic):
 
 class CosH(Holomorphic):
     'Hyperbolic cosine, element-wise.'
-    evalf = staticmethod(numpy.cosh)
     deriv = lambda x: SinH(x),
+
+    def _compile_expression(self, py_self, x):
+        return _pyast.Variable('numpy').get_attr('cosh').call(x)
 
 
 class SinH(Holomorphic):
