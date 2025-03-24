@@ -903,7 +903,7 @@ class Constant(Array):
         # convert the array to a `numpy.number` (`self.value[()]`), which
         # behaves like a `numpy.ndarray`, and has much faster implementations
         # for add, multiply etc.
-        return builder.add_constant_for_evaluable(self, self.value[()] if self.ndim == 0 else self.value)
+        return builder.add_constant(self.value[()] if self.ndim == 0 else self.value)
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self.ndim:
@@ -6814,13 +6814,10 @@ class _BlockTreeBuilder:
         alloc_block.assign_to(out, py_alloc.call(shape, dtype=_pyast.Variable(array.dtype.__name__)))
         return out, out_block_id
 
-    def add_constant_for_evaluable(self, evaluable: Evaluable, value) -> _pyast.Variable:
-        # Assigns `value` to constant `c{id}` where `id` is the unique index of
-        # `evaluable`. It is an error to assign `value` to `evaluable` multiple
-        # times unless the values are identical.
-        const = _pyast.Variable('c{}'.format(self._get_evaluable_index(evaluable)))
-        if self._globals.setdefault(const.py_expr, value) is not value:
-            raise ValueError('Cannot assign different values to the same constant.')
+    def add_constant(self, value) -> _pyast.Variable:
+        # Assigns `value` to constant `cx{nutils_hash(value)}`.
+        const = _pyast.Variable('c{}'.format(types.nutils_hash(value).hex()))
+        assert self._globals.setdefault(const.py_expr, value) is value
         return const
 
     def get_argument(self, name: str) -> _pyast.Variable:
