@@ -833,6 +833,9 @@ class Orthonormal(Array):
         v3 = numpy.einsum('...ij,...j->...i', G, v2)
         return numeric.normalize(n - v3)
 
+    def _compile_expression(self, py_self, G, n):
+        return _pyast.Variable('evaluable').get_attr('Orthonormal').get_attr('evalf').call(G, n)
+
     def _derivative(self, var, seen):
         if isunit(self.shape[-1]):
             return zeros(self.shape + var.shape)
