@@ -5298,6 +5298,9 @@ class _SizesToOffsets(Array):
     def evalf(sizes):
         return numpy.cumsum([0, *sizes])
 
+    def _compile_expression(self, py_self, add_constant, sizes):
+        return _pyast.Variable('evaluable').get_attr('_SizesToOffsets').get_attr('evalf').call(sizes)
+
     def _simplified(self):
         unaligned, where = unalign(self.sizes)
         if not where:
