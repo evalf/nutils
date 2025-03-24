@@ -2613,7 +2613,8 @@ class Equal(Pointwise):
     def dependencies(self):
         return self.x, self.y
 
-    evalf = staticmethod(numpy.equal)
+    def _compile_expression(self, py_self, add_constant, x, y):
+        return _pyast.Variable('numpy').get_attr('equal').call(x, y)
 
     @cached_property
     def dtype(self):
