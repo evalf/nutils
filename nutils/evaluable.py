@@ -1064,7 +1064,7 @@ class InsertAxis(Array):
         if isunit(self.length):
             return func.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Variable('numpy').get_attr('newaxis'))))
         else:
-            return super()._compile_expression(py_self, func, length)
+            return _pyast.Variable('evaluable').get_attr('InsertAxis').get_attr('evalf').call(func, length)
 
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
