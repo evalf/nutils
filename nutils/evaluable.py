@@ -4847,11 +4847,20 @@ class TransformCoords(Array):
         target_dim = self.source.todims if self.target is None else self.target.fromdims
         return *self.coords.shape[:-1], constant(target_dim)
 
-    def evalf(self, index, coords):
-        chain = self.source[index.__index__()]
-        if self.target is not None:
-            _, chain = self.target.index_with_tail(chain)
+    @staticmethod
+    def _transform_coords(chain, coords):
         return functools.reduce(lambda c, t: t.apply(c), reversed(chain), coords)
+
+    def _compile(self, builder):
+        source_index = builder.compile(self.index).get_attr('__index__').call()
+        source_coords = builder.compile(self.coords)
+        chain = builder.add_constant(self.source).get_item(source_index)
+        if self.target is not None:
+            chain = builder.add_constant(self.target).get_attr('index_with_tail').call(chain).get_item(_pyast.LiteralInt(1))
+        out = builder.get_variable_for_evaluable(self)
+        block = builder.get_block_for_evaluable(self)
+        block.assign_to(out, _pyast.Variable('evaluable').get_attr('TransformCoords').get_attr('_transform_coords').call(chain, source_coords))
+        return out
 
     def _derivative(self, var, seen):
         linear = TransformLinear(self.target, self.source, self.index)
