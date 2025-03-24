@@ -5667,11 +5667,14 @@ class Monomial(Array):
     def dtype(self):
         return self.values.dtype
 
-    def evalf(self, *args):
-        v = numpy.array(self.values)
-        for arg, indices in zip(args, self.indices):
-            v *= arg[indices]
-        return v
+    def _compile(self, builder):
+        args = builder.compile(self.dependencies)
+        block = builder.get_block_for_evaluable(self)
+        out = builder.get_variable_for_evaluable(self)
+        block.assign_to(out, _pyast.Variable('numpy').get_attr('array').call(builder.add_constant(self.values), copy=_pyast.LiteralBool(True)))
+        for arg, index in zip(args, self.indices):
+            block.array_imul(out, arg.get_item(_pyast.Tuple(tuple(map(builder.add_constant, index)))))
+        return out
 
     def _derivative(self, var, seen):
         deriv = Zeros(self.shape + var.shape, self.dtype)
