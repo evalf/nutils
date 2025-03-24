@@ -2496,8 +2496,10 @@ class TanH(Holomorphic):
 
 class ArcTanH(Holomorphic):
     'Inverse hyperbolic tangent, element-wise.'
-    evalf = staticmethod(numpy.arctanh)
     deriv = lambda x: reciprocal(astype(1, x.dtype)-x**astype(2, x.dtype)),
+
+    def _compile_expression(self, py_self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('arctanh').call(x)
 
 
 class Exp(Holomorphic):
