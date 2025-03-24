@@ -2505,8 +2505,10 @@ class SinH(Holomorphic):
 
 class TanH(Holomorphic):
     'Hyperbolic tangent, element-wise.'
-    evalf = staticmethod(numpy.tanh)
     deriv = lambda x: astype(1, x.dtype) - TanH(x)**astype(2, x.dtype),
+
+    def _compile_expression(self, py_self, x):
+        return _pyast.Variable('numpy').get_attr('tanh').call(x)
 
 
 class ArcTanH(Holomorphic):
