@@ -6479,11 +6479,13 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     assert not any(isinstance(arg, _LoopIndex) for func in funcs for arg in func.arguments)
 
     # The globals of the compiled function.
+    from . import evaluable
     globals = dict(
         collections=collections,
         first_run=True,
         log_stats=_log_stats,
         multiprocessing=multiprocessing,
+        evaluable=evaluable,
         numeric=numeric,
         numpy=numpy,
         parallel=parallel,
