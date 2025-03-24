@@ -2585,8 +2585,10 @@ class ArcTan2(Pointwise):
     def dependencies(self):
         return self.x, self.y
 
-    evalf = staticmethod(numpy.arctan2)
     deriv = lambda x, y: y / (x**astype(2, x.dtype) + y**astype(2, x.dtype)), lambda x, y: -x / (x**astype(2, x.dtype) + y**astype(2, x.dtype))
+
+    def _compile_expression(self, py_self, x, y):
+        return _pyast.Variable('numpy').get_attr('arctan2').call(x, y)
 
     @cached_property
     def dtype(self):
