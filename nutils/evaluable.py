@@ -4966,14 +4966,22 @@ class TransformLinear(Array):
         target_dim = self.source.todims if self.target is None else self.target.fromdims
         return constant(target_dim), constant(self.source.fromdims)
 
-    def evalf(self, index):
-        chain = self.source[index.__index__()]
-        if self.target is not None:
-            _, chain = self.target.index_with_tail(chain)
+    @staticmethod
+    def _transform_linear(chain, fromdims):
         if chain:
             return functools.reduce(lambda r, i: i @ r, (item.linear for item in reversed(chain)))
         else:
-            return numpy.eye(self.source.fromdims)
+            return numpy.eye(fromdims)
+
+    def _compile(self, builder):
+        source_index = builder.compile(self.index).get_attr('__index__').call()
+        chain = builder.add_constant(self.source).get_item(source_index)
+        if self.target is not None:
+            chain = builder.add_constant(self.target).get_attr('index_with_tail').call(chain).get_item(_pyast.LiteralInt(1))
+        out = builder.get_variable_for_evaluable(self)
+        block = builder.get_block_for_evaluable(self)
+        block.assign_to(out, _pyast.Variable('evaluable').get_attr('TransformLinear').get_attr('_transform_linear').call(chain, _pyast.LiteralInt(self.source.fromdims)))
+        return out
 
     def _simplified(self):
         from nutils.transformseq import MaskedTransforms
@@ -4983,7 +4991,7 @@ class TransformLinear(Array):
             index = Take(constant(self.source._indices), self.index)
             return TransformLinear(self.target, self.source._parent, index)
         if self.source._linear_is_constant and (self.target is None or self.target._linear_is_constant):
-            return constant(self.evalf(0))
+            return constant(self._transform_linear(self.source[0], self.source.fromdims))
 
 
 class TransformBasis(Array):
