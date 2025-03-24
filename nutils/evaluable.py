@@ -3499,6 +3499,9 @@ class SwapInflateTake(Evaluable):
                     newtake.append(j)
         return numpy.array(newtake, dtype=int), numpy.array(newinflate, dtype=int), numpy.array(len(newtake), dtype=int)
 
+    def _compile_expression(self, py_self, inflateidx, takeidx):
+        return _pyast.Variable('evaluable').get_attr('SwapInflateTake').get_attr('evalf').call(inflateidx, takeidx)
+
     @property
     def _intbounds_tuple(self):
         return ((0, float('inf')),) * 3
