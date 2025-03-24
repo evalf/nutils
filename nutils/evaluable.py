@@ -3993,6 +3993,9 @@ class Ravel(Array):
     def evalf(f):
         return f.reshape(f.shape[:-2] + (f.shape[-2]*f.shape[-1],))
 
+    def _compile_expression(self, py_self, f):
+        return _pyast.Variable('evaluable').get_attr('Ravel').get_attr('evalf').call(f)
+
     def _multiply(self, other):
         if isinstance(other, Ravel) and _all_certainly_equal(other.func.shape[-2:], self.func.shape[-2:]):
             return Ravel(multiply(self.func, other.func))
