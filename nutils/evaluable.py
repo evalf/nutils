@@ -2815,7 +2815,8 @@ class Imag(Pointwise):
     def dependencies(self):
         return self.arg,
 
-    evalf = staticmethod(numpy.imag)
+    def _compile_expression(self, py_self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('imag').call(x)
 
     @cached_property
     def dtype(self):
