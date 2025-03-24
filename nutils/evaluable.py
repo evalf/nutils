@@ -2998,7 +2998,8 @@ class Sign(Array):
     def _simplified(self):
         return self.func._sign()
 
-    evalf = staticmethod(numpy.sign)
+    def _compile_expression(self, py_self, x):
+        return _pyast.Variable('numpy').get_attr('sign').call(x)
 
     def _takediag(self, axis1, axis2):
         return Sign(_takediag(self.func, axis1, axis2))
