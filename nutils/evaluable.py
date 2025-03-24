@@ -5587,11 +5587,15 @@ class UniqueInverse(Array):
     def dependencies(self):
         return self.unique_mask, self.sorter
 
-    def evalf(self, unique_mask, sorter):
+    @staticmethod
+    def evalf(unique_mask, sorter):
         inverse = numpy.empty_like(sorter)
         inverse[sorter] = numpy.cumsum(unique_mask)
         inverse -= 1
         return inverse
+
+    def _compile_expression(self, py_self, unique_mask, sorter):
+        return _pyast.Variable('evaluable').get_attr('UniqueInverse').get_attr('evalf').call(unique_mask, sorter)
 
 
 def unique(array, return_index=False, return_inverse=False):
