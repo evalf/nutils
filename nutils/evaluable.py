@@ -2520,8 +2520,10 @@ class ArcTanH(Holomorphic):
 
 
 class Exp(Holomorphic):
-    evalf = staticmethod(numpy.exp)
     deriv = lambda x: Exp(x),
+
+    def _compile_expression(self, py_self, x):
+        return _pyast.Variable('numpy').get_attr('exp').call(x)
 
 
 class Log(Holomorphic):
