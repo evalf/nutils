@@ -2782,7 +2782,8 @@ class Conjugate(Pointwise):
     def dependencies(self):
         return self.arg,
 
-    evalf = staticmethod(numpy.conjugate)
+    def _compile_expression(self, py_self, x):
+        return _pyast.Variable('numpy').get_attr('conjugate').call(x)
 
     @cached_property
     def dtype(self):
