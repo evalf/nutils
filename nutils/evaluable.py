@@ -5324,9 +5324,8 @@ class _SizesToOffsets(Array):
     def shape(self):
         return self.sizes.shape[0]+1,
 
-    @staticmethod
-    def evalf(sizes):
-        return numpy.cumsum([0, *sizes])
+    def _compile_expression(self, py_self, sizes):
+        return _pyast.Variable('numpy').get_attr('cumsum').call(_pyast.List((_pyast.LiteralInt(0), _pyast.UnpackIterable(sizes))))
 
     def _simplified(self):
         unaligned, where = unalign(self.sizes)
