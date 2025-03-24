@@ -2443,8 +2443,10 @@ class Sin(Holomorphic):
 
 class Tan(Holomorphic):
     'Tangent, element-wise.'
-    evalf = staticmethod(numpy.tan)
     deriv = lambda x: Cos(x)**astype(-2, x.dtype),
+
+    def _compile_expression(self, py_self, x):
+        return _pyast.Variable('numpy').get_attr('tan').call(x)
 
 
 class ArcSin(Holomorphic):
