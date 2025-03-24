@@ -6509,11 +6509,13 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
     assert not any(isinstance(arg, _LoopIndex) for func in funcs for arg in func.arguments)
 
     # The globals of the compiled function.
+    from . import evaluable
     globals = dict(
         collections=collections,
         first_run=True,
         log_stats=_log_stats,
         multiprocessing=multiprocessing,
+        evaluable=evaluable,
         numeric=numeric,
         numpy=numpy,
         parallel=parallel,
@@ -6521,6 +6523,7 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
         ret_tuple=Tuple(funcs),
         Stats=_Stats,
         treelog=log,
+        warnings=warnings,
     )
     # Counter for generating unique indices, e.g. for creating variables.
     new_index = itertools.count()
