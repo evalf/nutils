@@ -5627,9 +5627,8 @@ class CompressIndices(Array):
     def dependencies(self):
         return self.indices, self.length
 
-    @staticmethod
-    def evalf(indices, length):
-        return numeric.compress_indices(indices, length)
+    def _compile_expression(self, py_self, indices, length):
+        return _pyast.Variable('numeric').get_attr('compress_indices').call(indices, length)
 
 
 def as_csr(array):
