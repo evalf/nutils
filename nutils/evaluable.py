@@ -3202,9 +3202,13 @@ class Singular(Array):
     def __post_init__(self):
         assert self.dtype in (float, complex), 'Singular dtype must be float or complex'
 
-    def evalf(self):
+    @staticmethod
+    def evalf(dtype):
         warnings.warn('singular matrix', RuntimeWarning)
-        return numpy.array(numpy.nan, self.dtype)
+        return numpy.array(numpy.nan, dtype)
+
+    def _compile_expression(self, py_self):
+        return _pyast.Variable('evaluable').get_attr('Singular').get_attr('evalf').call(_pyast.Variable(self.dtype.__name__))
 
 
 class Zeros(Array):
