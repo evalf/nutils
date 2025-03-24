@@ -4500,22 +4500,25 @@ class PolyMul(Array):
 
     @property
     def dependencies(self):
-        return self.coeffs_left, self.coeffs_right
+        return self.coeffs_left, self.coeffs_right, self.degree_left, self.degree_right
 
     @cached_property
     def shape(self):
         ncoeffs = PolyNCoeffs(len(self.vars), self.degree_left + self.degree_right)
         return *self.coeffs_left.shape[:-1], ncoeffs
 
-    @cached_property
-    def evalf(self):
-        try:
-            degree_left = self.degree_left.__index__()
-            degree_right = self.degree_right.__index__()
-        except TypeError as e:
-            return functools.partial(poly.mul, vars=self.vars)
-        else:
-            return poly.MulPlan(self.vars, degree_left, degree_right)
+    def _compile(self, builder):
+        coeffs_left = builder.compile(self.coeffs_left)
+        coeffs_right = builder.compile(self.coeffs_right)
+        degree_left = builder.compile(self.degree_left)
+        degree_right = builder.compile(self.degree_right)
+        vars = _pyast.Tuple(tuple(_pyast.Variable('poly').get_attr('MulVar').get_attr(repr(v).split('.')[-1]) for v in self.vars))
+        plan = _pyast.Variable('poly').get_attr('MulPlan').call(vars, degree_left, degree_right)
+        plan_block_id = max(map(builder.get_block_id, (self.degree_left, self.degree_right)))
+        plan = builder.get_block_for_evaluable(self, block_id=plan_block_id).eval(plan)
+        out = builder.get_variable_for_evaluable(self)
+        builder.get_block_for_evaluable(self).assign_to(out, plan.call(coeffs_left, coeffs_right))
+        return out
 
     def _simplified(self):
         if iszero(self.coeffs_left) or iszero(self.coeffs_right):
