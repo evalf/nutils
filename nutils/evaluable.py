@@ -3534,6 +3534,9 @@ class Assemble(Array):
             for offset, index in zip(util.cumsum(index.ndim for index in indices), indices))
         return numeric.accumulate(func, reshaped_indices, shape)
 
+    def _compile_expression(self, py_self, func, *args):
+        return _pyast.Variable('evaluable').get_attr('Assemble').get_attr('evalf').call(func, *args)
+
     def _compile_with_out(self, builder, out, out_block_id, mode):
         # Compiles to an assignment (or in place addition) of the form:
         #
