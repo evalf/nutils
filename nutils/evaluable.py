@@ -4574,21 +4574,22 @@ class PolyGrad(Array):
 
     @property
     def dependencies(self):
-        return self.coeffs,
+        return self.coeffs, self.degree
 
     @cached_property
     def shape(self):
         ncoeffs = PolyNCoeffs(self.nvars, Maximum(constant(0), self.degree - constant(1)))
         return *self.coeffs.shape[:-1], constant(self.nvars), ncoeffs
 
-    @cached_property
-    def evalf(self):
-        try:
-            degree = self.degree.__index__()
-        except TypeError as e:
-            return functools.partial(poly.grad, nvars=self.nvars)
-        else:
-            return poly.GradPlan(self.nvars, degree)
+    def _compile(self, builder):
+        coeffs = builder.compile(self.coeffs)
+        degree = builder.compile(self.degree)
+        plan = _pyast.Variable('poly').get_attr('GradPlan').call(_pyast.LiteralInt(self.nvars), degree)
+        plan_block_id = builder.get_block_id(self.degree)
+        plan = builder.get_block_for_evaluable(self, block_id=plan_block_id).eval(plan)
+        out = builder.get_variable_for_evaluable(self)
+        builder.get_block_for_evaluable(self).assign_to(out, plan.call(coeffs))
+        return out
 
     def _simplified(self):
         if iszero(self.coeffs) or iszero(self.degree):
