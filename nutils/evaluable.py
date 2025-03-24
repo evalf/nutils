@@ -2481,8 +2481,10 @@ class Sinc(Holomorphic):
     def parameters(self):
         return self.n,
 
-    evalf = lambda self, x: numeric.sinc(x, self.n)
     deriv = lambda x, n: Sinc(x, n=n+1),
+
+    def _compile_expression(self, py_self, x):
+        return _pyast.Variable('numeric').get_attr('sinc').call(x, _pyast.LiteralInt(self.n))
 
 
 class CosH(Holomorphic):
