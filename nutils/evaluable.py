@@ -2430,13 +2430,15 @@ class Cos(Holomorphic):
 
 class Sin(Holomorphic):
     'Sine, element-wise.'
-    evalf = staticmethod(numpy.sin)
     deriv = Cos,
 
     def _simplified(self):
         if iszero(self.arg):
             return zeros(self.shape, dtype=self.dtype)
         return super()._simplified()
+
+    def _compile_expression(self, py_self, x):
+        return _pyast.Variable('numpy').get_attr('sin').call(x)
 
 
 class Tan(Holomorphic):
