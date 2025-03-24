@@ -4172,6 +4172,9 @@ class RavelIndex(Array):
     def evalf(ia, ib, nb):
         return ia[(...,)+(numpy.newaxis,)*ib.ndim] * nb + ib
 
+    def _compile_expression(self, py_self, ia, ib, nb):
+        return _pyast.Variable('evaluable').get_attr('RavelIndex').get_attr('evalf').call(ia, ib, nb)
+
     def _take(self, index, axis):
         if axis < self.ia.ndim:
             return RavelIndex(_take(self.ia, index, axis), self.ib, self.na, self.nb)
