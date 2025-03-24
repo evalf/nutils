@@ -2707,8 +2707,10 @@ class Minimum(Pointwise):
     def dependencies(self):
         return self.x, self.y
 
-    evalf = staticmethod(numpy.minimum)
     deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
+
+    def _compile_expression(self, py_self, x, y):
+        return _pyast.Variable('numpy').get_attr('minimum').call(x, y)
 
     @cached_property
     def dtype(self):
