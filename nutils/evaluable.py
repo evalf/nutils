@@ -4781,6 +4781,9 @@ class NormDim(Array):
             result[i] = numeric.normdim(length[i], index[i])
         return result
 
+    def _compile_expression(self, py_self, length, index):
+        return _pyast.Variable('evaluable').get_attr('NormDim').get_attr('evalf').call(length, index)
+
     def _simplified(self):
         lower_length, upper_length = self.length._intbounds
         lower_index, upper_index = self.index._intbounds
