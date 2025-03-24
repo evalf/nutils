@@ -5469,11 +5469,15 @@ class SearchSorted(Array):
     def shape(self):
         return self.arg.shape
 
-    def evalf(self, values):
-        index = numpy.searchsorted(self.array, values, side=self.side, sorter=self.sorter)
+    def _compile_expression(self, py_self, add_constant, arg):
+        array = add_constant(self.array)
+        opt_args = {}
+        if self.sorter is not None:
+            opt_args['sorter'] = add_constant(self.sorter)
+        index = _pyast.Variable('numpy').get_attr('searchsorted').call(array, arg, side=_pyast.LiteralStr(self.side), **opt_args)
         # on some platforms (windows) searchsorted does not return indices as
         # numpy.dtype(int), so we type cast it for consistency
-        return index.astype(int, copy=False)
+        return index.get_attr('astype').call(_pyast.Variable('int'), copy=_pyast.LiteralBool(False))
 
     def _intbounds_impl(self):
         return 0, self.array.shape[0]
