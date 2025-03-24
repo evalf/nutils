@@ -2683,7 +2683,8 @@ class LogicalNot(Pointwise):
     def dependencies(self):
         return self.x,
 
-    evalf = staticmethod(numpy.logical_not)
+    def _compile_expression(self, py_self, x):
+        return _pyast.Variable('numpy').get_attr('logical_not').call(x)
 
     @cached_property
     def dtype(self):
