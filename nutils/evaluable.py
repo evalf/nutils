@@ -4639,14 +4639,18 @@ class Legendre(Array):
     def shape(self):
         return *self.x.shape, constant(self.degree+1)
 
-    def evalf(self, x: numpy.ndarray) -> numpy.ndarray:
-        P = numpy.empty((*x.shape, self.degree+1), dtype=float)
+    @staticmethod
+    def evalf(x: numpy.ndarray, degree: int) -> numpy.ndarray:
+        P = numpy.empty((*x.shape, degree+1), dtype=float)
         P[..., 0] = 1
-        if self.degree:
+        if degree:
             P[..., 1] = x
-        for i in range(2, self.degree+1):
+        for i in range(2, degree+1):
             P[..., i] = (2-1/i)*P[..., 1]*P[..., i-1] - (1-1/i)*P[..., i-2]
         return P
+
+    def _compile_expression(self, py_self, x):
+        return _pyast.Variable('evaluable').get_attr('Legendre').get_attr('evalf').call(x, _pyast.LiteralInt(self.degree))
 
     def _derivative(self, var, seen):
         if self.dtype == complex:
