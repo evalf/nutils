@@ -3348,13 +3348,17 @@ class Inflate(Array):
         indices = [Range(n) for n in self.shape[:-1]] + [self.dofmap]
         return Assemble(self.func, tuple(indices), self.shape)
 
-    def evalf(self, array, indices, length):
-        assert indices.ndim == self.dofmap.ndim
-        assert length.ndim == 0
-        if not self.dofmap.isconstant and int(length) > indices.size:
-            warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
-        shape = *array.shape[:array.ndim-indices.ndim], length
-        return numeric.accumulate(array, (slice(None),)*(self.ndim-1)+(indices,), shape)
+    def _compile(self, builder):
+        if not self.dofmap.isconstant:
+            size_dofmap = builder.compile(self.dofmap).get_attr('size')
+            length = builder.compile(self.length).get_attr('__index__').call()
+            if_sparse = builder.get_block_for_evaluable(self).if_(_pyast.BinOp(length, '>', size_dofmap))
+            err_msg = _pyast.LiteralStr('using explicit inflation; this is usually a bug.')
+            err_type = _pyast.Variable('evaluable').get_attr('ExpensiveEvaluationWarning')
+            if_sparse.exec(_pyast.Variable('warnings').get_attr('warn').call(err_msg, err_type))
+        out, out_block_id = builder.new_empty_array_for_evaluable(self)
+        self._compile_with_out(builder, out, out_block_id, 'assign')
+        return out
 
     def _compile_with_out(self, builder, out, out_block_id, mode):
         assert mode in ('iadd', 'assign')
