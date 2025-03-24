@@ -3137,11 +3137,21 @@ class Eig(Evaluable):
     def _simplified(self):
         return self.func._eig(self.symmetric)
 
-    def evalf(self, arr):
-        w, vt = (numpy.linalg.eigh if self.symmetric else numpy.linalg.eig)(arr)
-        w = w.astype(self._w_dtype, copy=False)
-        vt = vt.astype(self._vt_dtype, copy=False)
+    @staticmethod
+    def evalf(arr, symmetric, w_dtype, vt_dtype):
+        w, vt = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(arr)
+        w = w.astype(w_dtype, copy=False)
+        vt = vt.astype(vt_dtype, copy=False)
         return (w, vt)
+
+    def _compile_expression(self, py_self, array):
+        evalf = _pyast.Variable('evaluable').get_attr('Eig').get_attr('evalf')
+        return evalf.call(
+            array,
+            _pyast.LiteralBool(self.symmetric),
+            _pyast.Variable(self._w_dtype.__name__),
+            _pyast.Variable(self._vt_dtype.__name__),
+        )
 
 
 class ArrayFromTuple(Array):
