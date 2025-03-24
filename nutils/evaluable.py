@@ -1488,7 +1488,8 @@ class Determinant(Array):
         if isunit(self.func.shape[-1]):
             return Take(Take(self.func, zeros((), int)), zeros((), int))
 
-    evalf = staticmethod(numpy.linalg.det)
+    def _compile_expression(self, py_self, array):
+        return _pyast.Variable('numpy').get_attr('linalg').get_attr('det').call(array)
 
     def _derivative(self, var, seen):
         return einsum('A,Aji,AijB->AB', self, inverse(self.func), derivative(self.func, var, seen))
