@@ -7003,6 +7003,10 @@ class _BlockBuilder:
         # Appends statements for incrementing array `acc` with array `inc`.
         self.exec(_pyast.Variable('numpy').get_attr('add').call(acc, inc, out=acc))
 
+    def array_imul(self, product: _pyast.Expression, factor: _pyast.Expression):
+        # Appends statements for inplace multiplication of `product` with `factor`.
+        self.exec(_pyast.Variable('numpy').get_attr('multiply').call(product, factor, out=product))
+
     def array_add_at(self, out: _pyast.Expression, indices: _pyast.Expression, values: _pyast.Expression):
         # Appends statements for incrementing array `out` with array `values` at `indices`.
         self.exec(_pyast.Variable('numpy').get_attr('add').get_attr('at').call(out, indices, values))
