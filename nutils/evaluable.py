@@ -5556,11 +5556,15 @@ class UniqueMask(Array):
     def dependencies(self):
         return self.sorted_array,
 
-    def evalf(self, sorted_array):
+    @staticmethod
+    def evalf(sorted_array):
         mask = numpy.empty(sorted_array.shape, dtype=bool)
         mask[:1] = True
         numpy.not_equal(sorted_array[1:], sorted_array[:-1], out=mask[1:])
         return mask
+
+    def _compile_expression(self, py_self, sorted_array):
+        return _pyast.Variable('evaluable').get_attr('UniqueMask').get_attr('evalf').call(sorted_array)
 
 
 class UniqueInverse(Array):
