@@ -5006,16 +5006,21 @@ class TransformBasis(Array):
     def shape(self):
         return constant(self.source.todims), constant(self.source.todims)
 
-    def evalf(self, index):
-        chain = self.source[index.__index__()]
-        linear = numpy.eye(self.source.fromdims)
+    @staticmethod
+    def _transform_basis(chain, fromdims, todims):
+        linear = numpy.eye(fromdims)
         for item in reversed(chain):
             linear = item.linear @ linear
             assert item.fromdims <= item.todims <= item.fromdims + 1
             if item.todims == item.fromdims + 1:
                 linear = numpy.concatenate([linear, item.ext[:, numpy.newaxis]], axis=1)
-        assert linear.shape == (self.source.todims, self.source.todims)
+        assert linear.shape == (todims, todims)
         return linear
+
+    def _compile_expression(self, py_self, add_constant, index):
+        index = index.get_attr('__index__').call()
+        chain = add_constant(self.source).get_item(index)
+        return _pyast.Variable('evaluable').get_attr('TransformBasis').get_attr('_transform_basis').call(chain, _pyast.LiteralInt(self.source.fromdims), _pyast.LiteralInt(self.source.todims))
 
     def _simplified(self):
         from nutils.transformseq import MaskedTransforms
@@ -5029,7 +5034,7 @@ class TransformBasis(Array):
             index = Take(constant(self.source._indices), self.index)
             return TransformBasis(self.source._parent, index)
         if self.source._linear_is_constant:
-            return constant(self.evalf(0))
+            return constant(self._transform_basis(self.source[0], self.source.fromdims, self.source.todims))
 
 
 class _LoopId(types.Singleton):
