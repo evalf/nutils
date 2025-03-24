@@ -959,7 +959,7 @@ class Constant(Array):
         assert 0 <= axis1 < axis2 < self.ndim
         axes = (*range(axis1), *range(axis1+1, axis2), *range(axis2+1, self.ndim), axis1, axis2)
         value = numpy.transpose(self.value, axes)
-        return constant(numpy.transpose(Inverse.evalf(value), util.untake(axes)))
+        return constant(numpy.transpose(numeric.inv(value), util.untake(axes)))
 
     def _product(self):
         return constant((numpy.all if self.dtype == bool else numpy.prod)(self.value, -1))
@@ -1434,7 +1434,8 @@ class Inverse(Array):
         if result is not None:
             return result
 
-    evalf = staticmethod(numeric.inv)
+    def _compile_expression(self, py_self, mat):
+        return _pyast.Variable('numeric').get_attr('inv').call(mat)
 
     def _derivative(self, var, seen):
         return -einsum('Aij,AjkB,Akl->AilB', self, derivative(self.func, var, seen), self)
