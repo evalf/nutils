@@ -2434,8 +2434,10 @@ class Tan(Holomorphic):
 
 class ArcSin(Holomorphic):
     'Inverse sine, element-wise.'
-    evalf = staticmethod(numpy.arcsin)
     deriv = lambda x: reciprocal(sqrt(astype(1, x.dtype)-x**astype(2, x.dtype))),
+
+    def _compile_expression(self, py_self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('arcsin').call(x)
 
 
 class ArcCos(Holomorphic):
