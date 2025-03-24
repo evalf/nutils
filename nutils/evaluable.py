@@ -4099,6 +4099,9 @@ class Unravel(Array):
     def evalf(f, sh1, sh2):
         return f.reshape(f.shape[:-1] + (sh1, sh2))
 
+    def _compile_expression(self, py_self, add_constant, f, sh1, sh2):
+        return _pyast.Variable('evaluable').get_attr('Unravel').get_attr('evalf').call(f, sh1, sh2)
+
     def _takediag(self, axis1, axis2):
         if axis2 < self.ndim-2:
             return unravel(_takediag(self.func, axis1, axis2), self.ndim-4, self.shape[-2:])
