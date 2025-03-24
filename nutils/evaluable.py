@@ -2417,13 +2417,15 @@ class Absolute(Pointwise):
 
 class Cos(Holomorphic):
     'Cosine, element-wise.'
-    evalf = staticmethod(numpy.cos)
     deriv = lambda x: -Sin(x),
 
     def _simplified(self):
         if iszero(self.arg):
             return ones(self.shape, dtype=self.dtype)
         return super()._simplified()
+
+    def _compile_expression(self, py_self, x):
+        return _pyast.Variable('numpy').get_attr('cos').call(x)
 
 
 class Sin(Holomorphic):
