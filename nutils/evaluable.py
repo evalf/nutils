@@ -4311,7 +4311,8 @@ class Polyval(Array):
     def shape(self):
         return self.points.shape[:-1] + self.coeffs.shape[:-1]
 
-    evalf = staticmethod(poly.eval_outer)
+    def _compile_expression(self, py_self, add_constant, points, coeffs):
+        return _pyast.Variable('poly').get_attr('eval_outer').call(points, coeffs)
 
     def _derivative(self, var, seen):
         if self.dtype == complex:
