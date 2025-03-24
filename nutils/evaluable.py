@@ -2643,7 +2643,8 @@ class Less(Pointwise):
     def dependencies(self):
         return self.x, self.y
 
-    evalf = staticmethod(numpy.less)
+    def _compile_expression(self, py_self, add_constant, x, y):
+        return _pyast.Variable('numpy').get_attr('less').call(x, y)
 
     @cached_property
     def dtype(self):
