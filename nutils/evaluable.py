@@ -4889,9 +4889,11 @@ class TransformIndex(Array):
     def dependencies(self):
         return self.index,
 
-    def evalf(self, index):
-        index, _ = self.target.index_with_tail(self.source[index.__index__()])
-        return numpy.array(index)
+    def _compile_expression(self, py_self, add_constant, source_index):
+        source_index = source_index.get_attr('__index__').call()
+        source_chain = add_constant(self.source).get_item(source_index)
+        target_index = add_constant(self.target).get_attr('index_with_tail').call(source_chain).get_item(_pyast.LiteralInt(0))
+        return _pyast.Variable('numpy').get_attr('int_').call(target_index)
 
     def _intbounds_impl(self):
         return 0, len(self.target) - 1
