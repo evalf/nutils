@@ -759,15 +759,29 @@ class AssertEqual(Array):
         return max(lowera, lowerb), min(uppera, upperb)
 
     def _simplified(self):
-        unique = []
-        queue = [self.a, self.b]
-        for item in queue:
-            if isinstance(item, AssertEqual):
-                queue.append(item.a)
-                queue.append(item.b)
-            elif item not in unique:
-                unique.append(item)
-        return functools.reduce(AssertEqual, unique)
+        # Canonicalize nested array equals to (((obj1 = obj2) = obj3) = obj4),
+        # with all objects unique. We use the fact that self.a is already
+        # simplified in descending only the left arm to gather all the equality
+        # objects.
+        left = []
+        obj = self.a
+        while isinstance(obj, AssertEqual):
+            assert not isinstance(obj.b, AssertEqual)
+            left.append(obj.b)
+            obj = obj.a
+        left.append(obj)
+        # Again using the fact that self.b is simplified, we then descend its
+        # left arm to stack new objects on top of self.a.
+        retval = self.a
+        obj = self.b
+        while isinstance(obj, AssertEqual):
+            assert not isinstance(obj.b, AssertEqual)
+            if obj.b not in left:
+                retval = AssertEqual(retval, obj.b)
+            obj = obj.a
+        if obj not in left:
+            retval = AssertEqual(retval, obj)
+        return retval
 
     @property
     def dependencies(self):
