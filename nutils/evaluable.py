@@ -212,16 +212,7 @@ class Evaluable(types.DataClass):
         return out
 
     def _compile_expression(self, py_self: _pyast.Variable, *args: _pyast.Expression):
-        # Compiles this evaluable given compiled arguments.
-        #
-        # `py_self` is a variable that refers to `self`.
-
-        # Instead of triggering an exception in `Evaluable.evalf` when running
-        # the generated code, we raise an exception during compile time.
-        if self.evalf is Evaluable.evalf:
-            raise NotImplementedError
-
-        return py_self.get_attr('evalf').call(*args)
+        raise NotImplementedError
 
     def argument_degree(self, argument):
         '''return the highest power of argument of self is polynomial,
