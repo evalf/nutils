@@ -5736,24 +5736,35 @@ def _make_loop_ids_unique(funcs: typing.Tuple[Evaluable, ...]) -> typing.Tuple[E
         return funcs
 
     new_ids = filter(lambda id: id not in old_ids, map(_LoopId, itertools.count()))
-    cache = {}
+    root_cache = util.IDDict()
 
     @util.shallow_replace
-    def replace_inner(obj, root=None):
-        if obj is root or not isinstance(obj, Loop):
+    def replace_loop_ids(obj, *loop_caches):
+        # For each loop in which `obj` is embeded, `loop_caches` lists the old
+        # loop id and the loop cache, ordered from outermost to innermost. The
+        # `root_cache` is used for `obj`s that are invariant to all outer loops,
+        # if any.
+        if not isinstance(obj, Evaluable):
             return
-        if (cached := cache.get(obj)) is not None:
-            return cached
-        old = obj.loop_id
-        new = next(new_ids)
-        # Replace `old` with `new`, but don't traverse nested loops with id `old`.
-        new_obj = util.shallow_replace(lambda x: new if x is old else x if x is not obj and isinstance(x, Loop) and x.loop_id is old else None, obj)
-        if new_obj._loops:
-            new_obj = replace_inner(new_obj, new_obj)
-        cache[obj] = new_obj
-        return new_obj
+        if loop_caches:
+            loop_ids = [arg.loop_id for arg in obj.arguments if isinstance(arg, _LoopIndex)]
+            if len(loop_ids) != len(loop_caches):
+                # Select a new persistent cache. Remove all outer loops from
+                # `loop_caches` for which `obj` is invariant while maintaining the
+                # order of the outer loops.
+                loop_ids = set(loop_ids)
+                loop_caches = [(loop_id, cache) for loop_id, cache in loop_caches if loop_id in loop_ids]
+                cache = loop_caches[-1][1] if loop_caches else root_cache
+                return replace_loop_ids(obj, *loop_caches, __persistent_cache__=cache)
+        if isinstance(obj, Loop):
+            assert not any(loop_id == obj.loop_id for loop_id, _ in loop_caches)
+            cache = util.IDDict()
+            cache[obj.loop_id] = next(new_ids)
+            constructor, args = obj.__reduce__()
+            new_args = replace_loop_ids(args, *loop_caches, (obj.loop_id, cache), __persistent_cache__=cache)
+            return constructor(*new_args)
 
-    return tuple(map(replace_inner, funcs))
+    return replace_loop_ids(funcs, __persistent_cache__=root_cache)
 
 
 class _Stats:

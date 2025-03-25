@@ -1103,7 +1103,7 @@ def shallow_replace(func, *funcargs, **funckwargs):
 
     fstack = [target] # stack of unprocessed objects and command tokens
     rstack = [] # stack of processed objects
-    cache = IDDict() # cache of seen objects
+    cache = funckwargs.pop('__persistent_cache__', IDDict()) # cache of seen objects
 
     while fstack:
         obj = fstack.pop()
