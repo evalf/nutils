@@ -816,7 +816,7 @@ class _CustomEvaluable(evaluable.Array):
         else:
             return result.reshape(points_shape + result.shape[1:])
 
-    def _compile_expression(self, py_self, add_constant, *args):
+    def _compile_expression(self, add_constant, *args):
         return add_constant(self).get_attr('evalf').call(*args)
 
     def _derivative(self, var: evaluable.Array, seen: Dict[evaluable.Array, evaluable.Array]) -> evaluable.Array:

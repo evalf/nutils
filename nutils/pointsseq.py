@@ -647,7 +647,7 @@ class _EvaluablePointsFromSequence(evaluable.Evaluable):
     def dependencies(self):
         return self.index,
 
-    def _compile_expression(self, py_self, add_constant, index):
+    def _compile_expression(self, add_constant, index):
         index = index.get_attr('__index__').call()
         pnts = add_constant(self._seq).get_attr('get').call(index)
         coords = pnts.get_attr('coords')
