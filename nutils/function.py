@@ -832,6 +832,13 @@ class _CustomEvaluable(evaluable.Array):
         else:
             return result.reshape(points_shape + result.shape[1:])
 
+    def _compile(self, builder):
+        args = builder.compile(self.dependencies)
+        evalf = builder.add_constant(self.evalf)
+        out = builder.get_variable_for_evaluable(self)
+        builder.get_block_for_evaluable(self).assign_to(out, evalf.call(*args))
+        return out
+
     def _derivative(self, var: evaluable.Array, seen: Dict[evaluable.Array, evaluable.Array]) -> evaluable.Array:
         if self.dtype in (bool, int):
             return super()._derivative(var, seen)
