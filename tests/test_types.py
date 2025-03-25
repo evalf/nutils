@@ -696,4 +696,28 @@ class hashable_function(TestCase):
         self.assertEqual(Test.f(1), 1)
         self.assertEqual(Test().f(1), 1)
 
+    def test_source_identifier(self):
+
+        @nutils.types.hashable_function
+        def f(arg):
+            return arg
+
+        f0 = f
+
+        @nutils.types.hashable_function
+        def f(arg):
+            return arg
+
+        f1 = f
+
+        @nutils.types.hashable_function
+        def f(arg):
+            return arg + 1
+
+        f2 = f
+
+        self.assertEqual(nutils.types.nutils_hash(f0), nutils.types.nutils_hash(f1))
+        self.assertNotEqual(nutils.types.nutils_hash(f0), nutils.types.nutils_hash(f2))
+
+
 # vim:sw=2:sts=2:et
