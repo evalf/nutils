@@ -454,11 +454,11 @@ class Custom(TestCase):
                         raise ValueError('left and right arguments not aligned')
                     super().__init__(args=(left, right), shape=left.shape[npointwise:], dtype=left.dtype, npointwise=npointwise)
 
-                @staticmethod
+                @types.hashable_function
                 def evalf(left, right):
                     return left * right
 
-                @staticmethod
+                @types.hashable_function
                 def partial_derivative(iarg, left, right):
                     if iarg == 0:
                         return functools.reduce(function.diagonalize, range(right.ndim), right)
@@ -492,7 +492,7 @@ class Custom(TestCase):
             def __init__(self):
                 super().__init__(args=(), shape=(3,), dtype=int)
 
-            @staticmethod
+            @types.hashable_function
             def evalf():
                 return numpy.array([1, 2, 3])[None]
 
@@ -508,11 +508,11 @@ class Custom(TestCase):
                 assert base1.shape == base2.shape
                 super().__init__(args=(offset, base1, exp1.__index__(), base2, exp2.__index__()), shape=base1.shape, dtype=float)
 
-            @staticmethod
+            @types.hashable_function
             def evalf(offset, base1, exp1, base2, exp2):
                 return offset + base1**exp1 + base2**exp2
 
-            @staticmethod
+            @types.hashable_function
             def partial_derivative(iarg, offset, base1, exp1, base2, exp2):
                 if iarg == 1:
                     if exp1 == 0:
@@ -541,21 +541,21 @@ class Custom(TestCase):
 
         class A(function.Custom):
 
-            @staticmethod
+            @types.hashable_function
             def evalf():
                 pass
 
-            @staticmethod
+            @types.hashable_function
             def partial_derivative(iarg):
                 pass
 
         class B(function.Custom):
 
-            @staticmethod
+            @types.hashable_function
             def evalf():
                 pass
 
-            @staticmethod
+            @types.hashable_function
             def partial_derivative(iarg):
                 pass
 
@@ -593,7 +593,7 @@ class Custom(TestCase):
     def test_no_array_args_invalid_shape(self):
 
         class Test(function.Custom):
-            @staticmethod
+            @types.hashable_function
             def evalf():
                 return numpy.array([1, 2, 3])
 
@@ -606,7 +606,7 @@ class Custom(TestCase):
             def __init__(self, args, shapes, npointwise):
                 super().__init__(args=(shapes, *args), shape=(), dtype=float, npointwise=npointwise)
 
-            @staticmethod
+            @types.hashable_function
             def evalf(shapes, *args):
                 for shape, arg in zip(shapes, args):
                     self.assertEqual(tuple(map(int, arg.shape)), shape)
@@ -618,7 +618,7 @@ class Custom(TestCase):
     def test_partial_derivative_invalid_shape(self):
 
         class Test(function.Custom):
-            @staticmethod
+            @types.hashable_function
             def partial_derivative(iarg, arg):
                 return function.zeros((2, 3, 4))
 
@@ -629,9 +629,10 @@ class Custom(TestCase):
     def test_grad(self):
 
         class Test(function.Custom):
-            def eval(arg):
+            @types.hashable_function
+            def evalf(arg):
                 return arg
-            @staticmethod
+            @types.hashable_function
             def partial_derivative(iarg, arg):
                 return function.ones(arg.shape)
 
@@ -648,6 +649,35 @@ class Custom(TestCase):
             function.grad(x**2 + y, x + y, spaces={'X'}),
             2*x,
         ]))
+
+    def test_evalf_not_implemented(self):
+        with self.assertRaises(NotImplementedError):
+            function.eval(function.Custom([], (), int))
+
+    def test_partial_derivative_not_implemented(self):
+        with self.assertRaisesRegex(NotImplementedError, 'The partial derivative to argument 0 .* is not defined.'):
+            function.eval(function.Custom([function.Argument('a', (), float)], (), float).derivative('a'))
+
+    def test_deprecated_unhashable_evalf(self):
+
+        with self.assertWarns(warnings.NutilsDeprecationWarning):
+            class Test(function.Custom):
+                @classmethod
+                def evalf(cls, arg):
+                    return arg
+            Test([function.zeros(())], (), float).as_evaluable_array
+
+    def test_deprecated_unhasbable_partial_derivative(self):
+
+        with self.assertWarns(warnings.NutilsDeprecationWarning):
+            class Test(function.Custom):
+                @types.hashable_function
+                def evalf(arg):
+                    return arg
+                @classmethod
+                def partial_derivative(cls, iarg, arg):
+                    return
+            Test([function.zeros(())], (), float).as_evaluable_array
 
 
 class broadcasting(TestCase):

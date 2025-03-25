@@ -567,17 +567,14 @@ class Custom(Array):
     not include the pointwise axes.
 
     For internal reasons, both ``evalf`` and ``partial_derivative`` must be
-    decorated as ``classmethod`` or ``staticmethod``, meaning that they will not
-    receive a reference to ``self`` when called. Instead, all relevant data
-    should be passed to ``evalf`` via the constructor argument ``args``. The
-    constructor will automatically distinguish between Array and non-Array
-    arguments, and pass the latter on to ``evalf`` unchanged. The
-    ``partial_derivative`` will not be called for those arguments.
-
-    The lowered array does not have a Nutils hash by default. If this is desired,
-    the methods :meth:`evalf` and :meth:`partial_derivative` can be decorated
-    with :func:`nutils.types.hashable_function` in addition to ``classmethod`` or
-    ``staticmethod``.
+    static methods, meaning that they will not receive a reference to ``self``
+    when called. Instead, all relevant data should be passed to ``evalf`` via
+    the constructor argument ``args``. The constructor will automatically
+    distinguish between Array and non-Array arguments, and pass the latter on
+    to ``evalf`` unchanged. The ``partial_derivative`` will not be called for
+    those arguments. Furthermore, ``evalf`` and ``partial_derivative`` must be
+    hashable. The :func:`nutils.types.hashable_function` decorator both defines
+    a hash for the decorated function and makes the decorated function static.
 
     Parameters
     ----------
@@ -596,6 +593,7 @@ class Custom(Array):
     The following class implements multiplication using :class:`Custom` without
     broadcasting and for :class:`float` arrays only.
 
+    >>> from nutils.types import hashable_function
     >>> class Multiply(Custom):
     ...
     ...   def __init__(self, left: IntoArray, right: IntoArray) -> None:
@@ -610,13 +608,13 @@ class Custom(Array):
     ...     # arrays.
     ...     super().__init__(args=(left, right), shape=(), dtype=float, npointwise=left.ndim)
     ...
-    ...   @staticmethod
+    ...   @hashable_function
     ...   def evalf(left: numpy.ndarray, right: numpy.ndarray) -> numpy.ndarray:
     ...     # Because all axes are pointwise, the evaluated `left` and `right`
     ...     # arrays are 1d.
     ...     return left * right
     ...
-    ...   @staticmethod
+    ...   @hashable_function
     ...   def partial_derivative(iarg: int, left: Array, right: Array) -> IntoArray:
     ...     # The arguments passed to this function are of type `Array` and the
     ...     # pointwise axes are omitted, hence `left` and `right` are 0d.
@@ -647,7 +645,7 @@ class Custom(Array):
     ...     # We treat all but the last axis of `array` as pointwise.
     ...     super().__init__(args=(array, shift), shape=array.shape[-1:], dtype=array.dtype, npointwise=array.ndim-1)
     ...
-    ...   @staticmethod
+    ...   @hashable_function
     ...   def evalf(array: numpy.ndarray, shift: int) -> numpy.ndarray:
     ...     # `array` is evaluated to a `numpy.ndarray` because we passed `array`
     ...     # as an `Array` to the constructor. `shift`, however, is untouched
@@ -655,7 +653,7 @@ class Custom(Array):
     ...     # axis and the axis to be rolled.
     ...     return numpy.roll(array, shift, 1)
     ...
-    ...   @staticmethod
+    ...   @hashable_function
     ...   def partial_derivative(iarg, array: Array, shift: int) -> IntoArray:
     ...     if iarg == 0:
     ...       return Roll(eye(array.shape[0]), shift).T
@@ -699,10 +697,28 @@ class Custom(Array):
         add_points_shape = tuple(map(evaluable.asarray, self.shape[:self._npointwise]))
         points_shape = args.points_shape + add_points_shape
         coordinates = {space: evaluable.Transpose.to_end(evaluable.appendaxes(coords, add_points_shape), coords.ndim-1) for space, coords in args.coordinates.items()}
-        return _CustomEvaluable(type(self).__name__, self.evalf, self.partial_derivative, evalargs, self.shape[self._npointwise:], self.dtype, self.spaces, types.frozendict(self._arguments), LowerArgs(points_shape, types.frozendict(args.transform_chains), types.frozendict(coordinates)))
+        evalf = self.evalf
+        partial_derivative = self.partial_derivative
+        if getattr(self.evalf, '__nutils_hash__', None) is None:
+            warnings.deprecation(f'`{type(self).__name__}.evalf()` does not implement `nutils.types.nutils_hash()`. This will be mandatory in Nutils 10. Try using `nutils.types.hashable_function()`.')
+            evalf = types.hashable_function(f'{type(self).__name__}.evalf')(evalf)
+        if getattr(self.partial_derivative, '__nutils_hash__', None) is None:
+            warnings.deprecation(f'`{type(self).__name__}.partial_derivative()` does not implement `nutils.types.nutils_hash()`. This will be mandatory in Nutils 10. Try using `nutils.types.hashable_function()`.')
+            partial_derivative = types.hashable_function(f'{type(self).__name__}.partial_derivative')(partial_derivative)
+        return _CustomEvaluable(
+            type(self).__name__,
+            evalf,
+            partial_derivative,
+            evalargs,
+            self.shape[self._npointwise:],
+            self.dtype,
+            self.spaces,
+            types.frozendict(self._arguments),
+            LowerArgs(points_shape, types.frozendict(args.transform_chains), types.frozendict(coordinates)),
+        )
 
-    @classmethod
-    def evalf(cls, *args: Any) -> numpy.ndarray:
+    @types.hashable_function('NotImplemented')
+    def evalf(*args: Any) -> numpy.ndarray:
         '''Evaluate this function for the given evaluated arguments.
 
         This function is called with arguments that correspond to the arguments
@@ -734,10 +750,10 @@ class Custom(Array):
             The result of this function with one leading points axis.
         '''
 
-        raise NotImplementedError  # pragma: nocover
+        raise NotImplementedError
 
-    @classmethod
-    def partial_derivative(cls, iarg: int, *args: Any) -> IntoArray:
+    @types.hashable_function('NotImplemented')
+    def partial_derivative(iarg: int, *args: Any) -> IntoArray:
         '''Return the partial derivative of this function to :class:`Custom` constructor argument number ``iarg``.
 
         This method is only called for those arguments that are instances of
@@ -761,7 +777,7 @@ class Custom(Array):
             The partial derivative of this function to the given argument.
         '''
 
-        raise NotImplementedError('The partial derivative of {} to argument {} (counting from 0) is not defined.'.format(cls.__name__, iarg))  # pragma: nocover
+        raise NotImplementedError(f'The partial derivative to argument {iarg} (counting from 0) is not defined.')
 
 
 class _CustomEvaluable(evaluable.Array):
