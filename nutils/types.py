@@ -730,6 +730,9 @@ def hashable_function(identifier):
     Nutils hash. The identifier should represent the behavior of the function and
     should be changed when the behavior of the function changes.
 
+    If ``identifier`` is not given, the source code of the decorated function
+    is used as identifier.
+
     If used on methods, this decorator behaves like :func:`staticmethod`.
 
     Examples
@@ -776,8 +779,19 @@ def hashable_function(identifier):
     'dfdbb0ce20b617b17c3b854c23b2b9f7deb94cc6'
     >>> nutils_hash(spam.eggs).hex()
     'dfdbb0ce20b617b17c3b854c23b2b9f7deb94cc6'
+
+    If the behavior of the function is determined completely by the function's
+    source code, the identifier can be omitted:
+
+    >>> @hashable_function
+    ... def func(a, b):
+    ...   return a + b
+    ...
     '''
 
-    return functools.partial(_hashable_function_wrapper, identifier=identifier)
+    if callable(identifier):
+        return _hashable_function_wrapper(identifier, inspect.getsource(identifier))
+    else:
+        return functools.partial(_hashable_function_wrapper, identifier=identifier)
 
 # vim:sw=4:sts=4:et
