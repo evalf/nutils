@@ -6452,6 +6452,29 @@ def einsum(fmt, *args, **dims):
     return ret
 
 
+@util.single_or_multiple
+def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.ndarray]) -> typing.Tuple[numpy.ndarray, ...]:
+    '''Evaluate one or several Array objects as sparse data.
+
+    Args
+    ----
+    funcs : :class:`tuple` of Array objects
+        Arrays to be evaluated.
+    arguments : :class:`dict` (default: None)
+        Optional arguments for function evaluation.
+
+    Returns
+    -------
+    results : :class:`tuple` of sparse data arrays
+    '''
+
+    warnings.deprecation('evaluable.eval_sparse is deprecated and will be removed in Nutils 10', stacklevel=3)
+
+    from . import sparse
+    for values, indices, shape in eval_once([func.as_evaluable_array.assparse for func in funcs]):
+        yield sparse.compose(indices, values, shape)
+
+
 def eval_once(func: AsEvaluableArray, *, stats: typing.Optional[str] = None, arguments: typing.Mapping[str, numpy.ndarray] = {}, _simplify: bool = True, _optimize: bool = True) -> typing.Tuple[numpy.ndarray, ...]:
     '''Evaluate one or several Array objects by compiling it for single use.
 
