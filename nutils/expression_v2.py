@@ -535,12 +535,12 @@ class _Parser(Generic[T]):
         return array, shape, indices, frozenset(summed_indices)
 
 
-def _grad(geom: function.Array, func: function.Array) -> function.Array:
-    return function.grad(func, geom)
+def _grad(geom: function.Array, spaces, func: function.Array) -> function.Array:
+    return function.grad(func, geom, spaces=spaces)
 
 
-def _curl(geom: function.Array, func: function.Array) -> function.Array:
-    return numpy.sum(function.levicivita(3) * function.grad(func, geom)[..., numpy.newaxis, :, numpy.newaxis], axis=-2)
+def _curl(geom: function.Array, spaces, func: function.Array) -> function.Array:
+    return numpy.sum(function.levicivita(3) * function.grad(func, geom, spaces=spaces)[..., numpy.newaxis, :, numpy.newaxis], axis=-2)
 
 
 class Namespace:
@@ -665,7 +665,7 @@ class Namespace:
         else:
             return NotImplemented
 
-    def define_for(self, __name: str, *, gradient: Optional[str] = None, curl: Optional[str] = None, normal: Optional[str] = None, jacobians: Sequence[str] = ()) -> None:
+    def define_for(self, __name: str, *, gradient: Optional[str] = None, curl: Optional[str] = None, normal: Optional[str] = None, jacobians: Sequence[str] = (), spaces: Optional[Iterable[str]] = None) -> None:
         '''Define gradient, normal or jacobian for the given geometry.
 
         Parameters
@@ -686,6 +686,8 @@ class Namespace:
         jacobians : sequence of :class:`str`, optional
             Define the jacobians for decreasing dimensions, starting at the
             dimensions of the geometry. The jacobians are always scalars.
+        spaces : iterable of :class:`str`, optional
+            Compute gradient, curl, normal and jacobians in ``spaces``.
 
         Example
         -------
@@ -702,20 +704,22 @@ class Namespace:
         '''
 
         geom = getattr(self, __name)
+        if spaces is not None:
+            spaces = frozenset(spaces)
         if gradient:
-            setattr(self, gradient, functools.partial(_grad, geom))
+            setattr(self, gradient, functools.partial(_grad, geom, spaces))
         if curl:
             if numpy.shape(geom) != (3,):
                 raise ValueError('The curl can only be defined for a geometry with shape (3,) but got {}.'.format(numpy.shape(geom)))
             # Definition: `curl_ki(u_...)` := `ε_kji ∇_j(u_...)`. Should be used as
             # `curl_ki(u_i)`, which is equivalent to `ε_kji ∇_j(u_i)`.
-            setattr(self, curl, functools.partial(_curl, geom))
+            setattr(self, curl, functools.partial(_curl, geom, spaces))
         if normal:
-            setattr(self, normal, function.normal(geom))
+            setattr(self, normal, function.normal(geom, spaces=spaces))
         for i, jacobian in enumerate(jacobians):
             if i > numpy.size(geom):
                 raise ValueError('Cannot define the jacobian {!r}: dimension is negative.'.format(jacobian))
-            setattr(self, jacobian, function.jacobian(geom, numpy.size(geom) - i))
+            setattr(self, jacobian, function.jacobian(geom, numpy.size(geom) - i, spaces=spaces))
 
     def add_field(self, __names: Union[str, Sequence[str]], *__bases, shape: Tuple[int, ...] = (), dtype: function.DType = float):
         '''Add field(s) of the form ns.u = function.field('u', ...)
