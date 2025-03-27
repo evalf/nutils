@@ -542,6 +542,18 @@ class Namespace(TestCase):
         with self.assertRaisesRegex(ValueError, 'The curl can only be defined for a geometry with shape'):
             ns.define_for('x', curl='curl')
 
+    def test_define_for_2d_spaces(self):
+        ns = expression_v2.Namespace()
+        X, ns.x0 = mesh.rectilinear([numpy.linspace(0, 1, 3), numpy.linspace(0, 1, 5)], space='X')
+        T, ns.t = mesh.line(1, space='T')
+        ns.δ = function.eye(2)
+        ns.x_i = 'x0_i + δ_i0 t'
+        ns.define_for('x', gradient='∇', normal='n', jacobians=['dV', 'dS'], spaces=iter(X.spaces))
+        self.assertAlmostEqual((X*T).integral('dV' @ ns, degree=2).eval(), 1)
+        self.assertAlmostEqual((X*T).integral('∇_i(x_i^2) dV' @ ns, degree=2).eval(), 3)
+        self.assertAlmostEqual((X*T).boundary['right'].integral('n_0 dS' @ ns, degree=2).eval(), 1)
+        self.assertAlmostEqual((X*T).boundary['bottom'].integral('n_1 dS' @ ns, degree=2).eval(), -1)
+
     def test_define_for_3d(self):
         ns = expression_v2.Namespace()
         topo, ns.X = mesh.rectilinear([numpy.linspace(-1, 1, 3)]*3)
@@ -551,6 +563,23 @@ class Namespace(TestCase):
         ns.ε = function.levicivita(3)
         ns.f = function.Array.cast([['x', '-z', 'y'], ['0', 'x z', '0']] @ ns)
         smpl = topo.sample('gauss', 5)
+        assertEvalAlmostEqual = lambda *args: self.assertAllAlmostEqual(*(smpl.bind(f).as_evaluable_array.simplified.eval() for f in args))
+        assertEvalAlmostEqual('curl_ij(y δ_j0 - x δ_j1 + z δ_j2)' @ ns, '-2 δ_i2' @ ns)
+        assertEvalAlmostEqual('curl_ij(-x^2 δ_j1)' @ ns, '-2 x δ_i2' @ ns)
+        assertEvalAlmostEqual('curl_ij((x δ_j0 - z δ_j1 + y δ_j2) δ_k0 + x z δ_j1 δ_k1)' @ ns, '2 δ_i0 δ_k0 - x δ_i0 δ_k1 + z δ_i2 δ_k1' @ ns)
+        assertEvalAlmostEqual('curl_ij(∇_j(x y + z))' @ ns, function.zeros((3,)))
+
+    def test_define_for_3d_spaces(self):
+        ns = expression_v2.Namespace()
+        X, ns.X0 = mesh.rectilinear([numpy.linspace(-1, 1, 3)]*3, space='X')
+        T, ns.t = mesh.line(1, space='T')
+        ns.δ = function.eye(3)
+        ns.X_i = 'X0_i + δ_i0 t'
+        ns.x, ns.y, ns.z = ns.X
+        ns.define_for('X', gradient='∇', curl='curl', spaces=iter(X.spaces))
+        ns.ε = function.levicivita(3)
+        ns.f = function.Array.cast([['x', '-z', 'y'], ['0', 'x z', '0']] @ ns)
+        smpl = (X*T).sample('gauss', 5)
         assertEvalAlmostEqual = lambda *args: self.assertAllAlmostEqual(*(smpl.bind(f).as_evaluable_array.simplified.eval() for f in args))
         assertEvalAlmostEqual('curl_ij(y δ_j0 - x δ_j1 + z δ_j2)' @ ns, '-2 δ_i2' @ ns)
         assertEvalAlmostEqual('curl_ij(-x^2 δ_j1)' @ ns, '-2 x δ_i2' @ ns)
