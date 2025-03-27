@@ -261,7 +261,14 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function.evaluate(*map(self, funcs), _post=lambda x: x, arguments=arguments)
+        warnings.deprecation(
+            'Sample.eval_sparse is deprecated and will be removed in Nutils 10; '
+            'please use function.eval along with Sample.bind and function.as_coo '
+            'or (if 2D) function.as_csr instead', stacklevel=3)
+
+        from . import sparse
+        for func, (values, *indices) in zip(funcs, function.eval([function.as_coo(self.bind(func)) for func in funcs], **arguments)):
+            yield sparse.compose(indices, values, (self.npoints, *func.shape))
 
     def _integral(self, func: function.Array) -> function.Array:
         '''Create Integral object for postponed integration.
