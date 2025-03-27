@@ -2537,7 +2537,11 @@ def field(name: str, /, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtype: 
 
 
 @nutils_dispatch
-class factor(Array):
+def factor(array: Array) -> None:
+    return _Factor(array)
+
+
+class _Factor(Array):
 
     def __init__(self, array: Array) -> None:
         self._array = evaluable.factor(array)
