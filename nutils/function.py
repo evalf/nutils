@@ -402,13 +402,13 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         'See :func:`normalized`.'
         return normalized(self, __axis)
 
-    def normal(self, refgeom: Optional['Array'] = None) -> 'Array':
+    def normal(self, refgeom: Optional['Array'] = None, *, spaces: Optional[Iterable[str]] = None) -> 'Array':
         'See :func:`normal`.'
-        return normal(self, refgeom)
+        return normal(self, refgeom, spaces=spaces)
 
-    def curvature(self, ndims: int = -1) -> 'Array':
+    def curvature(self, ndims: int = -1, *, spaces: Optional[Iterable[str]] = None) -> 'Array':
         'See :func:`curvature`.'
-        return curvature(self, ndims)
+        return curvature(self, ndims, spaces=spaces)
 
     def swapaxes(self, __axis1: int, __axis2: int) -> 'Array':
         return numpy.swapaxes(self, __axis1, __axis2)
@@ -420,41 +420,41 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         'See :func:`add_T`.'
         return add_T(self, axes)
 
-    def grad(self, __geom: IntoArray, ndims: int = 0) -> 'Array':
+    def grad(self, geom: IntoArray, /, ndims: int = 0, *, spaces: Optional[Iterable[str]] = None) -> 'Array':
         'See :func:`grad`.'
-        return grad(self, __geom, ndims)
+        return grad(self, geom, ndims, spaces=spaces)
 
-    def laplace(self, __geom: IntoArray, ndims: int = 0) -> 'Array':
+    def laplace(self, geom: IntoArray, /, ndims: int = 0, *, spaces: Optional[Iterable[str]] = None) -> 'Array':
         'See :func:`laplace`.'
-        return laplace(self, __geom, ndims)
+        return laplace(self, geom, ndims, spaces=spaces)
 
-    def symgrad(self, __geom: IntoArray, ndims: int = 0) -> 'Array':
+    def symgrad(self, geom: IntoArray, /, ndims: int = 0, *, spaces: Optional[Iterable[str]] = None) -> 'Array':
         'See :func:`symgrad`.'
-        return symgrad(self, __geom, ndims)
+        return symgrad(self, geom, ndims, spaces=spaces)
 
-    def div(self, __geom: IntoArray, ndims: int = 0) -> 'Array':
+    def div(self, geom: IntoArray, /, ndims: int = 0, *, spaces: Optional[Iterable[str]] = None) -> 'Array':
         'See :func:`div`.'
-        return div(self, __geom, ndims)
+        return div(self, geom, ndims, spaces=spaces)
 
-    def curl(self, __geom: IntoArray) -> 'Array':
+    def curl(self, geom: IntoArray, /, *, spaces: Optional[Iterable[str]] = None) -> 'Array':
         'See :func:`curl`.'
-        return curl(self, __geom)
+        return curl(self, geom, spaces=spaces)
 
-    def dotnorm(self, __geom: IntoArray, axis: int = -1) -> 'Array':
+    def dotnorm(self, geom: IntoArray, /, axis: int = -1, spaces: Optional[Iterable[str]] = None) -> 'Array':
         'See :func:`dotnorm`.'
-        return dotnorm(self, __geom, axis)
+        return dotnorm(self, geom, axis, spaces=spaces)
 
-    def tangent(self, __vec: IntoArray) -> 'Array':
+    def tangent(self, vec: IntoArray, /, *, spaces: Optional[Iterable[str]] = None) -> 'Array':
         'See :func:`tangent`.'
-        return tangent(self, __vec)
+        return tangent(self, vec, spaces=spaces)
 
-    def ngrad(self, __geom: IntoArray, ndims: int = 0) -> 'Array':
+    def ngrad(self, geom: IntoArray, /, ndims: int = 0, *, spaces: Optional[Iterable[str]] = None) -> 'Array':
         'See :func:`ngrad`.'
-        return ngrad(self, __geom, ndims)
+        return ngrad(self, geom, ndims, spaces=spaces)
 
-    def nsymgrad(self, __geom: IntoArray, ndims: int = 0) -> 'Array':
+    def nsymgrad(self, geom: IntoArray, /, ndims: int = 0, *, spaces: Optional[Iterable[str]] = None) -> 'Array':
         'See :func:`nsymgrad`.'
-        return nsymgrad(self, __geom, ndims)
+        return nsymgrad(self, geom, ndims, spaces=spaces)
 
     def choose(self, __choices: Sequence[IntoArray]) -> 'Array':
         'See :func:`choose`.'
@@ -1057,22 +1057,24 @@ def _root_derivative_target(space: str, dim: int) -> evaluable.DerivativeTargetB
 class _Gradient(Array):
     # Derivative of `func` to `geom` using the root coords as reference.
 
-    def __init__(self, func: Array, geom: Array) -> None:
-        assert geom.spaces, '0d array'
+    def __init__(self, func: Array, geom: Array, spaces: FrozenSet[str]) -> None:
+        assert spaces, '0d array'
+        assert spaces <= geom.spaces, 'singular'
         assert geom.dtype == float
         common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
         self._func = numpy.broadcast_to(func, common_shape)
         self._geom = numpy.broadcast_to(geom, (*common_shape, geom.shape[-1]))
+        self._spaces = spaces
         arguments = _join_arguments((func._arguments, geom._arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         func = self._func.lower(args)
         geom = self._geom.lower(args)
-        ref_dim = builtins.sum(args.transform_chains[space][0][0].todims for space in self._geom.spaces)
+        ref_dim = builtins.sum(args.transform_chains[space][0][0].todims for space in self._spaces)
         if self._geom.shape[-1] != ref_dim:
             raise Exception('cannot invert {}x{} jacobian'.format(self._geom.shape[-1], ref_dim))
-        refs = tuple(_root_derivative_target(space, evaluable.constant(chain.todims)) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._geom.spaces)
+        refs = tuple(_root_derivative_target(space, evaluable.constant(chain.todims)) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._spaces)
         dfunc_dref = evaluable.concatenate([evaluable.derivative(func, ref) for ref in refs], axis=-1)
         dgeom_dref = evaluable.concatenate([evaluable.derivative(geom, ref) for ref in refs], axis=-1)
         dref_dgeom = evaluable.inverse(dgeom_dref)
@@ -1083,22 +1085,24 @@ class _SurfaceGradient(Array):
     # Surface gradient of `func` to `geom` using the tip coordinates as
     # reference.
 
-    def __init__(self, func: Array, geom: Array) -> None:
-        assert geom.spaces, '0d array'
+    def __init__(self, func: Array, geom: Array, spaces: FrozenSet[str]) -> None:
+        assert spaces, '0d array'
+        assert spaces <= geom.spaces, 'singular'
         assert geom.dtype == float
         common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
         self._func = numpy.broadcast_to(func, common_shape)
         self._geom = numpy.broadcast_to(geom, (*common_shape, geom.shape[-1]))
+        self._spaces = spaces
         arguments = _join_arguments((func._arguments, geom._arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         func = self._func.lower(args)
         geom = self._geom.lower(args)
-        ref_dim = builtins.sum(args.transform_chains[space][0][0].fromdims for space in self._geom.spaces)
+        ref_dim = builtins.sum(args.transform_chains[space][0][0].fromdims for space in self._spaces)
         if self._geom.shape[-1] != ref_dim + 1:
             raise ValueError('expected a {}d geometry but got a {}d geometry'.format(ref_dim + 1, self._geom.shape[-1]))
-        refs = tuple((_root_derivative_target if chain.todims == chain.fromdims else _tip_derivative_target)(space, evaluable.constant(chain.fromdims)) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._geom.spaces)
+        refs = tuple((_root_derivative_target if chain.todims == chain.fromdims else _tip_derivative_target)(space, evaluable.constant(chain.fromdims)) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._spaces)
         dfunc_dref = evaluable.concatenate([evaluable.derivative(func, ref) for ref in refs], axis=-1)
         dgeom_dref = evaluable.concatenate([evaluable.derivative(geom, ref) for ref in refs], axis=-1)
         dref_dgeom = evaluable.einsum('Ajk,Aik->Aij', dgeom_dref, evaluable.inverse(evaluable.grammium(dgeom_dref)))
@@ -1109,43 +1113,47 @@ class _Jacobian(Array):
     # The jacobian determinant of `geom` to the tip coordinates of the spaces of
     # `geom`. The last axis of `geom` is the coordinate axis.
 
-    def __init__(self, geom: Array, tip_dim: Optional[int] = None) -> None:
+    def __init__(self, geom: Array, spaces: FrozenSet[str], tip_dim: Optional[int] = None) -> None:
         assert geom.ndim >= 1
         assert geom.dtype == float
-        if not geom.spaces and geom.shape[-1] != 0:
+        assert spaces <= geom.spaces
+        if not spaces and geom.shape[-1] != 0:
             raise ValueError('The jacobian of a constant (in space) geometry must have dimension zero.')
         if tip_dim is not None and tip_dim > geom.shape[-1]:
             raise ValueError('Expected a dimension of the tip coordinate system '
                              'not greater than the dimension of the geometry.')
         self._tip_dim = tip_dim
         self._geom = geom
+        self._spaces = spaces
         super().__init__((), float, geom.spaces, geom._arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         geom = self._geom.lower(args)
-        tip_dim = builtins.sum(args.transform_chains[space][0][0].fromdims for space in self._geom.spaces)
+        tip_dim = builtins.sum(args.transform_chains[space][0][0].fromdims for space in self._spaces)
         if self._tip_dim is not None and self._tip_dim != tip_dim:
             raise ValueError('Expected a tip dimension of {} but got {}.'.format(self._tip_dim, tip_dim))
         if self._geom.shape[-1] < tip_dim:
             raise ValueError('the dimension of the geometry cannot be lower than the dimension of the tip coords')
-        if not self._geom.spaces:
+        if not self._spaces:
             return evaluable.ones(geom.shape[:-1])
-        tips = [_tip_derivative_target(space, evaluable.constant(chain.fromdims)) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._geom.spaces]
+        tips = [_tip_derivative_target(space, evaluable.constant(chain.fromdims)) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._spaces]
         J = evaluable.concatenate([evaluable.derivative(geom, tip) for tip in tips], axis=-1)
         return evaluable.sqrt_abs_det_gram(J)
 
 
 class _Normal(Array):
 
-    def __init__(self, geom: Array) -> None:
+    def __init__(self, geom: Array, spaces: FrozenSet[str]) -> None:
+        assert spaces <= geom.spaces
         self._geom = geom
+        self._spaces = spaces
         assert geom.dtype == float
         super().__init__(geom.shape, float, geom.spaces, geom._arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         geom = self._geom.lower(args)
-        spaces_dim = builtins.sum(args.transform_chains[space][0][0].todims for space in self._geom.spaces)
-        normal_dim = spaces_dim - builtins.sum(args.transform_chains[space][0][0].fromdims for space in self._geom.spaces)
+        spaces_dim = builtins.sum(args.transform_chains[space][0][0].todims for space in self._spaces)
+        normal_dim = spaces_dim - builtins.sum(args.transform_chains[space][0][0].fromdims for space in self._spaces)
         if self._geom.shape[-1] < spaces_dim:
             raise ValueError('The dimension of geometry must equal or larger than the sum of the dimensions of the given spaces.')
         if normal_dim == 0:
@@ -1155,7 +1163,7 @@ class _Normal(Array):
         tangents = []
         normal = None
         for space, ((chain, *_), index) in args.transform_chains.items():
-            if space not in self._geom.spaces:
+            if space not in self._spaces:
                 continue
             rgrad = evaluable.derivative(geom, _root_derivative_target(space, evaluable.constant(chain.todims)))
             if chain.todims == chain.fromdims:
@@ -1876,7 +1884,7 @@ def derivative(__arg: IntoArray, __var: Union[str, 'Argument']) -> Array:
 
 
 @nutils_dispatch
-def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
+def grad(arg: IntoArray, geom: IntoArray, /, ndims: int = 0, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the gradient of the argument to the given geometry.
 
     Parameters
@@ -1884,40 +1892,53 @@ def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     arg, geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
     ndims : :class:`int`
         The dimension of the local coordinate system.
+    spaces : iterable of :class:`str`, optional
+        Compute the gradient in ``spaces``. If absent all spaces of ``geom``
+        are used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    geom = Array.cast(__geom)
+    arg = Array.cast(arg)
+    geom = Array.cast(geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
+    if spaces is None:
+        spaces = geom.spaces
+    else:
+        spaces = frozenset(spaces)
+        if invariant_spaces := spaces - geom.spaces:
+            invariant_spaces = ', '.join(sorted(invariant_spaces))
+            raise ValueError(f'Gradient is singular because the geometry is invariant in the following space(s): {invariant_spaces}')
     if ndims == 0 or ndims == geom.size:
         op = _Gradient
     elif ndims == -1 or ndims == geom.size - 1:
         op = _SurfaceGradient
     else:
         raise NotImplementedError
-    return numpy.reshape(op(arg, numpy.ravel(geom)), arg.shape + geom.shape)
+    return numpy.reshape(op(arg, numpy.ravel(geom), spaces), arg.shape + geom.shape)
 
 
 @nutils_dispatch
-def curl(__arg: IntoArray, __geom: IntoArray) -> Array:
+def curl(arg: IntoArray, geom: IntoArray, /, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the curl of the argument w.r.t. the given geometry.
 
     Parameters
     ----------
     arg, geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
+    spaces : iterable of :class:`str`, optional
+        Compute the curl in ``spaces``. If absent all spaces of ``geom`` are
+        used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    geom = Array.cast(__geom)
+    arg = Array.cast(arg)
+    geom = Array.cast(geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
     if geom.shape != (3,):
@@ -1926,11 +1947,11 @@ def curl(__arg: IntoArray, __geom: IntoArray) -> Array:
         raise ValueError('Expected a function with at least 1 axis but got 0.')
     if arg.shape[-1] != 3:
         raise ValueError('Expected a function with a trailing axis of length 3 but got {}.'.format(arg.shape[-1]))
-    return (levicivita(3).T * _append_axes(grad(arg, geom), (3,))).sum((-3, -2))
+    return (levicivita(3).T * _append_axes(grad(arg, geom, spaces=spaces), (3,))).sum((-3, -2))
 
 
 @nutils_dispatch
-def normal(__geom: IntoArray, refgeom: Optional[Array] = None) -> Array:
+def normal(geom: IntoArray, /, refgeom: Optional[Array] = None, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the normal of the geometry.
 
     Parameters
@@ -1941,27 +1962,37 @@ def normal(__geom: IntoArray, refgeom: Optional[Array] = None) -> Array:
         coordinate system of the spaces on which ``geom`` is defined. The
         dimension of the reference geometry must be exactly one smaller than the
         dimension of the geometry.
+    spaces : iterable of :class:`str`, optional
+        Compute the normal in ``spaces``. If absent all spaces of ``geom`` are
+        used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    geom = Array.cast(__geom)
+    geom = Array.cast(geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
+    if spaces is None:
+        spaces = geom.spaces
+    else:
+        spaces = frozenset(spaces)
+        if invariant_spaces := spaces - geom.spaces:
+            invariant_spaces = ', '.join(sorted(invariant_spaces))
+            raise ValueError(f'Normal is singular because the geometry is invariant in the following space(s): {invariant_spaces}')
     if refgeom is None:
-        normal = _Normal(numpy.ravel(geom))
+        normal = _Normal(numpy.ravel(geom), spaces)
     else:
         if refgeom.dtype != float:
             raise ValueError('The reference geometry must be real-valued.')
         if refgeom.size != geom.size-1:
             raise ValueError(f'The reference geometry must have size {geom.size-1}, but got {refgeom.size}.')
-        normal = _ExteriorNormal(grad(numpy.ravel(geom), numpy.ravel(refgeom)))
+        normal = _ExteriorNormal(grad(numpy.ravel(geom), numpy.ravel(refgeom), spaces=spaces))
     return numpy.reshape(normal, geom.shape)
 
 
-def dotnorm(__arg: IntoArray, __geom: IntoArray, axis: int = -1) -> Array:
+def dotnorm(arg: IntoArray, geom: IntoArray, /, axis: int = -1, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the inner product of an array with the normal of the given geometry.
 
     Parameters
@@ -1973,59 +2004,75 @@ def dotnorm(__arg: IntoArray, __geom: IntoArray, axis: int = -1) -> Array:
     axis : :class:`int`
         The axis of ``arg`` along which the inner product should be performed.
         Defaults to the last axis.
+    spaces : iterable of :class:`str`, optional
+        Compute the inner product with the normal in ``spaces``. If absent all
+        spaces of ``geom`` are used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    return _Transpose.to_end(Array.cast(__arg), axis) @ normal(__geom)
+    return _Transpose.to_end(Array.cast(arg), axis) @ normal(geom, spaces=spaces)
 
 
-def tangent(__geom: IntoArray, __vec: IntoArray) -> Array:
+def tangent(geom: IntoArray, vec: IntoArray, /, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the tangent.
 
     Parameters
     ----------
     geom, vec : :class:`Array` or something that can be :meth:`~Array.cast` into one
+    spaces : iterable of :class:`str`, optional
+        Compute the tangent in ``spaces``. If absent all spaces of ``geom`` are
+        used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    norm = normal(__geom)
-    vec = Array.cast(__vec)
+    norm = normal(geom, spaces=spaces)
+    vec = Array.cast(vec)
     return vec - (vec @ norm)[..., None] * norm
 
 
 @nutils_dispatch
-def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
+def jacobian(geom: IntoArray, ndims: Optional[int] = None, /, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the absolute value of the determinant of the Jacobian matrix of the given geometry.
 
     Parameters
     ----------
     geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
         The geometry.
+    spaces : iterable of :class:`str`, optional
+        Compute the jacobian in ``spaces``. If absent all spaces of ``geom``
+        are used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    geom = Array.cast(__geom)
+    geom = Array.cast(geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
-    return _Jacobian(numpy.ravel(geom), __ndims)
+    if spaces is None:
+        spaces = geom.spaces
+    else:
+        spaces = frozenset(spaces)
+        if invariant_spaces := spaces - geom.spaces:
+            invariant_spaces = ', '.join(sorted(invariant_spaces))
+            raise ValueError(f'Jacobian is singular because the geometry is invariant in the following space(s): {invariant_spaces}')
+    return _Jacobian(numpy.ravel(geom), spaces, ndims)
 
 
-def J(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
+def J(geom: IntoArray, ndims: Optional[int] = None, /, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the absolute value of the determinant of the Jacobian matrix of the given geometry.
 
     Alias of :func:`jacobian`.
     '''
 
-    return jacobian(__geom, __ndims)
+    return jacobian(geom, ndims, spaces=spaces)
 
 
 def _d1(arg: IntoArray, var: IntoArray) -> Array:
@@ -2037,128 +2084,157 @@ def d(__arg: IntoArray, *vars: IntoArray) -> Array:
 
 
 @nutils_dispatch
-def surfgrad(__arg: IntoArray, geom: IntoArray) -> Array:
+def surfgrad(arg: IntoArray, /, geom: IntoArray, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the surface gradient of the argument to the given geometry.
 
     Parameters
     ----------
     arg, geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
+    spaces : iterable of :class:`str`, optional
+        Compute the surface gradient in ``spaces``. If absent all spaces of
+        ``geom`` are used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    return grad(__arg, geom, -1)
+    return grad(arg, geom, -1, spaces=spaces)
 
 
 @nutils_dispatch
-def curvature(__geom: IntoArray, ndims: int = -1) -> Array:
+def curvature(geom: IntoArray, /, ndims: int = -1, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the curvature of the given geometry.
 
     Parameters
     ----------
     geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
     ndims : :class:`int`
+    spaces : iterable of :class:`str`, optional
+        Compute the curvature in ``spaces``. If absent all spaces of ``geom``
+        are used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    geom = Array.cast(__geom)
-    return geom.normal().div(geom, ndims=ndims)
+    geom = Array.cast(geom)
+    if spaces is not None:
+        spaces = frozenset(spaces)
+    return geom.normal(spaces=spaces).div(geom, ndims=ndims, spaces=spaces)
 
 
 @nutils_dispatch
-def div(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
+def div(arg: IntoArray, geom: IntoArray, /, ndims: int = 0, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the divergence of ``arg`` w.r.t. the given geometry.
 
     Parameters
     ----------
     arg, geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
     ndims : :class:`int`
+    spaces : iterable of :class:`str`, optional
+        Compute the divergence in ``spaces``. If absent all spaces of ``geom``
+        are used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    geom = Array.cast(__geom, ndim=1)
-    return numpy.trace(grad(__arg, geom, ndims), axis1=-2, axis2=-1)
+    geom = Array.cast(geom, ndim=1)
+    return numpy.trace(grad(arg, geom, ndims, spaces=spaces), axis1=-2, axis2=-1)
 
 
 @nutils_dispatch
-def laplace(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
+def laplace(arg: IntoArray, geom: IntoArray, /, ndims: int = 0, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the Laplacian of ``arg`` w.r.t. the given geometry.
 
     Parameters
     ----------
     arg, geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
     ndims : :class:`int`
+    spaces : iterable of :class:`str`, optional
+        Compute the Laplacian in ``spaces``. If absent all spaces of ``geom``
+        are used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    geom = Array.cast(__geom, ndim=1)
-    return arg.grad(geom, ndims).div(geom, ndims)
+    arg = Array.cast(arg)
+    geom = Array.cast(geom, ndim=1)
+    if spaces is not None:
+        spaces = frozenset(spaces)
+    return arg.grad(geom, ndims, spaces=spaces).div(geom, ndims, spaces=spaces)
 
 
-def symgrad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
+def symgrad(arg: IntoArray, geom: IntoArray, /, ndims: int = 0, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the symmetric gradient of ``arg`` w.r.t. the given geometry.
 
     Parameters
     ----------
     arg, geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
     ndims : :class:`int`
+    spaces : iterable of :class:`str`, optional
+        Compute the symmetric gradient in ``spaces``. If absent all spaces of
+        ``geom`` are used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    geom = Array.cast(__geom)
-    return .5 * add_T(arg.grad(geom, ndims))
+    arg = Array.cast(arg)
+    geom = Array.cast(geom)
+    return .5 * add_T(arg.grad(geom, ndims, spaces=spaces))
 
 
-def ngrad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
+def ngrad(arg: IntoArray, geom: IntoArray, /, ndims: int = 0, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the inner product of the gradient of ``arg`` with the normal of the given geometry.
 
     Parameters
     ----------
     arg, geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
     ndims : :class:`int`
+    spaces : iterable of :class:`str`, optional
+        Compute the inner product of the gradient with the normal in
+        ``spaces``. If absent all spaces of ``geom`` are used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    geom = Array.cast(__geom)
-    return dotnorm(grad(arg, geom, ndims), geom)
+    arg = Array.cast(arg)
+    geom = Array.cast(geom)
+    if spaces is not None:
+        spaces = frozenset(spaces)
+    return dotnorm(grad(arg, geom, ndims, spaces=spaces), geom, spaces=spaces)
 
 
-def nsymgrad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
+def nsymgrad(arg: IntoArray, geom: IntoArray, /, ndims: int = 0, *, spaces: Optional[Iterable[str]] = None) -> Array:
     '''Return the inner product of the symmetric gradient of ``arg`` with the normal of the given geometry.
 
     Parameters
     ----------
     arg, geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
     ndims : :class:`int`
+    spaces : iterable of :class:`str`, optional
+        Compute the inner product of the symmetric gradient with the normal in
+        ``spaces``. If absent all spaces of ``geom`` are used.
 
     Returns
     -------
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    geom = Array.cast(__geom)
-    return dotnorm(symgrad(arg, geom, ndims), geom)
+    arg = Array.cast(arg)
+    geom = Array.cast(geom)
+    if spaces is not None:
+        spaces = frozenset(spaces)
+    return dotnorm(symgrad(arg, geom, ndims, spaces=spaces), geom, spaces=spaces)
 
 # MISC
 

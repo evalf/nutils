@@ -640,6 +640,15 @@ class Custom(TestCase):
         test = Test((geom**2,), geom.shape, float)
         self.assertAllAlmostEqual(*smpl.eval([2 * geom, function.grad(test, geom)]))
 
+    def test_grad_spaces(self):
+
+        X, x = mesh.line(1, space='X')
+        Y, y = mesh.line(1, space='Y')
+        self.assertAllAlmostEqual(*(X*Y).sample('bezier', 5).eval([
+            function.grad(x**2 + y, x + y, spaces={'X'}),
+            2*x,
+        ]))
+
 
 class broadcasting(TestCase):
 
@@ -897,6 +906,11 @@ class derivative(TestCase):
         x = function.unravel(function.unravel(x, 0, (2, 2)), 0, (2, 1))
         self.assertEvalAlmostEqual(domain, self.grad(x, x), numpy.eye(4, 4).reshape(2, 1, 2, 2, 1, 2))
 
+    def test_grad_spaces(self):
+        X, x = mesh.line(1, space='X')
+        Y, y = mesh.line(1, space='Y')
+        self.assertEvalAlmostEqual(X * Y, self.grad(x**2 + y, x + y, spaces=iter(X.spaces)), 2 * x)
+
     def test_curl(self):
         domain, geom = mesh.rectilinear([[-1, 1]]*3)
         x, y, z = geom
@@ -911,20 +925,54 @@ class derivative(TestCase):
         with self.assertRaisesRegex(ValueError, 'Expected a function with a trailing axis of length 3'):
             self.curl(function.zeros((3, 2)), geom)
 
+    def test_curl_spaces(self):
+        domain, geom = mesh.rectilinear([[-1, 1]]*3, space='X')
+        x, y, z = geom
+        shift, s = mesh.rectilinear([1]*3, space='shift')
+        self.assertEvalAlmostEqual(domain*shift, self.curl([y, -x, z], geom + s, spaces=iter(domain.spaces)), [0, 0, -2])
+        self.assertEvalAlmostEqual(domain*shift, self.curl([0, -x**2, 0], geom + s, spaces=iter(domain.spaces)), [0, 0, -2*x])
+        self.assertEvalAlmostEqual(domain*shift, self.curl([[x, -z, y], [0, x*z, 0]], geom + s, spaces=iter(domain.spaces)), [[2, 0, 0], [-x, 0, z]])
+        self.assertEvalAlmostEqual(domain*shift, self.curl(self.grad(x*y+z, geom + s, spaces=iter(domain.spaces)), geom + s, spaces=iter(domain.spaces)), [0, 0, 0])
+
     def test_div(self):
         domain, x = mesh.rectilinear([1]*2)
         x = 2*x-0.5
         self.assertEvalAlmostEqual(domain, self.div([x[0]**2+x[1], x[1]**2-x[0]], x), 2*x[0]+2*x[1])
+
+    def test_div_spaces(self):
+        X, x = mesh.rectilinear([1]*2, space='X')
+        Y, y = mesh.rectilinear([1]*2, space='Y')
+        x = 2*x-0.5
+        self.assertEvalAlmostEqual(
+            X * Y,
+            self.div([x[0]**2+x[1]+y[0]**2, x[1]**2-x[0]+y[1]**2], x+y, spaces=iter(X.spaces)),
+            2*x[0]+2*x[1],
+        )
 
     def test_laplace(self):
         domain, x = mesh.rectilinear([1]*2)
         x = 2*x-0.5
         self.assertEvalAlmostEqual(domain, self.laplace(x[0]**2*x[1]-x[1]**2, x), 2*x[1]-2)
 
+    def test_laplace_spaces(self):
+        X, x = mesh.rectilinear([1], space='X')
+        Y, y = mesh.rectilinear([1], space='Y')
+        self.assertEvalAlmostEqual(X*Y, self.laplace(x**2*y, x+y, spaces=iter(X.spaces)), 2*y)
+
     def test_symgrad(self):
         domain, x = mesh.rectilinear([1]*2)
         x = 2*x-0.5
         self.assertEvalAlmostEqual(domain, self.symgrad([x[0]**2*x[1], x[1]**2], x), [[2*x[0]*x[1], 0.5*x[0]**2], [0.5*x[0]**2, 2*x[1]]])
+
+    def test_symgrad_spaces(self):
+        X, x = mesh.rectilinear([1]*2, space='X')
+        Y, y = mesh.rectilinear([1]*2, space='Y')
+        x = 2*x-0.5
+        self.assertEvalAlmostEqual(
+            X * Y,
+            self.symgrad([x[0]**2*x[1]+y[0]**2, x[1]**2+y[1]**2], x+y, spaces=iter(X.spaces)),
+            [[2*x[0]*x[1], 0.5*x[0]**2], [0.5*x[0]**2, 2*x[1]]],
+        )
 
     def test_normal_0d(self):
         domain, (x,) = mesh.rectilinear([1])
@@ -964,11 +1012,28 @@ class derivative(TestCase):
         v2 = domain.boundary.integrate(n * dL, degree=16)
         self.assertAllAlmostEqual(v1, v2) # divergence theorem in curved space
 
+    def test_normal_spaces(self):
+        X, x = mesh.unitcircle(1, 'rectilinear')
+        Y, y = mesh.line(1, space='Y')
+        rot = numpy.eye(2) * numpy.cos(y) - function.levicivita(2) * numpy.sin(y)
+        self.assertEvalAlmostEqual(
+            X.boundary * Y,
+            self.normal(rot @ x, spaces=iter(X.spaces)),
+            rot @ self.normal(x),
+        )
+
     def test_dotnorm(self):
         domain, x = mesh.rectilinear([1]*2)
         x = 2*x-0.5
         for bnd, desired in ('right', 1), ('left', -1), ('top', 0), ('bottom', 0):
             self.assertEvalAlmostEqual(domain.boundary[bnd], self.dotnorm([1, 0], x), desired)
+
+    def test_dotnorm_spaces(self):
+        X, x = mesh.unitcircle(1, 'rectilinear')
+        Y, y = mesh.line(1, space='Y')
+        rot = numpy.eye(2) * numpy.cos(y) - function.levicivita(2) * numpy.sin(y)
+        vec = numpy.array([1, 0], dtype=float)
+        self.assertEvalAlmostEqual(X.boundary*Y, self.dotnorm(vec, rot @ x, spaces=iter(X.spaces)), vec @ rot @ self.normal(x))
 
     def test_tangent(self):
         domain, x = mesh.rectilinear([1]*2)
@@ -976,17 +1041,49 @@ class derivative(TestCase):
         for bnd, desired in ('right', [0, 1]), ('left', [0, 1]), ('top', [-1, 0]), ('bottom', [-1, 0]):
             self.assertEvalAlmostEqual(domain.boundary[bnd], self.tangent(x, [-1, 1]), desired)
 
+    def test_tangent_spaces(self):
+        X, x = mesh.rectilinear([1]*2, space='X')
+        Y, y = mesh.line(1, space='Y')
+        rot = numpy.eye(2) * numpy.cos(y) - function.levicivita(2) * numpy.sin(y)
+        vec = numpy.array([-1, 1])
+        self.assertEvalAlmostEqual(
+            X.boundary * Y,
+            self.tangent(rot @ x, vec, spaces=iter(X.spaces)),
+            rot @ self.tangent(x, rot.T @ vec),
+        )
+
     def test_ngrad(self):
         domain, x = mesh.rectilinear([1]*2)
         x = 2*x-0.5
         for bnd, desired in ('right', [2*x[0]*x[1], 0]), ('left', [-2*x[0]*x[1], 0]), ('top', [x[0]**2, 2*x[1]]), ('bottom', [-x[0]**2, -2*x[1]]):
             self.assertEvalAlmostEqual(domain.boundary[bnd], self.ngrad([x[0]**2*x[1], x[1]**2], x), desired)
 
+    def test_ngrad_spaces(self):
+        X, x = mesh.rectilinear([1]*2, space='X')
+        Y, y = mesh.line(1, space='Y')
+        rot = numpy.eye(2) * numpy.cos(y) - function.levicivita(2) * numpy.sin(y)
+        self.assertEvalAlmostEqual(
+            X.boundary * Y,
+            self.ngrad(x[0] + x[1], rot @ x, spaces=iter(X.spaces)),
+            (rot.T[0] + rot.T[1]) @ (rot @ self.normal(x)),
+        )
+
     def test_nsymgrad(self):
         domain, x = mesh.rectilinear([1]*2)
         x = 2*x-0.5
         for bnd, desired in ('right', [2*x[0]*x[1], 0.5*x[0]**2]), ('left', [-2*x[0]*x[1], -0.5*x[0]**2]), ('top', [0.5*x[0]**2, 2*x[1]]), ('bottom', [-0.5*x[0]**2, -2*x[1]]):
             self.assertEvalAlmostEqual(domain.boundary[bnd], self.nsymgrad([x[0]**2*x[1], x[1]**2], x), desired)
+
+    def test_nsymgrad_spaces(self):
+        X, x0 = mesh.rectilinear([1]*2, space='X')
+        Y, y = mesh.line(1, space='Y')
+        rot = numpy.eye(2) * numpy.cos(y) - function.levicivita(2) * numpy.sin(y)
+        x = rot @ x0
+        self.assertEvalAlmostEqual(
+            X.boundary * Y,
+            self.nsymgrad([x[0]**2 * x[1], x[1]**2], x, spaces=iter(X.spaces)),
+            [[2 * x[0] * x[1], x[0]**2 / 2], [x[0]**2 / 2, 2 * x[1]]] @ (rot @ self.normal(x0)),
+        )
 
     def test_not_an_argument(self):
         with self.assertRaisesRegex(ValueError, 'Expected an instance of `Argument`'):
@@ -1013,16 +1110,16 @@ derivative('function',
            ngrad=function.ngrad,
            nsymgrad=function.nsymgrad)
 derivative('method',
-           normal=lambda geom, refgeom=None: function.Array.cast(geom).normal(refgeom),
-           tangent=lambda geom, vec: function.Array.cast(geom).tangent(vec),
-           dotnorm=lambda vec, geom: function.Array.cast(vec).dotnorm(geom),
-           grad=lambda arg, geom: function.Array.cast(arg).grad(geom),
-           div=lambda arg, geom, ndims=0: function.Array.cast(arg).div(geom, ndims),
-           curl=lambda arg, geom: function.Array.cast(arg).curl(geom),
-           laplace=lambda arg, geom: function.Array.cast(arg).laplace(geom),
-           symgrad=lambda arg, geom: function.Array.cast(arg).symgrad(geom),
-           ngrad=lambda arg, geom: function.Array.cast(arg).ngrad(geom),
-           nsymgrad=lambda arg, geom: function.Array.cast(arg).nsymgrad(geom))
+           normal=lambda geom, refgeom=None, **kwargs: function.Array.cast(geom).normal(refgeom, **kwargs),
+           tangent=lambda geom, vec, **kwargs: function.Array.cast(geom).tangent(vec, **kwargs),
+           dotnorm=lambda vec, geom, **kwargs: function.Array.cast(vec).dotnorm(geom, **kwargs),
+           grad=lambda arg, geom, **kwargs: function.Array.cast(arg).grad(geom, **kwargs),
+           div=lambda arg, geom, ndims=0, **kwargs: function.Array.cast(arg).div(geom, ndims, **kwargs),
+           curl=lambda arg, geom, **kwargs: function.Array.cast(arg).curl(geom, **kwargs),
+           laplace=lambda arg, geom, **kwargs: function.Array.cast(arg).laplace(geom, **kwargs),
+           symgrad=lambda arg, geom, **kwargs: function.Array.cast(arg).symgrad(geom, **kwargs),
+           ngrad=lambda arg, geom, **kwargs: function.Array.cast(arg).ngrad(geom, **kwargs),
+           nsymgrad=lambda arg, geom, **kwargs: function.Array.cast(arg).nsymgrad(geom, **kwargs))
 
 
 class CommonBasis:
