@@ -3,6 +3,7 @@ The util module provides a collection of general purpose methods.
 """
 
 from . import numeric, warnings
+from .types import arraydata
 import stringly
 import sys
 import os
@@ -982,6 +983,8 @@ def _reduce(obj):
             return T, (tuple(obj.items()),)
         else:
             return T, (tuple(obj),)
+    if T in (type(None), bool, int, float, complex, str, bytes, arraydata):
+        return
     try:
         f, args = obj.__reduce__()
     except:
