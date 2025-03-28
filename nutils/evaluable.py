@@ -1875,6 +1875,21 @@ class Einsum(Array):
                 continue
             return Einsum(self.args[:i]+(arg.func,)+self.args[i+1:], self.args_idx[:i]+(idx,)+self.args_idx[i+1:], self.out_idx)
 
+    def _intbounds_impl(self):
+        sum_lengths = {i: n._intbounds[1] for arg, idx in zip(self.args, self.args_idx) for i, n in zip(idx, arg.shape) if i not in self.out_idx}.values()
+        if 0 in sum_lengths:
+            return 0, 0
+        # We can safely multiply all elements of `sum_lengths` without risking
+        # nans from multiplying zero with inf, because there are no zeros.
+        lower = upper = util.product(sum_lengths, 1)
+        for arg in self.args:
+            # To prevent nans from multiplying zero with inf, if either b1 or
+            # b2 is zero the multiple should be zero (an inf bound actually
+            # means an arbitary large, but finite bound).
+            extrema = [b1 and b2 and b1 * b2 for b1 in (lower, upper) for b2 in arg._intbounds]
+            lower, upper = min(extrema), max(extrema)
+        return lower, upper
+
 
 class Sum(Array):
 
@@ -2029,7 +2044,7 @@ class Take(Array):
 
     def __post_init__(self):
         assert isinstance(self.func, Array) and self.func.ndim > 0, f'func={self.func!r}'
-        assert isinstance(self.indices, Array) and self.indices.dtype == int, f'indices={self.indices!r}'
+        assert isinstance(self.indices, Array) and self.indices.dtype == int and self.indices._intbounds[0] >= 0, f'indices={self.indices!r}'
 
     @property
     def dependencies(self):
@@ -2059,6 +2074,8 @@ class Take(Array):
                 return util.sum(Inflate(func, dofmap, self.func.shape[-1])._take(self.indices, self.func.ndim - 1) for dofmap, func in parts.items())
 
     def _optimized_for_numpy(self):
+        if self.indices.ndim == 0:
+            return _Get(self.func, self.indices)
         if isinstance(self.indices, Range):
             return _TakeSlice(self.func, self.indices.length, constant(0))
         if self.indices.ndim == 1 and isinstance(self.indices, Add) and len(self.indices.funcs) == 2:
@@ -2123,6 +2140,39 @@ class _TakeSlice(Array):
         slices = [_pyast.Variable('slice').call(_pyast.Variable('None'))] * (self.ndim - 1)
         slices.append(_pyast.Variable('slice').call(offset, _pyast.BinOp(offset, '+', length)))
         return arr.get_item(_pyast.Tuple(tuple(slices)))
+
+    def _intbounds_impl(self):
+        return self.func._intbounds
+
+
+class _Get(Array):
+    # To be used by `_optimized_for_numpy` only.
+
+    func: Array
+    index: Array
+
+    def __post_init__(self):
+        assert isinstance(self.func, Array) and self.func.ndim > 0, f'func={self.func!r}'
+        assert _isindex(self.index) and self.index.ndim == 0, f'index={self.index!r}'
+
+    @property
+    def dependencies(self):
+        return self.func, self.index
+
+    @cached_property
+    def dtype(self):
+        return self.func.dtype
+
+    @cached_property
+    def shape(self):
+        return self.func.shape[:-1]
+
+    def _compile_expression(self, py_self, arr, index):
+        return arr.get_item(_pyast.Tuple((_pyast.Raw('...'), index)))
+
+    def _simplified(self):
+        if (try_take := self.func._take(self.index, self.ndim)) is not None:
+            return try_take
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -3682,6 +3732,9 @@ class Find(Array):
             indices, = self.where.value.nonzero()
             return constant(indices)
 
+    def _intbounds_impl(self):
+        return 0, max(0, self.where.shape[0]._intbounds[1] - 1)
+
 
 class DerivativeTargetBase(Array):
     'base class for derivative targets'
@@ -4044,6 +4097,9 @@ class Unravel(Array):
     def _argument_degree(self, argument):
         if argument not in self.sh1.arguments and argument not in self.sh2.arguments:
             return self.func.argument_degree(argument)
+
+    def _intbounds_impl(self):
+        return self.func._intbounds
 
 
 class RavelIndex(Array):
@@ -5394,6 +5450,9 @@ class ArgSort(Array):
         # numpy.dtype(int), so we type cast it for consistency
         return index.astype(int, copy=False)
 
+    def _intbounds_impl(self):
+        return 0, max(0, self.array.shape[-1]._intbounds[1] - 1)
+
 
 class UniqueMask(Array):
 
@@ -6073,7 +6132,7 @@ def take(arg: Array, index: Array, axis: int):
             return _take(arg, constant(index_ + ineg * int(length)), axis)
         elif numpy.greater_equal(index_, int(length)).any():
             raise IndexError('indices out of bounds: {} >= {}'.format(index_, int(length)))
-    return _take(arg, index, axis)
+    return _take(arg, InRange(index, length), axis)
 
 
 def _take(arg: Array, index: Array, axis: int):
