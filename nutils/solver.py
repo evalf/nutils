@@ -365,7 +365,7 @@ class System:
             log.info(f'optimal value: {val:.1e}')
         return arguments
 
-    def step(self, *, timestep: float, suffix: str, arguments: Dict[str, numpy.ndarray], timearg: Optional[str] = None, timesteparg: Optional[str] = None, **solveargs) -> Dict[str, numpy.ndarray]:
+    def step(self, *, arguments: Dict[str, numpy.ndarray], suffix: str, timearg: Optional[str] = None, timesteparg: Optional[str] = None, timestep: Optional[float] = None, maxretry: int = 2, **solveargs) -> Dict[str, numpy.ndarray]:
         '''Advance a time step.
 
         This method is best described by an example. Let ``timearg`` equal 't'
@@ -375,42 +375,52 @@ class System:
 
         Parameters
         ----------
-        timearg
-            Name of the scalar argument that tracks the time.
-        timestep
-            Size of the time increment.
-        suffix
-            String suffix to add to argument names to denote their value at the
-            beginning of the time step.
         arguments
             Arguments required to evaluate the system. Arguments that coincide
             with the system's trial arguments serve as initial value.
+        suffix
+            String suffix to add to argument names to denote their value at the
+            beginning of the time step.
+        timearg
+            Name of the scalar argument that tracks the time (optional).
+        timesteparg
+            Name of the scalar argument that tracks the timestep (optional).
+        timestep
+            Size of the time increment (required if either timearg or
+            timesteparg are specified).
+        maxretry
+            If either timearg or timesteparg are specified and affecting the
+            system, then this positive integer determines how many levels of
+            timestep bisections will be considered to recover from solver or
+            matrix errors.
         solveargs
             Remaining keyword arguments are passed on to the ``solver`` method.
         '''
 
-        if not timearg and not timesteparg:
-            raise ValueError('either timearg or timesteparg should be specified')
         arguments = arguments.copy()
         for trial in self.trials:
             if trial in arguments:
                 arguments[trial + suffix] = arguments[trial]
-        if timesteparg:
-            arguments[timesteparg] = timestep
-        if timearg:
-            time = arguments.get(timearg, 0.)
-            arguments[timearg + suffix] = time
-            arguments[timearg] = time + timestep
+        if timearg or timesteparg:
+            if timestep is None:
+                raise ValueError('timearg and timesteparg require timestep to be specified')
+            if timesteparg:
+                arguments[timesteparg] = timestep
+            if timearg:
+                time = arguments.get(timearg, 0.)
+                arguments[timearg + suffix] = time
+                arguments[timearg] = time + timestep
         try:
             return self.solve(arguments=arguments, **solveargs)
         except (SolverError, matrix.MatrixError) as e:
-            if timearg not in self.argshapes and timesteparg not in self.argshapes:
+            if timearg not in self.argshapes and timesteparg not in self.argshapes or maxretry <= 0:
                 raise
             log.error(f'error: {e}; retrying with timestep {timestep/2}')
-            with log.context('tic'):
-                halfway_arguments = self.step(timestep=timestep/2, timearg=timearg, timesteparg=timesteparg, suffix=suffix, arguments=arguments, **solveargs)
-            with log.context('toc'):
-                return self.step(timestep=timestep/2, timearg=timearg, timesteparg=timesteparg, suffix=suffix, arguments=halfway_arguments, **solveargs)
+            halfstep_args = dict(solveargs, timestep=timestep/2, timearg=timearg, timesteparg=timesteparg, suffix=suffix, maxretry=maxretry-1)
+            with log.context('retry 1/2'):
+                halfway_arguments = self.step(arguments=arguments, **halfstep_args)
+            with log.context('retry 2/2'):
+                return self.step(arguments=halfway_arguments, **halfstep_args)
 
     @cache.function
     @log.withcontext

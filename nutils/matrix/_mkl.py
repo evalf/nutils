@@ -257,9 +257,21 @@ class MKLMatrix(Matrix):
         return x
 
     def _precon_direct(self, **args):
+        if not len(self.data):
+            raise MatrixError('matrix is exactly zero')
+        if self.shape[0] == self.shape[1] == 1:
+            # workaround for MKL 2025.1.0 "out of memory" bug for 1x1 matrices
+            v, = self.data
+            return (1./v).__mul__
         return Pardiso(mtype=dict(f=11, c=13)[self.dtype.kind], a=self.data, ia=self.rowptr, ja=self.colidx, **args)
 
     def _precon_sym_direct(self, **args):
+        if not len(self.data):
+            raise MatrixError('matrix is exactly zero')
+        if self.shape[0] == self.shape[1] == 1:
+            # workaround for MKL 2025.1.0 "out of memory" bug for 1x1 matrices
+            v, = self.data
+            return (1./v).__mul__
         upper = numpy.zeros(len(self.data), dtype=bool)
         rowptr = numpy.empty_like(self.rowptr)
         rowptr[0] = 1
