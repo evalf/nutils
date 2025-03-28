@@ -418,8 +418,10 @@ class Topology:
     def integrate_elementwise(self, funcs: Iterable[function.Array], *, degree: int, asfunction: bool = False, ischeme: str = 'gauss', arguments: Optional[_ArgDict] = None) -> Union[List[numpy.ndarray], List[function.Array]]:
         'element-wise integration'
 
-        retvals = [sparse.toarray(retval) for retval in self.sample(ischeme, degree).integrate_sparse(
-            [function.kronecker(func, pos=self.f_index, length=len(self), axis=0) for func in funcs], arguments=arguments)]
+        retvals = self.sample(ischeme, degree).integrate(
+            [function.kronecker(func, pos=self.f_index, length=len(self), axis=0) for func in funcs],
+            legacy=False,
+            arguments=arguments)
         if asfunction:
             return [function.get(retval, 0, self.f_index) for retval in retvals]
         else:

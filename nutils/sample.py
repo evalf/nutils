@@ -210,6 +210,12 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
+        warnings.deprecation(
+            'Sample.integrate_sparse is deprecated and will be removed in '
+            'Nutils 10; please use a combination of function.eval, '
+            'Sample.integral, and function.as_coo or function.as_csr instead.',
+            stacklevel=3)
+
         from . import sparse
         arrays = function.eval([function.as_coo(self.integral(func)) for func in funcs], **arguments)
         return [sparse.compose(indices, values, func.shape) for func, (values, *indices) in zip(funcs, arrays)]
