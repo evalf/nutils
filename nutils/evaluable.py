@@ -759,15 +759,29 @@ class AssertEqual(Array):
         return max(lowera, lowerb), min(uppera, upperb)
 
     def _simplified(self):
-        unique = []
-        queue = [self.a, self.b]
-        for item in queue:
-            if isinstance(item, AssertEqual):
-                queue.append(item.a)
-                queue.append(item.b)
-            elif item not in unique:
-                unique.append(item)
-        return functools.reduce(AssertEqual, unique)
+        # Canonicalize nested array equals to (((obj1 = obj2) = obj3) = obj4),
+        # with all objects unique. We use the fact that self.a is already
+        # simplified in descending only the left arm to gather all the equality
+        # objects.
+        left = []
+        obj = self.a
+        while isinstance(obj, AssertEqual):
+            assert not isinstance(obj.b, AssertEqual)
+            left.append(obj.b)
+            obj = obj.a
+        left.append(obj)
+        # Again using the fact that self.b is simplified, we then descend its
+        # left arm to stack new objects on top of self.a.
+        retval = self.a
+        obj = self.b
+        while isinstance(obj, AssertEqual):
+            assert not isinstance(obj.b, AssertEqual)
+            if obj.b not in left:
+                retval = AssertEqual(retval, obj.b)
+            obj = obj.a
+        if obj not in left:
+            retval = AssertEqual(retval, obj)
+        return retval
 
     @property
     def dependencies(self):
@@ -883,17 +897,20 @@ class Constant(Array):
         return tuple(constant(n) for n in self._value.shape)
 
     def _simplified(self):
-        if not self.value.any():
+        if not self.value.any(): # true if any axis is length 0
             return zeros_like(self)
-        if self.ndim == 1 and self.dtype == int and numpy.all(self.value == numpy.arange(self.value.shape[0])):
-            return Range(self.shape[0])
+        # At this point all axes are a least length 1
         for i, sh in enumerate(self.shape):
-            # Find and replace invariant axes with InsertAxis. Since `self.value.any()`
-            # is False for arrays with a zero-length axis, we can arrive here only if all
-            # axes have at least length one, hence the following statement should work.
-            first, *others = numpy.rollaxis(self.value, i)
-            if all(numpy.equal(first, other).all() for other in others):
+            pancake = iter(numpy.moveaxis(self.value, i, 0))
+            first = next(pancake)
+            if not first.ndim and numpy.all(self.value == first) or all(numpy.equal(first, other).all() for other in pancake):
                 return insertaxis(constant(first), i, sh)
+        # At this point all axes are a least length 2
+        if self.ndim == 1 and self.dtype == int and self.value[-1] == self.value[0] + self.value.size - 1 and numpy.all(self.value[1:] > self.value[:-1]):
+            r = Range(self.shape[0])
+            if self.value[0]:
+                r += self.value[0]
+            return r
 
     def eval(self, /, **evalargs):
         return self.value
@@ -5642,14 +5659,7 @@ def factor(array):
             values = values[nz]
             indices = [index[nz] for index in indices]
 
-        info = f'{len(values):,} coefficients for {len(shape)}-tensor'
-        if shape:
-            # The fill ratio is based on the geometric mean of the shape of the
-            # tensor to be insensitive to reshapes, as the geometric mean of
-            # (a, b, c, d) is equal to that of (a * b, c * d).
-            fill = len(values) / geometric_mean(shape)
-            info += f' ({100*fill:.0f}% full)' if .01 <= fill <= 1 else f' (bandwidth {fill:.0f})'
-        log.info(info)
+        log.info(f'{len(values):,} coefficients for {shape or "scalar"} array ({100*len(values)/numpy.prod(shape):.1f}% full)')
 
         if not len(values):
             continue
@@ -5726,24 +5736,35 @@ def _make_loop_ids_unique(funcs: typing.Tuple[Evaluable, ...]) -> typing.Tuple[E
         return funcs
 
     new_ids = filter(lambda id: id not in old_ids, map(_LoopId, itertools.count()))
-    cache = {}
+    root_cache = util.IDDict()
 
     @util.shallow_replace
-    def replace_inner(obj, root=None):
-        if obj is root or not isinstance(obj, Loop):
+    def replace_loop_ids(obj, *loop_caches):
+        # For each loop in which `obj` is embeded, `loop_caches` lists the old
+        # loop id and the loop cache, ordered from outermost to innermost. The
+        # `root_cache` is used for `obj`s that are invariant to all outer loops,
+        # if any.
+        if not isinstance(obj, Evaluable):
             return
-        if (cached := cache.get(obj)) is not None:
-            return cached
-        old = obj.loop_id
-        new = next(new_ids)
-        # Replace `old` with `new`, but don't traverse nested loops with id `old`.
-        new_obj = util.shallow_replace(lambda x: new if x is old else x if x is not obj and isinstance(x, Loop) and x.loop_id is old else None, obj)
-        if new_obj._loops:
-            new_obj = replace_inner(new_obj, new_obj)
-        cache[obj] = new_obj
-        return new_obj
+        if loop_caches:
+            loop_ids = [arg.loop_id for arg in obj.arguments if isinstance(arg, _LoopIndex)]
+            if len(loop_ids) != len(loop_caches):
+                # Select a new persistent cache. Remove all outer loops from
+                # `loop_caches` for which `obj` is invariant while maintaining the
+                # order of the outer loops.
+                loop_ids = set(loop_ids)
+                loop_caches = [(loop_id, cache) for loop_id, cache in loop_caches if loop_id in loop_ids]
+                cache = loop_caches[-1][1] if loop_caches else root_cache
+                return replace_loop_ids(obj, *loop_caches, __persistent_cache__=cache)
+        if isinstance(obj, Loop):
+            assert not any(loop_id == obj.loop_id for loop_id, _ in loop_caches)
+            cache = util.IDDict()
+            cache[obj.loop_id] = next(new_ids)
+            constructor, args = obj.__reduce__()
+            new_args = replace_loop_ids(args, *loop_caches, (obj.loop_id, cache), __persistent_cache__=cache)
+            return constructor(*new_args)
 
-    return tuple(map(replace_inner, funcs))
+    return replace_loop_ids(funcs, __persistent_cache__=root_cache)
 
 
 class _Stats:

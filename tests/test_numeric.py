@@ -404,6 +404,10 @@ class accumulate(TestCase):
         A = numeric.accumulate(numpy.array([1, 2, 3]), (numpy.array([0, 3, 0]),), (4,))
         self.assertEqual(A.tolist(), [4, 0, 0, 2])
 
+    def test_complex_vector(self):
+        A = numeric.accumulate(numpy.array([1, 2+5j, 3j]), (numpy.array([0, 3, 0]),), (4,))
+        self.assertEqual(A.tolist(), [1+3j, 0, 0, 2+5j])
+
     def test_matrix(self):
         A = numeric.accumulate(numpy.array([1, 2, 3]), (numpy.array([0, 1, 0]), numpy.array([0, 3, 0])), (2,4))
         self.assertEqual(A.tolist(), [[4, 0, 0, 0], [0, 0, 0, 2]])
