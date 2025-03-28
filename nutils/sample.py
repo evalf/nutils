@@ -155,7 +155,7 @@ class Sample(types.Singleton):
         raise NotImplementedError
 
     @util.single_or_multiple
-    def integrate(self, funcs, /, **arguments):
+    def integrate(self, funcs, /, *, legacy=None, **arguments):
         '''Integrate functions.
 
         Args
@@ -166,7 +166,37 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function._legacy_eval([self.integral(func) for func in funcs], **arguments)
+        if any(isinstance(func, function.Array) and func.ndim > 1 for func in funcs) and legacy is None:
+            warnings.deprecation(
+                'Sample integration of arrays of dimension 2 or higher is going '
+                'to change in Nutils 10. Instead of evaluating 2D arrays as '
+                'sparse matrices, and 3D and higher as sparse array objects, '
+                'integration will be dense by default, with sparse evaluation '
+                'available via function.eval and Sample.integral, combined with '
+                'the function.as_csr and function.as_coo modifiers. To make this '
+                'transition, a new "legacy" argument is introduced that can be '
+                'set to True to explicitly request the old behaviour (and '
+                'suppress this warning), and to False to switch to dense '
+                'evaluation.', stacklevel=3)
+            legacy = True
+
+        arrays = function.eval([func if not legacy or not isinstance(func, function.Array) or func.ndim < 2
+                  else function.as_csr(func) if func.ndim == 2
+                  else function.as_coo(func) for func in map(self.integral, funcs)], **arguments)
+
+        for func, data in zip(funcs, arrays):
+            if legacy and isinstance(func, function.Array):
+                if func.ndim == 0:
+                    data = data[()]
+                elif func.ndim == 2:
+                    values, rowptr, colidx = data
+                    from . import matrix
+                    data = matrix.assemble_csr(values, rowptr, colidx, func.shape[1])
+                elif func.ndim > 2:
+                    values, *indices = data
+                    from . import sparse
+                    data = sparse.compose(indices, values, func.shape)
+            yield data
 
     @util.single_or_multiple
     def integrate_sparse(self, funcs, /, **arguments):
@@ -380,9 +410,9 @@ class Sample(types.Singleton):
         integrals involving any but the first sample's geometry scale incorrectly.
 
         >>> zipped.integrate(function.J(geom1)) # correct
-        1.0
+        array(1.0)
         >>> zipped.integrate(function.J(geom2)) # wrong (expected 1)
-        1.4±1e-10
+        array(1.4)
 
         Args
         ----

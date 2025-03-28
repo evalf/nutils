@@ -435,13 +435,14 @@ class Topology:
         return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
     @single_or_multiple
-    def integrate(self, funcs: Iterable[function.IntoArray], ischeme: str = 'gauss', degree: Optional[int] = None, edit=None, *, arguments: Optional[_ArgDict] = None) -> Tuple[numpy.ndarray, ...]:
+    def integrate(self, funcs: Iterable[function.IntoArray], ischeme: str = 'gauss', degree: Optional[int] = None, edit=None, *, arguments: Optional[_ArgDict] = None, legacy=None) -> Tuple[numpy.ndarray, ...]:
         'integrate functions'
 
         ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
         if edit is not None:
+            warnings.warn('the "edit" argument of Topology.integrate will be removed in Nutils 10')
             funcs = [edit(func) for func in funcs]
-        return self.sample(ischeme, degree).integrate(funcs, **arguments or {})
+        return self.sample(ischeme, degree).integrate(funcs, legacy=legacy, **arguments or {})
 
     def integral(self, func: function.IntoArray, ischeme: str = 'gauss', degree: Optional[int] = None, edit=None) -> function.Array:
         'integral'
@@ -490,7 +491,7 @@ class Topology:
                 raise Exception
             assert fun2.ndim == 0
             J = function.J(geometry)
-            A, b, f2, area = self.integrate([Afun*J, bfun*J, fun2*J, J], ischeme=ischeme, edit=edit, arguments=arguments)
+            A, b, f2, area = self.integrate([Afun*J, bfun*J, fun2*J, J], ischeme=ischeme, edit=edit, arguments=arguments, legacy=True)
             N = A.rowsupp(droptol)
             if numpy.equal(b, 0).all():
                 constrain[~constrain.where & N] = 0

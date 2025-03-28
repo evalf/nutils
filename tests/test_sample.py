@@ -567,12 +567,12 @@ class integral(TestCase):
 
     def test_transpose(self):
         self.assertAllAlmostEqual(
-            self.topo.integrate(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).export('dense').T,
-            self.topo.integral(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).T.eval().export('dense'),
+            self.topo.integrate(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2, legacy=False).T,
+            self.topo.integral(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).T.eval(legacy=False),
             places=15)
 
     def test_empty(self):
         shape = 2, 3
         empty = function.zeros(shape, float)
-        array = empty.eval().export('dense')
+        array = empty.eval(legacy=False)
         self.assertAllEqual(array, numpy.zeros((2, 3)))

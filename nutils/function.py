@@ -468,11 +468,33 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def __repr__(self) -> str:
         return 'Array<{}>'.format(','.join(str(n) for n in self.shape))
 
-    def eval(self, /, **arguments) -> numpy.ndarray:
+    def eval(self, /, *, legacy=None, **arguments) -> numpy.ndarray:
         'Evaluate this function.'
 
-        retval, = _legacy_eval([self], **arguments)
-        return retval
+        if self.ndim > 1 and legacy is None:
+            warnings.deprecation(
+                'Evaluation of an array of dimension 2 or higher is going to '
+                'change in Nutils 10. Instead of evaluating a 2D array as a '
+                'sparse matrix, and 3D and higher as a sparse array object, '
+                'evaluation will be dense by default, with sparse evaluation '
+                'available via the function.as_csr and function.as_coo '
+                'modifiers. To make this transition, a new "legacy" argument is '
+                'introduced that can be set to True to explicitly request the '
+                'old behaviour (and suppress this warning), and to False to '
+                'switch to dense evaluation.')
+            legacy = True
+
+        data = eval(self if not legacy or self.ndim < 2 else as_csr(self) if self.ndim == 2 else as_coo(self), **arguments)
+        if not legacy or not self.ndim > 1:
+            return data
+        elif self.ndim == 2:
+            values, rowptr, colidx = data
+            from . import matrix
+            return matrix.assemble_csr(values, rowptr, colidx, self.shape[1])
+        else:
+            values, *indices = data
+            from . import sparse
+            return sparse.compose(indices, values, func.shape)
 
     def derivative(self, __var: Union[str, 'Argument']) -> 'Array':
         'See :func:`derivative`.'
@@ -2260,21 +2282,6 @@ def nsymgrad(arg: IntoArray, geom: IntoArray, /, ndims: int = 0, *, spaces: Opti
     return dotnorm(symgrad(arg, geom, ndims, spaces=spaces), geom, spaces=spaces)
 
 # MISC
-
-
-def _legacy_eval(funcs, **arguments):
-    from . import matrix, sparse
-    arrays = eval([func if func.ndim < 2 else as_csr(func) if func.ndim == 2 else as_coo(func) for func in funcs], **arguments)
-    for func, data in zip(funcs, arrays):
-        if func.ndim == 0:
-            data = data[()]
-        elif func.ndim == 2:
-            values, rowptr, colidx = data
-            data = matrix.assemble_csr(values, rowptr, colidx, func.shape[1])
-        elif func.ndim > 2:
-            values, *indices = data
-            data = sparse.compose(indices, values, func.shape)
-        yield data
 
 
 @util.single_or_multiple

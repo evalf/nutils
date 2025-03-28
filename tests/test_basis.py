@@ -21,9 +21,9 @@ class basisTest(TestCase):
 
     def assertPolynomial(self, topo, geom, basis, degree):
         target = (geom**degree).sum(-1)
-        matrix, rhs, target2 = topo.integrate([basis[:, numpy.newaxis] * basis, basis * target, target**2], degree=degree*2)
-        lhs = matrix.solve(rhs)
-        error = target2 - rhs.dot(lhs)
+        matrix, rhs, target2 = topo.integrate([basis[:, numpy.newaxis] * basis, basis * target, target**2], degree=degree*2, legacy=False)
+        lhs = numpy.linalg.solve(matrix, rhs)
+        error = target2 - rhs @ lhs
         self.assertAlmostEqual(error, 0, places=10)
 
 
