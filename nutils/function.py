@@ -48,10 +48,13 @@ class LowerArgs(NamedTuple):
                 for space, coords in self.coordinates.items())
 
     @classmethod
-    def for_space(cls, space: str, transforms: Tuple[Transforms, ...], index: evaluable.Array, coordinates: evaluable.Array) -> 'LowerArgs':
+    def for_space(cls, space: str, transforms: Tuple[Transforms, ...], index: evaluable.Array, coordinates: Optional[evaluable.Array] = None) -> 'LowerArgs':
         if index.dtype != int or index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
-        return cls(coordinates.shape[:-1], {space: (transforms, index)}, {space: coordinates})
+        if coordinates is None:
+            return cls((), {space: (transforms, index)}, {})
+        else:
+            return cls(coordinates.shape[:-1], {space: (transforms, index)}, {space: coordinates})
 
     def __or__(self, other: 'LowerArgs') -> 'LowerArgs':
         duplicates = set(self.transform_chains) & set(other.transform_chains)
