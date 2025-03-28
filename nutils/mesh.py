@@ -537,7 +537,7 @@ def gmsh(fname, *, dimension=None, order=1, numbers={}, space='X'):
     return simplex(**_simplex_args_from_meshio(mesh), space=space)
 
 
-def simplex(nodes, cnodes, coords, tags, btags, ptags, *, space='X'):
+def simplex(nodes, cnodes, coords, tags, btags, ptags, name=None, *, space='X'):
     '''Simplex topology.
 
     Parameters
@@ -570,6 +570,9 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, *, space='X'):
     geom : :class:`nutils.function.Array`
         Geometry function.
     '''
+
+    if name is not None:
+        warnings.deprecation('the simplex name argument is deprecated and will be removed in Nutils 10; it can safely be omitted')
 
     used = numpy.zeros(len(coords), dtype=bool)
     used[nodes] = True
