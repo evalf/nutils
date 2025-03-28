@@ -1,4 +1,4 @@
-from nutils import evaluable, sparse, numeric, _util as util, types, sample, matrix
+from nutils import evaluable, sparse, numeric, _util as util, types, sample, matrix, _pyast
 from nutils.testing import TestCase, parametrize
 import nutils_poly as poly
 import numpy
@@ -659,8 +659,11 @@ class intbounds(TestCase):
         def dependencies(self):
             return evaluable.Argument(self.argname, shape=(), dtype=int),
 
-        def evalf(self, value):
-            assert self.lower <= value[()] <= self.upper
+        def _compile(self, builder):
+            value, = builder.compile(self.dependencies)
+            block = builder.get_block_for_evaluable(self)
+            block.assert_true(_pyast.BinOp(_pyast.LiteralInt(self.lower), '<=', value.get_item(_pyast.Tuple(()))))
+            block.assert_true(_pyast.BinOp(value.get_item(_pyast.Tuple(())), '<=', _pyast.LiteralInt(self.upper)))
             return value
 
         @property
@@ -682,8 +685,6 @@ class intbounds(TestCase):
             def dependencies(self):
                 return evaluable.Argument('dummy', (), int),
 
-            def evalf(self):
-                raise NotImplementedError
         self.assertEqual(Test()._intbounds, (float('-inf'), float('inf')))
 
     def test_constant(self):
@@ -986,9 +987,6 @@ class simplify(TestCase):
             @property
             def dependencies(self):
                 return evaluable.Argument('R', shape=(), dtype=int),
-
-            def evalf(self, evalargs):
-                raise NotImplementedError
 
             @property
             def _intbounds(self):

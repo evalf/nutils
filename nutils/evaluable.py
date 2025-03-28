@@ -206,22 +206,13 @@ class Evaluable(types.DataClass):
         # calling `Evaluable._compile`, because the former caches the compiled
         # evaluables.
         args = builder.compile(self.dependencies)
-        expression = self._compile_expression(builder.get_evaluable_expr(self), *args)
+        expression = self._compile_expression(builder.add_constant, *args)
         out = builder.get_variable_for_evaluable(self)
         builder.get_block_for_evaluable(self).assign_to(out, expression)
         return out
 
-    def _compile_expression(self, py_self: _pyast.Variable, *args: _pyast.Expression):
-        # Compiles this evaluable given compiled arguments.
-        #
-        # `py_self` is a variable that refers to `self`.
-
-        # Instead of triggering an exception in `Evaluable.evalf` when running
-        # the generated code, we raise an exception during compile time.
-        if self.evalf is Evaluable.evalf:
-            raise NotImplementedError
-
-        return py_self.get_attr('evalf').call(*args)
+    def _compile_expression(self, add_constant, *args: _pyast.Expression):
+        raise NotImplementedError
 
     def argument_degree(self, argument):
         '''return the highest power of argument of self is polynomial,
@@ -250,7 +241,7 @@ class Tuple(Evaluable):
     def dependencies(self):
         return self.items
 
-    def _compile_expression(self, py_self, *items):
+    def _compile_expression(self, add_constant, *items):
         return _pyast.Tuple(items)
 
     def __iter__(self):
@@ -773,10 +764,14 @@ class AssertEqual(Array):
     def dependencies(self):
         return self.a, self.b
 
-    def evalf(self, a, b):
+    @staticmethod
+    def evalf(a, b):
         if a.shape != b.shape or (a != b).any():
             raise Exception('values are not equal')
         return a
+
+    def _compile_expression(self, add_constant, a, b):
+        return _pyast.Variable('evaluable').get_attr('AssertEqual').get_attr('evalf').call(a, b)
 
 
 class Orthonormal(Array):
@@ -814,6 +809,9 @@ class Orthonormal(Array):
         v2 = numpy.linalg.solve(GG, v1[...,numpy.newaxis])[...,0] # NOTE: the newaxis/getitem dance is necessary since Numpy 2
         v3 = numpy.einsum('...ij,...j->...i', G, v2)
         return numeric.normalize(n - v3)
+
+    def _compile_expression(self, add_constant, G, n):
+        return _pyast.Variable('evaluable').get_attr('Orthonormal').get_attr('evalf').call(G, n)
 
     def _derivative(self, var, seen):
         if isunit(self.shape[-1]):
@@ -903,7 +901,7 @@ class Constant(Array):
         # convert the array to a `numpy.number` (`self.value[()]`), which
         # behaves like a `numpy.ndarray`, and has much faster implementations
         # for add, multiply etc.
-        return builder.add_constant_for_evaluable(self, self.value[()] if self.ndim == 0 else self.value)
+        return builder.add_constant(self.value[()] if self.ndim == 0 else self.value)
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self.ndim:
@@ -935,7 +933,7 @@ class Constant(Array):
         assert 0 <= axis1 < axis2 < self.ndim
         axes = (*range(axis1), *range(axis1+1, axis2), *range(axis2+1, self.ndim), axis1, axis2)
         value = numpy.transpose(self.value, axes)
-        return constant(numpy.transpose(Inverse.evalf(value), util.untake(axes)))
+        return constant(numpy.transpose(numeric.inv(value), util.untake(axes)))
 
     def _product(self):
         return constant((numpy.all if self.dtype == bool else numpy.prod)(self.value, -1))
@@ -1036,11 +1034,11 @@ class InsertAxis(Array):
         except ValueError:  # non-contiguous data
             return numpy.repeat(func[..., numpy.newaxis], length, -1)
 
-    def _compile_expression(self, py_self, func, length):
+    def _compile_expression(self, add_constant, func, length):
         if isunit(self.length):
             return func.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Variable('numpy').get_attr('newaxis'))))
         else:
-            return super()._compile_expression(py_self, func, length)
+            return _pyast.Variable('evaluable').get_attr('InsertAxis').get_attr('evalf').call(func, length)
 
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
@@ -1189,7 +1187,7 @@ class Transpose(Array):
     def _simplified(self):
         return self.func._transpose(self.axes)
 
-    def _compile_expression(self, py_self, func):
+    def _compile_expression(self, add_constant, func):
         axes = _pyast.Tuple(tuple(map(_pyast.LiteralInt, self.axes)))
         return _pyast.Variable('numpy').get_attr('transpose').call(func, axes)
 
@@ -1358,7 +1356,7 @@ class Product(Array):
     def shape(self):
         return self.func.shape[:-1]
 
-    def _compile_expression(self, py_self, func):
+    def _compile_expression(self, add_constant, func):
         return _pyast.Variable('numpy').get_attr('all' if self.dtype == bool else 'prod').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
@@ -1410,7 +1408,8 @@ class Inverse(Array):
         if result is not None:
             return result
 
-    evalf = staticmethod(numeric.inv)
+    def _compile_expression(self, add_constant, mat):
+        return _pyast.Variable('numeric').get_attr('inv').call(mat)
 
     def _derivative(self, var, seen):
         return -einsum('Aij,AjkB,Akl->AilB', self, derivative(self.func, var, seen), self)
@@ -1463,7 +1462,8 @@ class Determinant(Array):
         if isunit(self.func.shape[-1]):
             return Take(Take(self.func, zeros((), int)), zeros((), int))
 
-    evalf = staticmethod(numpy.linalg.det)
+    def _compile_expression(self, add_constant, array):
+        return _pyast.Variable('numpy').get_attr('linalg').get_attr('det').call(array)
 
     def _derivative(self, var, seen):
         return einsum('A,Aji,AijB->AB', self, inverse(self.func), derivative(self.func, var, seen))
@@ -1539,7 +1539,7 @@ class Multiply(Array):
             r = tuple(range(self.ndim))
             return Einsum(tuple(self.funcs), (r, r), r)
 
-    def _compile_expression(self, py_self, func1, func2):
+    def _compile_expression(self, add_constant, func1, func2):
         return _pyast.BinOp(func1, '*', func2)
 
     def _sum(self, axis):
@@ -1763,7 +1763,7 @@ class Add(Array):
         else:
             return super()._compile(builder)
 
-    def _compile_expression(self, py_self, func1, func2):
+    def _compile_expression(self, add_constant, func1, func2):
         return _pyast.BinOp(func1, '+', func2)
 
     def _compile_with_out(self, builder, out, out_block_id, mode):
@@ -1858,7 +1858,7 @@ class Einsum(Array):
     def dtype(self):
         return self.args[0].dtype
 
-    def _compile_expression(self, py_self, *args):
+    def _compile_expression(self, add_constant, *args):
         return _pyast.Variable('numpy').get_attr('einsum').call(_pyast.LiteralStr(self._einsumfmt), *args)
 
     @property
@@ -1899,7 +1899,7 @@ class Sum(Array):
     def shape(self):
         return self.func.shape[:-1]
 
-    def _compile_expression(self, py_self, func):
+    def _compile_expression(self, add_constant, func):
         return _pyast.Variable('numpy').get_attr('any' if self.dtype == bool else 'sum').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
@@ -2000,7 +2000,7 @@ class TakeDiag(Array):
             axes = [i-(i>rmaxis) for i in axes[:-1]]
             return transpose(Einsum(func.args, args_idx, func.out_idx[:rmaxis] + func.out_idx[rmaxis+1:]), axes)
 
-    def _compile_expression(self, py_self, arr):
+    def _compile_expression(self, add_constant, arr):
         return _pyast.Variable('numpy').get_attr('einsum').call(_pyast.LiteralStr('...kk->...k'), arr)
 
     def _derivative(self, var, seen):
@@ -2066,7 +2066,7 @@ class Take(Array):
                 if isinstance(a, Range) and isinstance(b, InsertAxis) and _isindex(b.func):
                     return _TakeSlice(self.func, a.length, b.func)
 
-    def _compile_expression(self, py_self, arr, indices):
+    def _compile_expression(self, add_constant, arr, indices):
         return _pyast.Variable('numpy').get_attr('take').call(arr, indices, axis=_pyast.LiteralInt(-1))
 
     def _derivative(self, var, seen):
@@ -2119,7 +2119,7 @@ class _TakeSlice(Array):
     def shape(self):
         return self.func.shape[:-1] + (self.length,)
 
-    def _compile_expression(self, py_self, arr, length, offset):
+    def _compile_expression(self, add_constant, arr, length, offset):
         slices = [_pyast.Variable('slice').call(_pyast.Variable('None'))] * (self.ndim - 1)
         slices.append(_pyast.Variable('slice').call(offset, _pyast.BinOp(offset, '+', length)))
         return arr.get_item(_pyast.Tuple(tuple(slices)))
@@ -2168,7 +2168,7 @@ class Power(Array):
         elif p == -2:
             return Reciprocal(self.func * self.func)
 
-    def _compile_expression(self, py_self, func, power):
+    def _compile_expression(self, add_constant, func, power):
         return _pyast.Variable('numpy').get_attr('power').call(func, power)
 
     def _derivative(self, var, seen):
@@ -2300,13 +2300,13 @@ class Holomorphic(Pointwise):
 
 class Reciprocal(Holomorphic):
 
-    def _compile_expression(self, py_self, value):
+    def _compile_expression(self, add_constant, value):
         return _pyast.Variable('numpy').get_attr('reciprocal').call(value)
 
 
 class Negative(Holomorphic):
 
-    def _compile_expression(self, py_self, value):
+    def _compile_expression(self, add_constant, value):
         return _pyast.UnaryOp('-', value)
 
     @cached_property
@@ -2330,7 +2330,7 @@ class FloorDivide(Pointwise):
     def dependencies(self):
         return self.dividend, self.divisor
 
-    def _compile_expression(self, py_self, dividend, divisor):
+    def _compile_expression(self, add_constant, dividend, divisor):
         return _pyast.BinOp(dividend, '//', divisor)
 
     @cached_property
@@ -2370,7 +2370,7 @@ class Absolute(Pointwise):
     def dependencies(self):
         return self.arg,
 
-    def _compile_expression(self, py_self, value):
+    def _compile_expression(self, add_constant, value):
         return _pyast.Variable('numpy').get_attr('absolute').call(value)
 
     @cached_property
@@ -2391,7 +2391,6 @@ class Absolute(Pointwise):
 
 class Cos(Holomorphic):
     'Cosine, element-wise.'
-    evalf = staticmethod(numpy.cos)
     deriv = lambda x: -Sin(x),
 
     def _simplified(self):
@@ -2399,10 +2398,12 @@ class Cos(Holomorphic):
             return ones(self.shape, dtype=self.dtype)
         return super()._simplified()
 
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('cos').call(x)
+
 
 class Sin(Holomorphic):
     'Sine, element-wise.'
-    evalf = staticmethod(numpy.sin)
     deriv = Cos,
 
     def _simplified(self):
@@ -2410,29 +2411,40 @@ class Sin(Holomorphic):
             return zeros(self.shape, dtype=self.dtype)
         return super()._simplified()
 
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('sin').call(x)
+
 
 class Tan(Holomorphic):
     'Tangent, element-wise.'
-    evalf = staticmethod(numpy.tan)
     deriv = lambda x: Cos(x)**astype(-2, x.dtype),
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('tan').call(x)
 
 
 class ArcSin(Holomorphic):
     'Inverse sine, element-wise.'
-    evalf = staticmethod(numpy.arcsin)
     deriv = lambda x: reciprocal(sqrt(astype(1, x.dtype)-x**astype(2, x.dtype))),
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('arcsin').call(x)
 
 
 class ArcCos(Holomorphic):
     'Inverse cosine, element-wise.'
-    evalf = staticmethod(numpy.arccos)
     deriv = lambda x: -reciprocal(sqrt(astype(1, x.dtype)-x**astype(2, x.dtype))),
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('arccos').call(x)
 
 
 class ArcTan(Holomorphic):
     'Inverse tangent, element-wise.'
-    evalf = staticmethod(numpy.arctan)
     deriv = lambda x: reciprocal(astype(1, x.dtype)+x**astype(2, x.dtype)),
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('arctan').call(x)
 
 
 class Sinc(Holomorphic):
@@ -2443,42 +2455,56 @@ class Sinc(Holomorphic):
     def parameters(self):
         return self.n,
 
-    evalf = lambda self, x: numeric.sinc(x, self.n)
     deriv = lambda x, n: Sinc(x, n=n+1),
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numeric').get_attr('sinc').call(x, _pyast.LiteralInt(self.n))
 
 
 class CosH(Holomorphic):
     'Hyperbolic cosine, element-wise.'
-    evalf = staticmethod(numpy.cosh)
     deriv = lambda x: SinH(x),
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('cosh').call(x)
 
 
 class SinH(Holomorphic):
     'Hyperbolic sine, element-wise.'
-    evalf = staticmethod(numpy.sinh)
     deriv = CosH,
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('sinh').call(x)
 
 
 class TanH(Holomorphic):
     'Hyperbolic tangent, element-wise.'
-    evalf = staticmethod(numpy.tanh)
     deriv = lambda x: astype(1, x.dtype) - TanH(x)**astype(2, x.dtype),
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('tanh').call(x)
 
 
 class ArcTanH(Holomorphic):
     'Inverse hyperbolic tangent, element-wise.'
-    evalf = staticmethod(numpy.arctanh)
     deriv = lambda x: reciprocal(astype(1, x.dtype)-x**astype(2, x.dtype)),
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('arctanh').call(x)
 
 
 class Exp(Holomorphic):
-    evalf = staticmethod(numpy.exp)
     deriv = lambda x: Exp(x),
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('exp').call(x)
 
 
 class Log(Holomorphic):
-    evalf = staticmethod(numpy.log)
     deriv = lambda x: reciprocal(x),
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('log').call(x)
 
 
 class Mod(Pointwise):
@@ -2490,7 +2516,7 @@ class Mod(Pointwise):
     def dependencies(self):
         return self.dividend, self.divisor
 
-    def _compile_expression(self, py_self, dividend, divisor):
+    def _compile_expression(self, add_constant, dividend, divisor):
         return _pyast.BinOp(dividend, '%', divisor)
 
     @cached_property
@@ -2533,8 +2559,10 @@ class ArcTan2(Pointwise):
     def dependencies(self):
         return self.x, self.y
 
-    evalf = staticmethod(numpy.arctan2)
     deriv = lambda x, y: y / (x**astype(2, x.dtype) + y**astype(2, x.dtype)), lambda x, y: -x / (x**astype(2, x.dtype) + y**astype(2, x.dtype))
+
+    def _compile_expression(self, add_constant, x, y):
+        return _pyast.Variable('numpy').get_attr('arctan2').call(x, y)
 
     @cached_property
     def dtype(self):
@@ -2552,7 +2580,8 @@ class Greater(Pointwise):
     def dependencies(self):
         return self.x, self.y
 
-    evalf = staticmethod(numpy.greater)
+    def _compile_expression(self, add_constant, x, y):
+        return _pyast.Variable('numpy').get_attr('greater').call(x, y)
 
     @cached_property
     def dtype(self):
@@ -2575,7 +2604,8 @@ class Equal(Pointwise):
     def dependencies(self):
         return self.x, self.y
 
-    evalf = staticmethod(numpy.equal)
+    def _compile_expression(self, add_constant, x, y):
+        return _pyast.Variable('numpy').get_attr('equal').call(x, y)
 
     @cached_property
     def dtype(self):
@@ -2604,7 +2634,8 @@ class Less(Pointwise):
     def dependencies(self):
         return self.x, self.y
 
-    evalf = staticmethod(numpy.less)
+    def _compile_expression(self, add_constant, x, y):
+        return _pyast.Variable('numpy').get_attr('less').call(x, y)
 
     @cached_property
     def dtype(self):
@@ -2626,7 +2657,8 @@ class LogicalNot(Pointwise):
     def dependencies(self):
         return self.x,
 
-    evalf = staticmethod(numpy.logical_not)
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('logical_not').call(x)
 
     @cached_property
     def dtype(self):
@@ -2649,8 +2681,10 @@ class Minimum(Pointwise):
     def dependencies(self):
         return self.x, self.y
 
-    evalf = staticmethod(numpy.minimum)
     deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
+
+    def _compile_expression(self, add_constant, x, y):
+        return _pyast.Variable('numpy').get_attr('minimum').call(x, y)
 
     @cached_property
     def dtype(self):
@@ -2685,8 +2719,10 @@ class Maximum(Pointwise):
     def dependencies(self):
         return self.x, self.y
 
-    evalf = staticmethod(numpy.maximum)
     deriv = lambda x, y: .5 + .5 * Sign(x - y), lambda x, y: .5 - .5 * Sign(x - y)
+
+    def _compile_expression(self, add_constant, x, y):
+        return _pyast.Variable('numpy').get_attr('maximum').call(x, y)
 
     @cached_property
     def dtype(self):
@@ -2720,7 +2756,8 @@ class Conjugate(Pointwise):
     def dependencies(self):
         return self.arg,
 
-    evalf = staticmethod(numpy.conjugate)
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('conjugate').call(x)
 
     @cached_property
     def dtype(self):
@@ -2744,7 +2781,8 @@ class Real(Pointwise):
     def dependencies(self):
         return self.arg,
 
-    evalf = staticmethod(numpy.real)
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('real').call(x)
 
     @cached_property
     def dtype(self):
@@ -2768,7 +2806,8 @@ class Imag(Pointwise):
     def dependencies(self):
         return self.arg,
 
-    evalf = staticmethod(numpy.imag)
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('imag').call(x)
 
     @cached_property
     def dtype(self):
@@ -2796,7 +2835,7 @@ class Cast(Pointwise):
     def dependencies(self):
         return self.arg,
 
-    def _compile_expression(self, py_self, arg):
+    def _compile_expression(self, add_constant, arg):
         return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=_pyast.Variable(self.dtype.__name__))
 
     def _simplified(self):
@@ -2933,7 +2972,8 @@ class Sign(Array):
     def _simplified(self):
         return self.func._sign()
 
-    evalf = staticmethod(numpy.sign)
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('numpy').get_attr('sign').call(x)
 
     def _takediag(self, axis1, axis2):
         return Sign(_takediag(self.func, axis1, axis2))
@@ -2982,9 +3022,8 @@ class Sampled(Array):
         assert isinstance(self.target, Array) and self.target.ndim == 2, f'target={self.target!r}'
         assert self.points.shape[1] == self.target.shape[1]
 
-    @property
-    def evalf(self):
-        return self.evalf_methods[self.interpolation]
+    def _compile_expression(self, add_constant, points, targets):
+        return _pyast.Variable('evaluable').get_attr('Sampled').get_attr(f'evalf_{self.interpolation}').call(points, targets)
 
     @property
     def dependencies(self):
@@ -2994,16 +3033,16 @@ class Sampled(Array):
     def shape(self):
         return self.points.shape[0], self.target.shape[0]
 
+    @staticmethod
     def evalf_none(points, target):
         if points.shape != target.shape or not numpy.equal(points, target).all():
             raise ValueError('points do not correspond to the target sample; consider using "nearest" interpolation if this is desired')
         return numpy.eye(len(points))
 
+    @staticmethod
     def evalf_nearest(points, target):
         nearest = numpy.linalg.norm(points[:,numpy.newaxis,:] - target[numpy.newaxis,:,:], axis=2).argmin(axis=1)
         return numpy.eye(len(target))[nearest]
-
-    evalf_methods = dict(none=evalf_none, nearest=evalf_nearest)
 
 
 def Elemwise(data: typing.Tuple[types.arraydata, ...], index: Array, dtype: Dtype):
@@ -3072,11 +3111,21 @@ class Eig(Evaluable):
     def _simplified(self):
         return self.func._eig(self.symmetric)
 
-    def evalf(self, arr):
-        w, vt = (numpy.linalg.eigh if self.symmetric else numpy.linalg.eig)(arr)
-        w = w.astype(self._w_dtype, copy=False)
-        vt = vt.astype(self._vt_dtype, copy=False)
+    @staticmethod
+    def evalf(arr, symmetric, w_dtype, vt_dtype):
+        w, vt = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(arr)
+        w = w.astype(w_dtype, copy=False)
+        vt = vt.astype(vt_dtype, copy=False)
         return (w, vt)
+
+    def _compile_expression(self, add_constant, array):
+        evalf = _pyast.Variable('evaluable').get_attr('Eig').get_attr('evalf')
+        return evalf.call(
+            array,
+            _pyast.LiteralBool(self.symmetric),
+            _pyast.Variable(self._w_dtype.__name__),
+            _pyast.Variable(self._vt_dtype.__name__),
+        )
 
 
 class ArrayFromTuple(Array):
@@ -3100,7 +3149,7 @@ class ArrayFromTuple(Array):
             # Tuple and its components be exposed to the function tree.
             return self.arrays[self.index]
 
-    def _compile_expression(self, py_self, arrays):
+    def _compile_expression(self, add_constant, arrays):
         return arrays.get_item(_pyast.LiteralInt(self.index))
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
@@ -3127,9 +3176,13 @@ class Singular(Array):
     def __post_init__(self):
         assert self.dtype in (float, complex), 'Singular dtype must be float or complex'
 
-    def evalf(self):
+    @staticmethod
+    def evalf(dtype):
         warnings.warn('singular matrix', RuntimeWarning)
-        return numpy.array(numpy.nan, self.dtype)
+        return numpy.array(numpy.nan, dtype)
+
+    def _compile_expression(self, add_constant):
+        return _pyast.Variable('evaluable').get_attr('Singular').get_attr('evalf').call(_pyast.Variable(self.dtype.__name__))
 
 
 class Zeros(Array):
@@ -3146,7 +3199,7 @@ class Zeros(Array):
     def _unaligned(self):
         return Zeros((), self.dtype), ()
 
-    def _compile_expression(self, py_self, *shape):
+    def _compile_expression(self, add_constant, *shape):
         return _pyast.Variable('numpy').get_attr('zeros').call(_pyast.Tuple(shape), dtype=_pyast.Variable(self.dtype.__name__))
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
@@ -3269,13 +3322,17 @@ class Inflate(Array):
         indices = [Range(n) for n in self.shape[:-1]] + [self.dofmap]
         return Assemble(self.func, tuple(indices), self.shape)
 
-    def evalf(self, array, indices, length):
-        assert indices.ndim == self.dofmap.ndim
-        assert length.ndim == 0
-        if not self.dofmap.isconstant and int(length) > indices.size:
-            warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
-        shape = *array.shape[:array.ndim-indices.ndim], length
-        return numeric.accumulate(array, (slice(None),)*(self.ndim-1)+(indices,), shape)
+    def _compile(self, builder):
+        if not self.dofmap.isconstant:
+            size_dofmap = builder.compile(self.dofmap).get_attr('size')
+            length = builder.compile(self.length).get_attr('__index__').call()
+            if_sparse = builder.get_block_for_evaluable(self).if_(_pyast.BinOp(length, '>', size_dofmap))
+            err_msg = _pyast.LiteralStr('using explicit inflation; this is usually a bug.')
+            err_type = _pyast.variable('evaluable').get_attr('ExpensiveEvaluationWarning')
+            if_sparse.exec(_pyast.Variable('warnings').get_attr('warn').call(err_msg, err_type))
+        out, out_block_id = builder.new_empty_array_for_evaluable(self)
+        self._compile_with_out(builder, out, out_block_id, 'assign')
+        return out
 
     def _compile_with_out(self, builder, out, out_block_id, mode):
         assert mode in ('iadd', 'assign')
@@ -3416,6 +3473,9 @@ class SwapInflateTake(Evaluable):
                     newtake.append(j)
         return numpy.array(newtake, dtype=int), numpy.array(newinflate, dtype=int), numpy.array(len(newtake), dtype=int)
 
+    def _compile_expression(self, add_constant, inflateidx, takeidx):
+        return _pyast.Variable('evaluable').get_attr('SwapInflateTake').get_attr('evalf').call(inflateidx, takeidx)
+
     @property
     def _intbounds_tuple(self):
         return ((0, float('inf')),) * 3
@@ -3447,6 +3507,9 @@ class Assemble(Array):
         reshaped_indices = tuple(index.reshape((1,)*offset + index.shape + (1,)*(func.ndim-index.ndim-offset))
             for offset, index in zip(util.cumsum(index.ndim for index in indices), indices))
         return numeric.accumulate(func, reshaped_indices, shape)
+
+    def _compile_expression(self, add_constant, func, *args):
+        return _pyast.Variable('evaluable').get_attr('Assemble').get_attr('evalf').call(func, *args)
 
     def _compile_with_out(self, builder, out, out_block_id, mode):
         # Compiles to an assignment (or in place addition) of the form:
@@ -3674,7 +3737,7 @@ class Find(Array):
     def shape(self):
         return Sum(BoolToInt(self.where)),
 
-    def _compile_expression(self, py_self, where):
+    def _compile_expression(self, add_constant, where):
         return _pyast.Variable('numpy').get_attr('nonzero').call(where).get_item(_pyast.LiteralInt(0))
 
     def _simplified(self):
@@ -3904,6 +3967,9 @@ class Ravel(Array):
     def evalf(f):
         return f.reshape(f.shape[:-2] + (f.shape[-2]*f.shape[-1],))
 
+    def _compile_expression(self, add_constant, f):
+        return _pyast.Variable('evaluable').get_attr('Ravel').get_attr('evalf').call(f)
+
     def _multiply(self, other):
         if isinstance(other, Ravel) and _all_certainly_equal(other.func.shape[-2:], self.func.shape[-2:]):
             return Ravel(multiply(self.func, other.func))
@@ -4024,6 +4090,9 @@ class Unravel(Array):
     def evalf(f, sh1, sh2):
         return f.reshape(f.shape[:-1] + (sh1, sh2))
 
+    def _compile_expression(self, add_constant, f, sh1, sh2):
+        return _pyast.Variable('evaluable').get_attr('Unravel').get_attr('evalf').call(f, sh1, sh2)
+
     def _takediag(self, axis1, axis2):
         if axis2 < self.ndim-2:
             return unravel(_takediag(self.func, axis1, axis2), self.ndim-4, self.shape[-2:])
@@ -4076,6 +4145,9 @@ class RavelIndex(Array):
     @staticmethod
     def evalf(ia, ib, nb):
         return ia[(...,)+(numpy.newaxis,)*ib.ndim] * nb + ib
+
+    def _compile_expression(self, add_constant, ia, ib, nb):
+        return _pyast.Variable('evaluable').get_attr('RavelIndex').get_attr('evalf').call(ia, ib, nb)
 
     def _take(self, index, axis):
         if axis < self.ia.ndim:
@@ -4136,7 +4208,8 @@ class Range(Array):
         if length == self.length:
             return func
 
-    evalf = staticmethod(numpy.arange)
+    def _compile_expression(self, add_constant, length):
+        return _pyast.Variable('numpy').get_attr('arange').call(length)
 
     def _intbounds_impl(self):
         lower, upper = self.length._intbounds
@@ -4167,6 +4240,9 @@ class InRange(Array):
     def evalf(index, length):
         assert index.size == 0 or 0 <= index.min() and index.max() < length
         return index
+
+    def _compile_expression(self, add_constant, index, length):
+        return _pyast.Variable('evaluable').get_attr('InRange').get_attr('evalf').call(index, length)
 
     def _simplified(self):
         lower_length, upper_length = self.length._intbounds
@@ -4226,7 +4302,8 @@ class Polyval(Array):
     def shape(self):
         return self.points.shape[:-1] + self.coeffs.shape[:-1]
 
-    evalf = staticmethod(poly.eval_outer)
+    def _compile_expression(self, add_constant, points, coeffs):
+        return _pyast.Variable('poly').get_attr('eval_outer').call(points, coeffs)
 
     def _derivative(self, var, seen):
         if self.dtype == complex:
@@ -4284,7 +4361,7 @@ class PolyDegree(Array):
     def dependencies(self):
         return self.ncoeffs,
 
-    def _compile_expression(self, py_self, ncoeffs):
+    def _compile_expression(self, add_constant, ncoeffs):
         ncoeffs = ncoeffs.get_attr('__index__').call()
         degree = _pyast.Variable('poly').get_attr('degree').call(_pyast.LiteralInt(self.nvars), ncoeffs)
         return _pyast.Variable('numpy').get_attr('int_').call(degree)
@@ -4332,7 +4409,7 @@ class PolyNCoeffs(Array):
     def dependencies(self):
         return self.degree,
 
-    def _compile_expression(self, py_self, degree):
+    def _compile_expression(self, add_constant, degree):
         degree = degree.get_attr('__index__').call()
         ncoeffs = _pyast.Variable('poly').get_attr('ncoeffs').call(_pyast.LiteralInt(self.nvars), degree)
         return _pyast.Variable('numpy').get_attr('int_').call(ncoeffs)
@@ -4397,22 +4474,25 @@ class PolyMul(Array):
 
     @property
     def dependencies(self):
-        return self.coeffs_left, self.coeffs_right
+        return self.coeffs_left, self.coeffs_right, self.degree_left, self.degree_right
 
     @cached_property
     def shape(self):
         ncoeffs = PolyNCoeffs(len(self.vars), self.degree_left + self.degree_right)
         return *self.coeffs_left.shape[:-1], ncoeffs
 
-    @cached_property
-    def evalf(self):
-        try:
-            degree_left = self.degree_left.__index__()
-            degree_right = self.degree_right.__index__()
-        except TypeError as e:
-            return functools.partial(poly.mul, vars=self.vars)
-        else:
-            return poly.MulPlan(self.vars, degree_left, degree_right)
+    def _compile(self, builder):
+        coeffs_left = builder.compile(self.coeffs_left)
+        coeffs_right = builder.compile(self.coeffs_right)
+        degree_left = builder.compile(self.degree_left)
+        degree_right = builder.compile(self.degree_right)
+        vars = _pyast.Tuple(tuple(_pyast.Variable('poly').get_attr('MulVar').get_attr(repr(v).split('.')[-1]) for v in self.vars))
+        plan = _pyast.Variable('poly').get_attr('MulPlan').call(vars, degree_left, degree_right)
+        plan_block_id = max(map(builder.get_block_id, (self.degree_left, self.degree_right)))
+        plan = builder.get_block_for_evaluable(self, block_id=plan_block_id).eval(plan)
+        out = builder.get_variable_for_evaluable(self)
+        builder.get_block_for_evaluable(self).assign_to(out, plan.call(coeffs_left, coeffs_right))
+        return out
 
     def _simplified(self):
         if iszero(self.coeffs_left) or iszero(self.coeffs_right):
@@ -4468,21 +4548,22 @@ class PolyGrad(Array):
 
     @property
     def dependencies(self):
-        return self.coeffs,
+        return self.coeffs, self.degree
 
     @cached_property
     def shape(self):
         ncoeffs = PolyNCoeffs(self.nvars, Maximum(constant(0), self.degree - constant(1)))
         return *self.coeffs.shape[:-1], constant(self.nvars), ncoeffs
 
-    @cached_property
-    def evalf(self):
-        try:
-            degree = self.degree.__index__()
-        except TypeError as e:
-            return functools.partial(poly.grad, nvars=self.nvars)
-        else:
-            return poly.GradPlan(self.nvars, degree)
+    def _compile(self, builder):
+        coeffs = builder.compile(self.coeffs)
+        degree = builder.compile(self.degree)
+        plan = _pyast.Variable('poly').get_attr('GradPlan').call(_pyast.LiteralInt(self.nvars), degree)
+        plan_block_id = builder.get_block_id(self.degree)
+        plan = builder.get_block_for_evaluable(self, block_id=plan_block_id).eval(plan)
+        out = builder.get_variable_for_evaluable(self)
+        builder.get_block_for_evaluable(self).assign_to(out, plan.call(coeffs))
+        return out
 
     def _simplified(self):
         if iszero(self.coeffs) or iszero(self.degree):
@@ -4532,14 +4613,18 @@ class Legendre(Array):
     def shape(self):
         return *self.x.shape, constant(self.degree+1)
 
-    def evalf(self, x: numpy.ndarray) -> numpy.ndarray:
-        P = numpy.empty((*x.shape, self.degree+1), dtype=float)
+    @staticmethod
+    def evalf(x: numpy.ndarray, degree: int) -> numpy.ndarray:
+        P = numpy.empty((*x.shape, degree+1), dtype=float)
         P[..., 0] = 1
-        if self.degree:
+        if degree:
             P[..., 1] = x
-        for i in range(2, self.degree+1):
+        for i in range(2, degree+1):
             P[..., i] = (2-1/i)*P[..., 1]*P[..., i-1] - (1-1/i)*P[..., i-2]
         return P
+
+    def _compile_expression(self, add_constant, x):
+        return _pyast.Variable('evaluable').get_attr('Legendre').get_attr('evalf').call(x, _pyast.LiteralInt(self.degree))
 
     def _derivative(self, var, seen):
         if self.dtype == complex:
@@ -4591,7 +4676,7 @@ class Choose(Array):
     def shape(self):
         return self.index.shape
 
-    def _compile_expression(self, py_self, index, choices):
+    def _compile_expression(self, add_constant, index, choices):
         choices = _pyast.Variable('numpy').get_attr('moveaxis').call(choices, _pyast.LiteralInt(-1), _pyast.LiteralInt(0))
         return _pyast.Variable('numpy').get_attr('choose').call(index, choices)
 
@@ -4670,6 +4755,9 @@ class NormDim(Array):
             result[i] = numeric.normdim(length[i], index[i])
         return result
 
+    def _compile_expression(self, add_constant, length, index):
+        return _pyast.Variable('evaluable').get_attr('NormDim').get_attr('evalf').call(length, index)
+
     def _simplified(self):
         lower_length, upper_length = self.length._intbounds
         lower_index, upper_index = self.index._intbounds
@@ -4733,11 +4821,16 @@ class TransformCoords(Array):
         target_dim = self.source.todims if self.target is None else self.target.fromdims
         return *self.coords.shape[:-1], constant(target_dim)
 
-    def evalf(self, index, coords):
-        chain = self.source[index.__index__()]
-        if self.target is not None:
-            _, chain = self.target.index_with_tail(chain)
+    @staticmethod
+    def _transform_coords(chain, coords):
         return functools.reduce(lambda c, t: t.apply(c), reversed(chain), coords)
+
+    def _compile_expression(self, add_constant, source_index, source_coords):
+        source_index = source_index.get_attr('__index__').call()
+        chain = add_constant(self.source).get_item(source_index)
+        if self.target is not None:
+            chain = add_constant(self.target).get_attr('index_with_tail').call(chain).get_item(_pyast.LiteralInt(1))
+        return _pyast.Variable('evaluable').get_attr('TransformCoords').get_attr('_transform_coords').call(chain, source_coords)
 
     def _derivative(self, var, seen):
         linear = TransformLinear(self.target, self.source, self.index)
@@ -4787,9 +4880,11 @@ class TransformIndex(Array):
     def dependencies(self):
         return self.index,
 
-    def evalf(self, index):
-        index, _ = self.target.index_with_tail(self.source[index.__index__()])
-        return numpy.array(index)
+    def _compile_expression(self, add_constant, source_index):
+        source_index = source_index.get_attr('__index__').call()
+        source_chain = add_constant(self.source).get_item(source_index)
+        target_index = add_constant(self.target).get_attr('index_with_tail').call(source_chain).get_item(_pyast.LiteralInt(0))
+        return _pyast.Variable('numpy').get_attr('int_').call(target_index)
 
     def _intbounds_impl(self):
         return 0, len(self.target) - 1
@@ -4838,14 +4933,19 @@ class TransformLinear(Array):
         target_dim = self.source.todims if self.target is None else self.target.fromdims
         return constant(target_dim), constant(self.source.fromdims)
 
-    def evalf(self, index):
-        chain = self.source[index.__index__()]
-        if self.target is not None:
-            _, chain = self.target.index_with_tail(chain)
+    @staticmethod
+    def _transform_linear(chain, fromdims):
         if chain:
             return functools.reduce(lambda r, i: i @ r, (item.linear for item in reversed(chain)))
         else:
-            return numpy.eye(self.source.fromdims)
+            return numpy.eye(fromdims)
+
+    def _compile_expression(self, add_constant, source_index):
+        source_index = source_index.get_attr('__index__').call()
+        chain = add_constant(self.source).get_item(source_index)
+        if self.target is not None:
+            chain = add_constant(self.target).get_attr('index_with_tail').call(chain).get_item(_pyast.LiteralInt(1))
+        return _pyast.Variable('evaluable').get_attr('TransformLinear').get_attr('_transform_linear').call(chain, _pyast.LiteralInt(self.source.fromdims))
 
     def _simplified(self):
         from nutils.transformseq import MaskedTransforms
@@ -4855,7 +4955,7 @@ class TransformLinear(Array):
             index = Take(constant(self.source._indices), self.index)
             return TransformLinear(self.target, self.source._parent, index)
         if self.source._linear_is_constant and (self.target is None or self.target._linear_is_constant):
-            return constant(self.evalf(0))
+            return constant(self._transform_linear(self.source[0], self.source.fromdims))
 
 
 class TransformBasis(Array):
@@ -4897,16 +4997,21 @@ class TransformBasis(Array):
     def shape(self):
         return constant(self.source.todims), constant(self.source.todims)
 
-    def evalf(self, index):
-        chain = self.source[index.__index__()]
-        linear = numpy.eye(self.source.fromdims)
+    @staticmethod
+    def _transform_basis(chain, fromdims, todims):
+        linear = numpy.eye(fromdims)
         for item in reversed(chain):
             linear = item.linear @ linear
             assert item.fromdims <= item.todims <= item.fromdims + 1
             if item.todims == item.fromdims + 1:
                 linear = numpy.concatenate([linear, item.ext[:, numpy.newaxis]], axis=1)
-        assert linear.shape == (self.source.todims, self.source.todims)
+        assert linear.shape == (todims, todims)
         return linear
+
+    def _compile_expression(self, add_constant, index):
+        index = index.get_attr('__index__').call()
+        chain = add_constant(self.source).get_item(index)
+        return _pyast.Variable('evaluable').get_attr('TransformBasis').get_attr('_transform_basis').call(chain, _pyast.LiteralInt(self.source.fromdims), _pyast.LiteralInt(self.source.todims))
 
     def _simplified(self):
         from nutils.transformseq import MaskedTransforms
@@ -4920,7 +5025,7 @@ class TransformBasis(Array):
             index = Take(constant(self.source._indices), self.index)
             return TransformBasis(self.source._parent, index)
         if self.source._linear_is_constant:
-            return constant(self.evalf(0))
+            return constant(self._transform_basis(self.source[0], self.source.fromdims, self.source.todims))
 
 
 class _LoopId(types.Singleton):
@@ -5184,6 +5289,9 @@ class _SizesToOffsets(Array):
     def evalf(sizes):
         return numpy.cumsum([0, *sizes])
 
+    def _compile_expression(self, add_constant, sizes):
+        return _pyast.Variable('evaluable').get_attr('_SizesToOffsets').get_attr('evalf').call(sizes)
+
     def _simplified(self):
         unaligned, where = unalign(self.sizes)
         if not where:
@@ -5352,11 +5460,15 @@ class SearchSorted(Array):
     def shape(self):
         return self.arg.shape
 
-    def evalf(self, values):
-        index = numpy.searchsorted(self.array, values, side=self.side, sorter=self.sorter)
+    def _compile_expression(self, add_constant, arg):
+        array = add_constant(self.array)
+        opt_args = {}
+        if self.sorter is not None:
+            opt_args['sorter'] = add_constant(self.sorter)
+        index = _pyast.Variable('numpy').get_attr('searchsorted').call(array, arg, side=_pyast.LiteralStr(self.side), **opt_args)
         # on some platforms (windows) searchsorted does not return indices as
         # numpy.dtype(int), so we type cast it for consistency
-        return index.astype(int, copy=False)
+        return index.get_attr('astype').call(_pyast.Variable('int'), copy=_pyast.LiteralBool(False))
 
     def _intbounds_impl(self):
         return 0, self.array.shape[0]
@@ -5388,11 +5500,11 @@ class ArgSort(Array):
     def dependencies(self):
         return self.array,
 
-    def evalf(self, array):
-        index = numpy.argsort(array, -1, kind='stable')
-        # on some platforms (windows) argsort does not return indices as
+    def _compile_expression(self, add_constant, array):
+        index = _pyast.Variable('numpy').get_attr('argsort').call(array, _pyast.LiteralInt(-1), kind=_pyast.LiteralStr('stable'))
+        # on some platforms (windows) searchsorted does not return indices as
         # numpy.dtype(int), so we type cast it for consistency
-        return index.astype(int, copy=False)
+        return index.get_attr('astype').call(_pyast.Variable('int'), copy=_pyast.LiteralBool(False))
 
 
 class UniqueMask(Array):
@@ -5412,11 +5524,15 @@ class UniqueMask(Array):
     def dependencies(self):
         return self.sorted_array,
 
-    def evalf(self, sorted_array):
+    @staticmethod
+    def evalf(sorted_array):
         mask = numpy.empty(sorted_array.shape, dtype=bool)
         mask[:1] = True
         numpy.not_equal(sorted_array[1:], sorted_array[:-1], out=mask[1:])
         return mask
+
+    def _compile_expression(self, add_constant, sorted_array):
+        return _pyast.Variable('evaluable').get_attr('UniqueMask').get_attr('evalf').call(sorted_array)
 
 
 class UniqueInverse(Array):
@@ -5439,11 +5555,15 @@ class UniqueInverse(Array):
     def dependencies(self):
         return self.unique_mask, self.sorter
 
-    def evalf(self, unique_mask, sorter):
+    @staticmethod
+    def evalf(unique_mask, sorter):
         inverse = numpy.empty_like(sorter)
         inverse[sorter] = numpy.cumsum(unique_mask)
         inverse -= 1
         return inverse
+
+    def _compile_expression(self, add_constant, unique_mask, sorter):
+        return _pyast.Variable('evaluable').get_attr('UniqueInverse').get_attr('evalf').call(unique_mask, sorter)
 
 
 def unique(array, return_index=False, return_inverse=False):
@@ -5475,9 +5595,8 @@ class CompressIndices(Array):
     def dependencies(self):
         return self.indices, self.length
 
-    @staticmethod
-    def evalf(indices, length):
-        return numeric.compress_indices(indices, length)
+    def _compile_expression(self, add_constant, indices, length):
+        return _pyast.Variable('numeric').get_attr('compress_indices').call(indices, length)
 
 
 def as_csr(array):
@@ -5539,11 +5658,14 @@ class Monomial(Array):
     def dtype(self):
         return self.values.dtype
 
-    def evalf(self, *args):
-        v = numpy.array(self.values)
-        for arg, indices in zip(args, self.indices):
-            v *= arg[indices]
-        return v
+    def _compile(self, builder):
+        args = builder.compile(self.dependencies)
+        block = builder.get_block_for_evaluable(self)
+        out = builder.get_variable_for_evaluable(self)
+        block.assign_to(out, _pyast.Variable('numpy').get_attr('array').call(builder.add_constant(self.values), copy=_pyast.LiteralBool(True)))
+        for arg, index in zip(args, self.indices):
+            block.array_imul(out, arg.get_item(_pyast.Tuple(tuple(map(builder.add_constant, index)))))
+        return out
 
     def _derivative(self, var, seen):
         deriv = Zeros(self.shape + var.shape, self.dtype)
@@ -6479,11 +6601,13 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     assert not any(isinstance(arg, _LoopIndex) for func in funcs for arg in func.arguments)
 
     # The globals of the compiled function.
+    from . import evaluable
     globals = dict(
         collections=collections,
         first_run=True,
         log_stats=_log_stats,
         multiprocessing=multiprocessing,
+        evaluable=evaluable,
         numeric=numeric,
         numpy=numpy,
         parallel=parallel,
@@ -6814,13 +6938,10 @@ class _BlockTreeBuilder:
         alloc_block.assign_to(out, py_alloc.call(shape, dtype=_pyast.Variable(array.dtype.__name__)))
         return out, out_block_id
 
-    def add_constant_for_evaluable(self, evaluable: Evaluable, value) -> _pyast.Variable:
-        # Assigns `value` to constant `c{id}` where `id` is the unique index of
-        # `evaluable`. It is an error to assign `value` to `evaluable` multiple
-        # times unless the values are identical.
-        const = _pyast.Variable('c{}'.format(self._get_evaluable_index(evaluable)))
-        if self._globals.setdefault(const.py_expr, value) is not value:
-            raise ValueError('Cannot assign different values to the same constant.')
+    def add_constant(self, value) -> _pyast.Variable:
+        # Assigns `value` to constant `cx{nutils_hash(value)}`.
+        const = _pyast.Variable('c{}'.format(types.nutils_hash(value).hex()))
+        assert self._globals.setdefault(const.py_expr, value) is value
         return const
 
     def get_argument(self, name: str) -> _pyast.Variable:
@@ -6872,11 +6993,6 @@ class _BlockTreeBuilder:
         # once in `Evaluable._compile` is safe as long as it is not called
         # somewhere else.
         return _pyast.Variable('v{}'.format(self._get_evaluable_index(evaluable)))
-
-    def get_evaluable_expr(self, evaluable: Evaluable) -> _pyast.Variable:
-        # Returns the variable `e{id}` referring to `evaluable` where `id` is
-        # the unique index of `evaluable`.
-        return _pyast.Variable('e{}'.format(self._get_evaluable_index(evaluable)))
 
     def _get_evaluable_index(self, evaluable: Evaluable) -> int:
         # Assigns a unique index to `evaluable` if not already assigned and
@@ -6984,6 +7100,10 @@ class _BlockBuilder:
     def array_iadd(self, acc: _pyast.Expression, inc: _pyast.Expression):
         # Appends statements for incrementing array `acc` with array `inc`.
         self.exec(_pyast.Variable('numpy').get_attr('add').call(acc, inc, out=acc))
+
+    def array_imul(self, acc: _pyast.Expression, inc: _pyast.Expression):
+        # Appends statements for inplace multiplication of `acc` with `inc`.
+        self.exec(_pyast.Variable('numpy').get_attr('multiply').call(acc, inc, out=acc))
 
     def array_add_at(self, out: _pyast.Expression, indices: _pyast.Expression, values: _pyast.Expression):
         # Appends statements for incrementing array `out` with array `values` at `indices`.
