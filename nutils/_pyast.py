@@ -222,6 +222,22 @@ class LiteralInt(_LiteralRepr):
 
 @dataclass
 @_dataclass_type_checker
+class LiteralFloat(_LiteralRepr):
+    '''Literal `float`.'''
+
+    value: float
+
+
+@dataclass
+@_dataclass_type_checker
+class LiteralComplex(_LiteralRepr):
+    '''Literal `complex`.'''
+
+    value: complex
+
+
+@dataclass
+@_dataclass_type_checker
 class LiteralStr(_LiteralRepr):
     '''Literal `str`.'''
 
