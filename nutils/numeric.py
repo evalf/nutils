@@ -446,9 +446,17 @@ def accumulate(data, index, shape):
 
     assert len(index) == len(shape), f'{len(index)} != {len(shape)}'
     if not shape:
-        return data.sum(dtype=data.dtype)
-    retval = numpy.zeros(shape, data.dtype)
-    numpy.add.at(retval, tuple(index), data)
+        retval = data.sum(dtype=data.dtype)
+    elif data.size and data.dtype.kind == 'f' and all(isinstance(i, numpy.ndarray) for i in index):
+        # bincount is faster than add.at; see e.g. https://stackoverflow.com/questions/67449766/comparing-bincount-and-add-at
+        retval = numpy.bincount(
+            numpy.ravel_multi_index(index, shape).ravel(),
+            weights=data.ravel(),
+            minlength=numpy.prod(shape, dtype=int)).reshape(shape)
+        assert retval.dtype == data.dtype
+    else: # index contains non-array items like slices
+        retval = numpy.zeros(shape, data.dtype)
+        numpy.add.at(retval, tuple(index), data)
     return retval
 
 

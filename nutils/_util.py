@@ -3,6 +3,7 @@ The util module provides a collection of general purpose methods.
 """
 
 from . import numeric, warnings
+from .types import arraydata
 import stringly
 import sys
 import os
@@ -968,12 +969,14 @@ class IDDict:
 def _tuple(*args):
     return args
 
+_container_types = frozenset({tuple, list, dict, set, frozenset})
+_terminal_types = frozenset({type(None), bool, int, float, complex, str, bytes, arraydata})
 
 def _reduce(obj):
     'helper function for deep_replace_property and shallow_replace'
 
     T = type(obj)
-    if T in (tuple, list, dict, set, frozenset):
+    if T in _container_types:
         if not obj: # empty containers need not be entered
             return
         elif T is tuple:
@@ -982,6 +985,8 @@ def _reduce(obj):
             return T, (tuple(obj.items()),)
         else:
             return T, (tuple(obj),)
+    if T in _terminal_types:
+        return
     try:
         f, args = obj.__reduce__()
     except:
@@ -1103,7 +1108,7 @@ def shallow_replace(func, *funcargs, **funckwargs):
 
     fstack = [target] # stack of unprocessed objects and command tokens
     rstack = [] # stack of processed objects
-    cache = IDDict() # cache of seen objects
+    cache = funckwargs.pop('__persistent_cache__', IDDict()) # cache of seen objects
 
     while fstack:
         obj = fstack.pop()
