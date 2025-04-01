@@ -49,8 +49,8 @@ class Array(TestCase):
 
     def test_iter_known(self):
         a, b = function.Array.cast([1, 2])
-        self.assertEqual(a.as_evaluable_array.eval(), 1)
-        self.assertEqual(b.as_evaluable_array.eval(), 2)
+        self.assertEqual(function.eval(a), 1)
+        self.assertEqual(function.eval(b), 2)
 
     def test_binop_notimplemented(self):
         with self.assertRaisesRegex(TypeError, '^operand type\\(s\\) all returned NotImplemented from __array_ufunc__'):
@@ -164,7 +164,7 @@ class check(TestCase):
         self.fail(''.join(lines))
 
     def test_lower_eval(self):
-        actual = self.op(*self.args).as_evaluable_array.eval()
+        actual = evaluable.eval_once(self.op(*self.args).as_evaluable_array)
         desired = self.n_op(*self.args)
         self.assertArrayAlmostEqual(actual, desired, decimal=15)
 
@@ -433,13 +433,13 @@ class Custom(TestCase):
 
     def assertEvalAlmostEqual(self, factual, fdesired, **args):
         with self.subTest('0d-points'):
-            self.assertAllAlmostEqual(factual.as_evaluable_array.eval(**args), fdesired.as_evaluable_array.eval(**args))
+            self.assertAllAlmostEqual(evaluable.eval_once(factual.as_evaluable_array, arguments=args), evaluable.eval_once(fdesired.as_evaluable_array, arguments=args))
         with self.subTest('1d-points'):
             lower_args = function.LowerArgs((evaluable.asarray(5),), {}, {})
-            self.assertAllAlmostEqual(factual.lower(lower_args).eval(**args), fdesired.lower(lower_args).eval(**args))
+            self.assertAllAlmostEqual(evaluable.eval_once(factual.lower(lower_args), arguments=args), evaluable.eval_once(fdesired.lower(lower_args), arguments=args))
         with self.subTest('2d-points'):
             lower_args = function.LowerArgs((evaluable.asarray(5), evaluable.asarray(6)), {}, {})
-            self.assertAllAlmostEqual(factual.lower(lower_args).eval(**args), fdesired.lower(lower_args).eval(**args))
+            self.assertAllAlmostEqual(evaluable.eval_once(factual.lower(lower_args), arguments=args), evaluable.eval_once(fdesired.lower(lower_args), arguments=args))
 
     def assertMultipy(self, leftval, rightval):
 
@@ -613,7 +613,7 @@ class Custom(TestCase):
                 return numpy.zeros(args[0].shape[:1], float)
 
         Z = lambda *s: function.zeros(s)
-        Test((Z(1, 3, 2), Z(2, 1, 4)), ((6, 2), (6, 4)), 2).as_evaluable_array.eval()
+        evaluable.eval_once(Test((Z(1, 3, 2), Z(2, 1, 4)), ((6, 2), (6, 4)), 2).as_evaluable_array)
 
     def test_partial_derivative_invalid_shape(self):
 
@@ -835,7 +835,7 @@ class field(TestCase):
 
     def assertEvalAlmostEqual(self, f_actual, desired, **arguments):
         self.assertEqual(f_actual.shape, desired.shape)
-        actual = f_actual.as_evaluable_array.eval(**arguments)
+        actual = evaluable.eval_once(f_actual.as_evaluable_array, arguments=arguments)
         self.assertEqual(actual.shape, desired.shape)
         self.assertAllAlmostEqual(actual, desired)
 
@@ -1312,11 +1312,11 @@ class CommonBasis:
         points = ref.getpoints('bezier', 4)
         coordinates = evaluable.constant(points.coords)
         lowerargs = function.LowerArgs.for_space('X', (self.checktransforms,), evaluable.Argument('ielem', (), int), coordinates)
-        lowered = self.basis.lower(lowerargs)
+        lowered = evaluable.compile(self.basis.lower(lowerargs))
         with _builtin_warnings.catch_warnings():
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
             for ielem in range(self.checknelems):
-                value = lowered.eval(ielem=ielem)
+                value = lowered(ielem=ielem)
                 if value.shape[0] == 1:
                     value = numpy.tile(value, (points.npoints, 1))
                 self.assertAllAlmostEqual(value, self.checkeval(ielem, points))

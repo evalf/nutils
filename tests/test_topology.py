@@ -652,7 +652,7 @@ class TopologyAssertions:
         edges = domain.transforms.edges(domain.references)
         iedge = evaluable.Argument('_iedge', (), int)
         coordinates = domain.references.edges.getpoints('gauss', 2).get_evaluable_coords(iedge)
-        lowered_geom = geom.lower(function.LowerArgs.for_space(domain.space, (edges,), iedge, coordinates)).simplified
+        lowered_geom = evaluable.compile(geom.lower(function.LowerArgs.for_space(domain.space, (edges,), iedge, coordinates)), stats=False)
         for ielem, ioppelems in enumerate(domain.connectivity):
             for iedge, ioppelem in enumerate(ioppelems):
                 etrans, eref = domain.references[ielem].edges[iedge]
@@ -673,8 +673,8 @@ class TopologyAssertions:
                         self.assertEqual(interfaces.opposites[index], opptrans)
                     imask[index] += 1
                     self.assertEqual(eref, opperef)
-                    a0 = lowered_geom.eval(_iedge=edges.index(trans))
-                    a1 = lowered_geom.eval(_iedge=edges.index(opptrans))
+                    a0 = lowered_geom(_iedge=edges.index(trans))
+                    a1 = lowered_geom(_iedge=edges.index(opptrans))
                     numpy.testing.assert_array_almost_equal(a0, a1)
         self.assertTrue(numpy.equal(bmask, 1).all())
         self.assertTrue(numpy.equal(imask, 2).all())

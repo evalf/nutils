@@ -92,7 +92,7 @@ if debug_flags.lower:
         assert isinstance(result, evaluable.Array)
         offset = 0 if type(self) == _WithoutPoints else len(args.points_shape)
         assert result.ndim == self.ndim + offset
-        assert tuple(int(sh) for sh in result.shape[offset:]) == self.shape, 'shape mismatch'
+        assert tuple(sh.__index__() for sh in result.shape[offset:]) == self.shape, 'shape mismatch'
         assert result.dtype == self.dtype, ('dtype mismatch', self.__class__)
         return result
 

@@ -42,32 +42,32 @@ class Common:
 
     def test_get_evaluable_indices(self):
         assert len(self.desired_indices) == self.desired_nelems
-        actual = self.sample.get_evaluable_indices(evaluable.Argument('ielem', (), int))
+        actual = evaluable.compile(self.sample.get_evaluable_indices(evaluable.Argument('ielem', (), int)))
         for ielem, desired in enumerate(self.desired_indices):
-            self.assertEqual(actual.eval(ielem=ielem).tolist(), desired)
+            self.assertEqual(actual(ielem=ielem).tolist(), desired)
 
     def test_get_evaluable_weights(self):
         assert len(self.desired_points) == self.desired_nelems
-        actual = self.sample.get_evaluable_weights(evaluable.Argument('ielem', (), int))
+        actual = evaluable.compile(self.sample.get_evaluable_weights(evaluable.Argument('ielem', (), int)))
         for ielem, points in enumerate(self.desired_points):
             desired = functools.reduce(lambda l, r: numpy.einsum('...,i->...i', l, r), (p.weights for p in points))
-            self.assertAllAlmostEqual(actual.eval(ielem=ielem).tolist(), desired.tolist())
+            self.assertAllAlmostEqual(actual(ielem=ielem).tolist(), desired.tolist())
 
     def test_get_lower_args(self):
         assert len(self.desired_transform_chains) == len(self.desired_points) == self.desired_nelems
         args = self.sample.get_lower_args(evaluable.Argument('ielem', (), int))
+        actual_shape = evaluable.compile(args.points_shape)
         for ielem, (desired_chains, desired_points) in enumerate(zip(self.desired_transform_chains, self.desired_points)):
             assert len(desired_chains) == len(desired_points) == len(self.desired_spaces)
             desired_shape = tuple(p.coords.shape[0] for p in desired_points)
-            actual_shape = tuple(n.__index__() for n in evaluable.Tuple(args.points_shape).eval(ielem=ielem))
-            self.assertEqual(actual_shape, desired_shape)
+            self.assertEqual(tuple(n.__index__() for n in actual_shape(ielem=ielem)), desired_shape)
             offset = 0
             for space, desired_chain, desired_point in zip(self.desired_spaces, desired_chains, desired_points):
                 (chain, *_), index = args.transform_chains[space]
-                self.assertEqual(chain[index.eval(ielem=ielem).__index__()], desired_chain)
+                self.assertEqual(chain[evaluable.eval_once(index, arguments=dict(ielem=ielem)).__index__()], desired_chain)
                 desired_coords = desired_point.coords
                 desired_coords = numpy.lib.stride_tricks.as_strided(desired_coords, shape=(*desired_shape, desired_point.ndims,), strides=(0,)*offset+desired_coords.strides[:-1]+(0,)*(len(args.points_shape)-offset-desired_coords.ndim+1)+desired_coords.strides[-1:])
-                actual_coords = args.coordinates[space].eval(ielem=ielem)
+                actual_coords = evaluable.eval_once(args.coordinates[space], arguments=dict(ielem=ielem))
                 self.assertEqual(actual_coords.shape, desired_coords.shape)
                 self.assertAllAlmostEqual(actual_coords, desired_coords)
                 offset += desired_point.coords.ndim - 1
@@ -129,7 +129,7 @@ class Common:
             args = take.get_lower_args(evaluable.Argument('ielem', (), int))
             for space, desired_chain in zip(self.desired_spaces, self.desired_transform_chains[ielem]):
                 (chain, *_), index = args.transform_chains[space]
-                self.assertEqual(chain[index.eval(ielem=0).__index__()], desired_chain)
+                self.assertEqual(chain[evaluable.eval_once(index, arguments=dict(ielem=0)).__index__()], desired_chain)
 
     def test_take_elements_empty(self):
         take = self.sample.take_elements(numpy.array([], int))
@@ -377,14 +377,14 @@ class DefaultIndex(TestCase, Common):
 
     def test_at(self):
         self.geom = function.transforms_coords('a', self.transforms) + numpy.array([0, 2]) * function.transforms_index('a', self.transforms)
-        actual = self.sample.bind(self.geom).as_evaluable_array.eval()
+        actual = self.sample.eval(self.geom)
         desired = numpy.array([[0, 0], [0, 1], [1, 0], [1, 1], [0, 2], [1, 2], [0, 3], [0, 4], [0, 5], [1, 4], [1, 5]])
         self.assertAllAlmostEqual(actual, desired)
 
     def test_basis(self):
         with _builtin_warnings.catch_warnings():
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
-            self.assertAllAlmostEqual(self.sample.bind(self.sample.basis()).as_evaluable_array.eval(), numpy.eye(11))
+            self.assertAllAlmostEqual(self.sample.eval(self.sample.basis()), numpy.eye(11))
 
     def test_basis_nearest(self):
         unisample = Sample.new('a', (self.transforms, self.transforms),
@@ -404,7 +404,7 @@ class DefaultIndex(TestCase, Common):
         self.assertAllEqual(nearest, [0, 1, 2, 3, 4, 6, 5, 8, 9, 10, 11])
         with _builtin_warnings.catch_warnings():
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
-            self.assertAllAlmostEqual(self.sample.bind(unisample.basis(interpolation='nearest')).as_evaluable_array.eval(), numpy.eye(12)[nearest])
+            self.assertAllAlmostEqual(self.sample.eval(unisample.basis(interpolation='nearest')), numpy.eye(12)[nearest])
 
 
 class CustomIndex(TestCase, Common):
@@ -425,7 +425,7 @@ class CustomIndex(TestCase, Common):
 
     def test_at(self):
         self.geom = function.transforms_coords('a', self.transforms) + numpy.array([0, 2]) * function.transforms_index('a', self.transforms)
-        actual = self.sample.bind(self.geom).as_evaluable_array.eval()
+        actual = evaluable.eval_once(self.sample.bind(self.geom).as_evaluable_array)
         desired = numpy.array([[0, 0], [0, 1], [1, 0], [1, 1], [0, 2], [1, 2], [0, 3], [0, 4], [0, 5], [1, 4], [1, 5]])
         desired = numpy.take(desired, numpy.argsort(numpy.concatenate(self.desired_indices), axis=0), axis=0)
         self.assertAllAlmostEqual(actual, desired)
@@ -433,7 +433,7 @@ class CustomIndex(TestCase, Common):
     def test_basis(self):
         with _builtin_warnings.catch_warnings():
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
-            self.assertAllAlmostEqual(self.sample.bind(self.sample.basis()).as_evaluable_array.eval(), numpy.eye(11))
+            self.assertAllAlmostEqual(self.sample.eval(self.sample.basis()), numpy.eye(11))
 
 
 class Special(TestCase):

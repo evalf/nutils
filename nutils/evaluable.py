@@ -162,6 +162,7 @@ class Evaluable(types.DataClass):
     def eval(self):
         '''Evaluate function on a specified element, point set.'''
 
+        warnings.deprecation('`Evaluable.eval()` is deprecated; use `evaluable.compile()` or `evaluable.eval_once()` instead')
         return compile(self, _simplify=False, _optimize=False, stats=False, cache_const_intermediates=False)
 
     @util.deep_replace_property
@@ -533,7 +534,7 @@ class Array(Evaluable):
         except AttributeError:
             if self.ndim or self.dtype not in (int, bool) or not self.isconstant:
                 raise TypeError('cannot convert {!r} to int'.format(self))
-            index = self.__index = int(self.simplified.eval())
+            index = self.__index = int(eval_once(self))
         return index
 
     T = property(lambda self: transpose(self, tuple(range(self.ndim-1, -1, -1))))
@@ -1002,6 +1003,15 @@ class Constant(Array):
     def _const_uniform(self):
         if self.ndim == 0:
             return self.dtype(self.value[()])
+
+    def __index__(self):
+        try:
+            index = self.__index
+        except AttributeError:
+            if self.ndim or self.dtype not in (int, bool) or not self.isconstant:
+                raise TypeError('cannot convert {!r} to int'.format(self))
+            index = self.__index = int(self.value)
+        return index
 
 
 class InsertAxis(Array):
@@ -3889,12 +3899,6 @@ class Argument(DerivativeTargetBase):
 
     def __str__(self):
         return '{} {!r} <{}>'.format(self.__class__.__name__, self.name, self._shape_str(form=str))
-
-    @cached_property
-    def eval(self):
-        '''Evaluate function on a specified element, point set.'''
-
-        return compile(self, _simplify=False, _optimize=False, stats=False, cache_const_intermediates=True)
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
