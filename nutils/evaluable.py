@@ -162,7 +162,7 @@ class Evaluable(types.DataClass):
     def eval(self):
         '''Evaluate function on a specified element, point set.'''
 
-        return compile(self, simplify=False, stats=False, cache_const_intermediates=False)
+        return compile(self, _simplify=False, _optimize=False, stats=False, cache_const_intermediates=False)
 
     @util.deep_replace_property
     def simplified(obj):
@@ -3831,7 +3831,7 @@ class Argument(DerivativeTargetBase):
     def eval(self):
         '''Evaluate function on a specified element, point set.'''
 
-        return compile(self, simplify=False, stats=False, cache_const_intermediates=True)
+        return compile(self, _simplify=False, _optimize=False, stats=False, cache_const_intermediates=True)
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
@@ -6312,15 +6312,13 @@ def einsum(fmt, *args, **dims):
     return ret
 
 
-def eval_once(func: AsEvaluableArray, simplify: bool = True, stats: typing.Optional[str] = None, arguments: typing.Mapping[str, numpy.ndarray] = {}) -> typing.Tuple[numpy.ndarray, ...]:
+def eval_once(func: AsEvaluableArray, *, stats: typing.Optional[str] = None, arguments: typing.Mapping[str, numpy.ndarray] = {}, _simplify: bool = True, _optimize: bool = True) -> typing.Tuple[numpy.ndarray, ...]:
     '''Evaluate one or several Array objects by compiling it for single use.
 
     Args
     ----
     func : :class:`Evaluable` or (possibly nested) tuples of :class:`Evaluable`\\s
         The function or functions to compile.
-    simplify : :class:`bool`
-        If true, functions will be simplified before compilation.
     stats : ``'log'`` or ``None``
         If ``'log'`` the compiled function will log the durations of individual
         :class:`Evaluable`\\s referenced by ``func``.
@@ -6332,12 +6330,12 @@ def eval_once(func: AsEvaluableArray, simplify: bool = True, stats: typing.Optio
     results : :class:`tuple` of (values, indices, shape) triplets
     '''
 
-    f = compile(func, simplify=simplify, stats=stats, cache_const_intermediates=False)
+    f = compile(func, _simplify=_simplify, _optimize=_optimize, stats=stats, cache_const_intermediates=False)
     return f(**arguments)
 
 
 @log.withcontext
-def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = None, cache_const_intermediates: bool = True):
+def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermediates: bool = True, _simplify: bool = True, _optimize: bool = True):
     '''Returns a callable that evaluates ``func``.
 
     The return value of the callable matches the structure of ``func``. If
@@ -6353,8 +6351,6 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     ----
     func : :class:`Evaluable` or (possibly nested) tuples of :class:`Evaluable`\\s
         The function or functions to compile.
-    simplify : :class:`bool`
-        If true, ``func`` will be simplified before compilation.
     stats : ``'log'`` or ``None``
         If ``'log'`` the compiled function will log the durations of individual
         :class:`Evaluable`\\s referenced by ``func``.
@@ -6493,9 +6489,10 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     ret_fmt, = ret_fmt
 
     # Simplify and optimize `funcs`.
-    if simplify:
+    if _simplify:
         funcs = [func.simplified for func in funcs]
-    funcs = [func._optimized_for_numpy1 for func in funcs]
+    if _optimize:
+        funcs = [func._optimized_for_numpy1 for func in funcs]
     funcs = _define_loop_block_structure(tuple(funcs))
     assert not any(isinstance(arg, _LoopIndex) for func in funcs for arg in func.arguments)
 
