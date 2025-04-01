@@ -5518,7 +5518,7 @@ class Monomial(Array):
     Performs a sparse tensor multiplication, without summation, and returns the
     result as a dense vector; inflation and reshape is the responsibility of
     factor. The factors of the multiplication are ``values`` and all the
-    ``dependencies``, which are scattered into values via the ``indices``. The
+    ``args``, which are scattered into values via the ``indices``. The
     ``powers`` argument contains multiplicities, for the following reason.
 
     With reference to the example of the factor doc string, derivative will
@@ -5533,63 +5533,74 @@ class Monomial(Array):
     therefore be doubled. With that, the derivative takes the desired form of
     array'(arg) == darray_darg(0) + d2array_darg2 arg.'''
 
-    values: types.arraydata
-    dependencies: typing.Tuple[Array, ...]
-    indices: typing.Tuple[typing.Tuple[types.arraydata, ...], ...]
+    values: Array
+    args: typing.Tuple[Array, ...]
+    indices: typing.Tuple[typing.Tuple[Array, ...], ...]
     powers: typing.Tuple[int]
 
     def __post_init__(self):
-        assert self.values.ndim == 1, self.values.shape
-        assert len(self.dependencies) == len(self.indices) == len(self.powers)
-        assert all(index.shape == self.values.shape for indices in self.indices for index in indices), (self.values.shape, self.indices)
-        assert all(len(indices) == arg.ndim for arg, indices in zip(self.dependencies, self.indices)), (len(self.indices), self.dependencies)
-        assert all(power == 1 or power > 1 and self.powers[i+1] == power - 1 and self.dependencies[i+1] == self.dependencies[i] for i, power in enumerate(self.powers)), self.powers
+        assert isinstance(self.values, Array) and self.values.ndim == 1, self.values.shape
+        assert len(self.args) == len(self.indices) == len(self.powers)
+        assert all(isinstance(index, Array) and index.dtype == int and not _any_certainly_different(index.shape, self.values.shape) for indices in self.indices for index in indices), (self.values.shape, self.indices)
+        assert all(len(indices) == arg.ndim for arg, indices in zip(self.args, self.indices)), (len(self.indices), self.args)
+        assert all(power == 1 or power > 1 and self.powers[i+1] == power - 1 and self.args[i+1] == self.args[i] for i, power in enumerate(self.powers)), self.powers
 
     def _simplified(self):
-        if not self.dependencies:
-            return Constant(self.values)
+        if not self.args:
+            return self.values
 
     @property
     def shape(self):
-        return constant(self.values.shape[0]),
+        return self.values.shape
 
     @property
     def dtype(self):
         return self.values.dtype
 
-    def evalf(self, *args):
-        v = numpy.array(self.values)
-        for arg, indices in zip(args, self.indices):
-            v *= arg[indices]
-        return v
+    @cached_property
+    def dependencies(self):
+        return self.values, *self.args, *itertools.chain.from_iterable(self.indices)
+
+    def _compile(self, builder):
+        values = builder.compile(self.values)
+        args = builder.compile(self.args)
+        indices = builder.compile(self.indices)
+        block = builder.get_block_for_evaluable(self)
+        out = builder.get_variable_for_evaluable(self)
+        block.assign_to(out, _pyast.Variable('numpy').get_attr('array').call(values, copy=_pyast.LiteralBool(True)))
+        for arg, index in zip(args, indices):
+            block.array_imul(out, arg.get_item(index))
+        return out
 
     def _derivative(self, var, seen):
+        if not iszero(derivative(self.values, var, seen)):
+            raise NotImplementedError
         deriv = Zeros(self.shape + var.shape, self.dtype)
         iarg = 0
-        while iarg < len(self.dependencies):
-            dep = self.dependencies[iarg]
+        while iarg < len(self.args):
+            arg = self.args[iarg]
             m = Monomial(self.values,
-                self.dependencies[:iarg] + self.dependencies[iarg+1:],
+                self.args[:iarg] + self.args[iarg+1:],
                 self.indices[:iarg] + self.indices[iarg+1:],
                 self.powers[:iarg] + self.powers[iarg+1:])
-            if dep.ndim:
-                *indices, ravel_index = map(Constant, self.indices[iarg])
-                *lengths, ravel_length = dep.shape
+            if arg.ndim:
+                *indices, ravel_index = self.indices[iarg]
+                *lengths, ravel_length = arg.shape
                 while indices:
                     ravel_index += indices.pop() * ravel_length
                     ravel_length *= lengths.pop()
-                m = unravel(Inflate(Diagonalize(m), ravel_index, ravel_length), -1, dep.shape)
-            m = einsum('aB,BC->aC', m, derivative(dep, var, seen))
+                m = unravel(Inflate(Diagonalize(m), ravel_index, ravel_length), -1, arg.shape)
+            m = einsum('aB,BC->aC', m, derivative(arg, var, seen))
             power = self.powers[iarg]
             if power > 1:
                 m *= m.dtype(power)
             deriv += m
             iarg += power
-        assert iarg == len(self.dependencies)
+        assert iarg == len(self.args)
         return deriv
 
     def _argument_degree(self, argument):
-        return builtins.sum(dep.argument_degree(argument) for dep in self.dependencies)
+        return self.values.argument_degree(argument) + builtins.sum(arg.argument_degree(argument) for arg in self.args)
 
 
 @log.withcontext
@@ -5665,8 +5676,8 @@ def factor(array):
         if not len(values):
             continue
 
-        indexmap = map(types.arraydata, indices[array.ndim:])
-        monomial = Monomial(types.arraydata(values), args,
+        indexmap = map(constant, indices[array.ndim:])
+        monomial = Monomial(constant(values), args,
             indices=tuple(tuple(next(indexmap) for _ in range(arg.ndim)) for arg in args),
             powers=tuple(args[i:].count(arg) for i, arg in enumerate(args)))
 
