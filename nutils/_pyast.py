@@ -124,6 +124,30 @@ class Tuple(Expression):
         return frozenset().union(*(item.variables for item in self.items))
 
 
+@dataclass
+@_dataclass_type_checker
+class List(Expression):
+    '''List of `Expression`s.'''
+
+    items: typing.Tuple[Expression, ...]
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __getitem__(self, index) -> Expression:
+        return self.items[index]
+
+    @property
+    def py_expr(self) -> str:
+        return '[' + ', '.join([item.py_expr for item in self.items]) + ']'
+
+    py_paren_expr = py_expr
+
+    @property
+    def variables(self) -> frozenset[Variable]:
+        return frozenset().union(*(item.variables for item in self.items))
+
+
 class Call(Expression):
     '''Function call.'''
 
