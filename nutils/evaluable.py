@@ -5343,40 +5343,41 @@ class LoopConcatenate(Loop):
 class SearchSorted(Array):
     '''Find index of evaluable array into sorted numpy array.'''
 
-    # NOTE: SearchSorted is essentially pointwise in its only evaluable
-    # argument, but the Pointwise class currently does not allow for
-    # additional, static arguments. The following constructor makes the static
-    # arguments keyword-only in anticipation of potential future support.
-
     arg: Array
-    array: types.arraydata
+    array: Array
+    sorter: typing.Optional[Array]
     side: str
-    sorter: typing.Optional[types.arraydata]
 
     dtype = int
 
     def __post_init__(self):
-        assert isinstance(self.arg, Array), f'arg={arg!r}'
-        assert isinstance(self.array, types.arraydata) and self.array.ndim == 1, f'array={array!r}'
-        assert self.side in ('left', 'right'), f'side={side!r}'
-        assert self.sorter is None or isinstance(self.sorter, types.arraydata) and self.sorter.dtype == int and self.sorter.shape == self.array.shape, f'sorter={sorter!r}'
+        assert isinstance(self.arg, Array), f'arg={self.arg!r}'
+        assert isinstance(self.array, Array) and self.array.ndim == 1, f'array={self.array!r}'
+        assert self.side in ('left', 'right'), f'side={self.side!r}'
+        assert self.sorter is None or isinstance(self.sorter, Array) and self.sorter.dtype == int and not _any_certainly_different(self.sorter.shape, self.array.shape), f'sorter={self.sorter!r}'
 
     @property
     def dependencies(self):
-        return self.arg,
+        if self.sorter is None:
+            return self.arg, self.array
+        else:
+            return self.arg, self.array, self.sorter
 
     @cached_property
     def shape(self):
         return self.arg.shape
 
-    def evalf(self, values):
-        index = numpy.searchsorted(self.array, values, side=self.side, sorter=self.sorter)
+    def _compile_expression(self, py_self, arg, array, sorter=None):
+        opt_args = {}
+        if sorter is not None:
+            opt_args['sorter'] = sorter
+        index = _pyast.Variable('numpy').get_attr('searchsorted').call(array, arg, side=_pyast.LiteralStr(self.side), **opt_args)
         # on some platforms (windows) searchsorted does not return indices as
         # numpy.dtype(int), so we type cast it for consistency
-        return index.astype(int, copy=False)
+        return index.get_attr('astype').call(_pyast.Variable('int'), copy=_pyast.LiteralBool(False))
 
     def _intbounds_impl(self):
-        return 0, self.array.shape[0]
+        return 0, self.array.shape[0]._intbounds[1]
 
     def _takediag(self, axis1, axis2):
         return SearchSorted(_takediag(self.arg, axis1, axis2), array=self.array, side=self.side, sorter=self.sorter)

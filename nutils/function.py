@@ -3487,15 +3487,18 @@ class __implementations__:
     @implements(numpy.searchsorted)
     def searchsorted(a, v: IntoArray, side='left', sorter=None):
         values = Array.cast(v)
-        array = types.arraydata(a)
+        array = Array.cast(a)
         if side not in ('left', 'right'):
             raise ValueError(f'expected "left" or "right", got {side}')
         if sorter is not None:
-            sorter = types.arraydata(sorter)
+            sorter = Array.cast(sorter)
             if sorter.shape != array.shape or sorter.dtype != int:
                 raise ValueError('invalid sorter array')
-        lower = functools.partial(evaluable.SearchSorted, array=array, side=side, sorter=sorter)
-        return _Wrapper(lower, values, shape=values.shape, dtype=int)
+            lower = functools.partial(evaluable.SearchSorted, side=side)
+            return _Wrapper(lower, values, _WithoutPoints(array), _WithoutPoints(sorter), shape=values.shape, dtype=int)
+        else:
+            lower = functools.partial(evaluable.SearchSorted, sorter=None, side=side)
+            return _Wrapper(lower, values, _WithoutPoints(array), shape=values.shape, dtype=int)
 
     @implements(numpy.interp)
     def interp(x, xp, fp, left=None, right=None):

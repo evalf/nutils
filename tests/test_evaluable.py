@@ -598,8 +598,8 @@ _check('polygrad_xy0', lambda c: evaluable.PolyGrad(c, 2), lambda c: poly.grad(c
 _check('polygrad_xy1', lambda c: evaluable.PolyGrad(c, 2), lambda c: poly.grad(c, 2), ANY(2, 2, 3), hasgrad=False)
 _check('polygrad_xy2', lambda c: evaluable.PolyGrad(c, 2), lambda c: poly.grad(c, 2), ANY(4, 4, 6), hasgrad=False)
 
-_check('searchsorted', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata(numpy.linspace(0, 1, 9)), side='left', sorter=None), lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), a).astype(int), POS(4, 2))
-_check('searchsorted_sorter', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata([.2,.8,.4,0,.6,1]), side='left', sorter=types.arraydata([3,0,2,4,1,5])), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]).astype(int), POS(4, 2))
+_check('searchsorted', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=evaluable.constant(numpy.linspace(0, 1, 9)), side='left', sorter=None), lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), a).astype(int), POS(4, 2))
+_check('searchsorted_sorter', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=evaluable.constant([.2,.8,.4,0,.6,1]), side='left', sorter=evaluable.constant([3,0,2,4,1,5])), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]).astype(int), POS(4, 2))
 _check('argsort', evaluable.ArgSort, lambda a: numpy.argsort(a, axis=-1, kind='stable').astype(int), ANY(3, 9))
 _check('unique', evaluable.unique, numpy.unique, numpy.arange(10) % 3)
 _check('unique-index', lambda a: evaluable.unique(a, return_index=True)[1], lambda a: numpy.unique(a, return_index=True)[1].astype(int), numpy.arange(10) % 3)
