@@ -70,11 +70,11 @@ class check(TestCase):
     def assertFunctionAlmostEqual(self, actual, desired, decimal):
         evalargs = dict(zip(self.arg_names, self.arg_values))
         with self.subTest('vanilla'):
-            self.assertArrayAlmostEqual(actual.eval(**evalargs), desired, decimal)
+            self.assertArrayAlmostEqual(evaluable.compile(actual, _simplify=False, _optimize=False, stats=False, cache_const_intermediates=False)(**evalargs), desired, decimal)
         with self.subTest('simplified'):
-            self.assertArrayAlmostEqual(actual.simplified.eval(**evalargs), desired, decimal)
+            self.assertArrayAlmostEqual(evaluable.compile(actual, _simplify=True, _optimize=False, stats=False, cache_const_intermediates=False)(**evalargs), desired, decimal)
         with self.subTest('optimized'):
-            self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
+            self.assertArrayAlmostEqual(evaluable.compile(actual, _simplify=True, _optimize=True, stats=False, cache_const_intermediates=False)(**evalargs), desired, decimal)
         with self.subTest('sparse'):
             values, indices, shape = evaluable.eval_once(actual.simplified.assparse, arguments=evalargs)
             self.assertEqual(shape, desired.shape)
