@@ -148,6 +148,22 @@ class List(Expression):
         return frozenset().union(*(item.variables for item in self.items))
 
 
+@dataclass
+@_dataclass_type_checker
+class UnpackIterable(Expression):
+    '''List of `Expression`s.'''
+
+    iterable: Expression
+
+    @property
+    def py_expr(self) -> str:
+        return f'*{self.iterable.py_paren_expr}'
+
+    @property
+    def variables(self) -> frozenset[Variable]:
+        return self.iterable.variables
+
+
 class Call(Expression):
     '''Function call.'''
 
