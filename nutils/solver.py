@@ -227,81 +227,167 @@ class System:
             argobjects = _dict((arg.name, arg) for res in residuals for arg in res.arguments if isinstance(arg, evaluable.Argument))
             self.is_symmetric = False
         else:
-            functional = residual.as_evaluable_array
-            self.dtype = functional.dtype
-            argobjects = {arg.name: arg for arg in functional.arguments if isinstance(arg, evaluable.Argument)}
+            value = residual.as_evaluable_array
+            self.dtype = value.dtype
+            argobjects = {arg.name: arg for arg in value.arguments if isinstance(arg, evaluable.Argument)}
             tests = self.trials if test is None else tuple(test.split(',') if isinstance(test, str) else test)
-            residuals = [evaluable.derivative(functional, argobjects[t]) for t in tests]
+            residuals = [evaluable.derivative(value, argobjects[t]) for t in tests]
             self.is_symmetric = self.trials == tests
 
-        self.argshapes = dict(zip(argobjects.keys(), evaluable.eval_once(tuple(arg.shape for arg in argobjects.values()))))
-        self.__trial_offsets = numpy.cumsum([0] + [numpy.prod(self.argshapes[t], dtype=int) for t in self.trials])
+        self.arguments = frozenset(argobjects)
 
-        value = functional if self.is_symmetric else ()
-        block_vector = [evaluable._flat(res) for res in residuals]
-        block_matrix = [[evaluable._flat(evaluable.derivative(res, argobjects[t]).simplified, 2) for t in self.trials] for res in block_vector]
+        self.trial_args = tuple(argobjects[t] for t in self.trials)
+        self.trial_shapes = evaluable.eval_once([arg.shape for arg in self.trial_args])
 
-        self.is_linear = not any(arg.name in self.trials for row in block_matrix for col in row for arg in col.arguments)
-        if self.is_linear:
-            z = {t: evaluable.zeros_like(argobjects[t]) for t in self.trials}
-            block_vector = [evaluable.replace_arguments(vector, z).simplified for vector in block_vector]
-            if self.is_symmetric:
-                value = evaluable.replace_arguments(value, z).simplified
+        trial_sizes = tuple(numpy.prod(shape, dtype=int) for shape in self.trial_shapes)
+        trial_offsets = numpy.cumsum([0, *trial_sizes])
 
-        self.__eval = evaluable.compile((tuple(tuple(map(evaluable.as_csr, row)) for row in block_matrix), tuple(block_vector), value))
+        self.__trial_total = trial_offsets[-1]
+        self.__trial_slices = tuple(map(slice, trial_offsets, trial_offsets[1:]))
 
-        self.is_constant_matrix = self.is_linear and not any(col.arguments for row in block_matrix for col in row)
-        self.is_constant = self.is_constant_matrix and not any(vec.arguments for vec in block_vector) and not (self.is_symmetric and value.arguments)
-        self.__mat_vec_val = None, None, None
+        block_residual = [evaluable._flat(res) for res in residuals]
+        block_jacobian = [[evaluable._flat(evaluable.derivative(res, arg).simplified, 2) for arg in self.trial_args] for res in block_residual]
+
+        self.is_linear = not any(arg.name in self.trials for row in block_jacobian for col in row for arg in col.arguments)
+        self.is_constant = self.is_linear and not any(col.arguments for row in block_jacobian for col in row)
+
+        self.__block_jacobian = tuple(tuple(map(evaluable.as_csr, row)) for row in block_jacobian)
+        self.__block_residual = tuple(block_residual)
+        if self.is_symmetric:
+            self.__value = value
+
+        self.__cache = {}
 
     @property
     def __nutils_hash__(self):
-        return self.__eval.__nutils_hash__
+        return types.nutils_hash((self.trials, self.__value if self.is_symmetric else self.__block_residual))
 
-    @log.withcontext
-    def assemble(self, arguments: Dict[str, numpy.ndarray]):
-        mat, vec, val = self.__mat_vec_val
-        if vec is None:
-            mat_blocks, vec_blocks, maybe_val = self.__eval(arguments)
-            if mat is None:
-                mat = matrix.assemble_block_csr(mat_blocks)
-            vec = numpy.concatenate(vec_blocks)
-            val = self.dtype(maybe_val) if self.is_symmetric else None
+    def assemble_jacobian(self, arguments: Dict[str, numpy.ndarray]):
+        key = 'jacobian'
+        jacobian = self.__cache.get(key)
+        if jacobian is None:
             if self.is_constant:
-                vec.flags.writeable = False
-                self.__mat_vec_val = mat, vec, val
-            elif self.is_constant_matrix:
-                self.__mat_vec_val = mat, None, None
+                jacobian = evaluable.eval_once(self.__block_jacobian)
+                self.__cache[key] = jacobian
+            else:
+                eval_ = evaluable.compile(self.__block_jacobian)
+                jacobian = matrix.assemble_block_csr(eval_(arguments))
+                self.__cache[key] = eval_
+        elif not self.is_constant:
+            jacobian = matrix.assemble_block_csr(jacobian(arguments))
+        return jacobian
+
+    def assemble_residual(self, arguments: Dict[str, numpy.ndarray]):
+        key = 'residual'
+        residual = self.__cache.get(key)
+        if residual is None:
+            residual = evaluable.compile(self.__block_residual)
+            self.__cache[key] = residual
+        return numpy.concatenate(residual(arguments))
+
+    def assemble_value(self, arguments: Dict[str, numpy.ndarray]):
+        if not self.is_symmetric:
+            raise Exception('value is not defined')
+        key = 'value'
+        value = self.__cache.get(key)
+        if value is None:
+            value = evaluable.compile(self.__value)
+            self.__cache[key] = value
+        return value(arguments)
+
+    def assemble_jacobian_residual(self, arguments: Dict[str, numpy.ndarray]):
+        key = 'jacobian_residual'
+        f = self.__cache.get(key)
         if self.is_linear:
+            if f is None:
+                z = dict(zip(self.trials, map(evaluable.zeros_like, self.trial_args)))
+                block_residual = tuple(evaluable.replace_arguments(vector, z).simplified for vector in self.__block_residual)
+                f = evaluable.compile((self.__block_jacobian, block_residual))
+                self.__cache[key] = f
+            jac_blocks, res_blocks = f(arguments)
+            if self.is_constant:
+                key = 'jacobian'
+                jac = self.__cache.get(key)
+                if jac is None:
+                    jac = matrix.assemble_block_csr(jac_blocks)
+                    self.__cache[key] = jac
+            else:
+                jac = matrix.assemble_block_csr(jac_blocks)
+            res = numpy.concatenate(res_blocks)
+            res += jac @ numpy.concatenate([arguments[t].ravel() for t in self.trials])
+        else:
+            if f is None:
+                f = evaluable.compile((self.__block_jacobian, self.__block_residual))
+                self.__cache[key] = f
+            jac_blocks, res_blocks = f(arguments)
+            jac = matrix.assemble_block_csr(jac_blocks)
+            res = numpy.concatenate(res_blocks)
+        return jac, res
+
+    def assemble_jacobian_residual_value(self, arguments: Dict[str, numpy.ndarray]):
+        if not self.is_symmetric:
+            raise Exception('value is not defined')
+        key = 'jacobian_residual_value'
+        f = self.__cache.get(key)
+        if self.is_linear:
+            if f is None:
+                z = dict(zip(self.trials, map(evaluable.zeros_like, self.trial_args)))
+                f = evaluable.compile((
+                    self.__block_jacobian,
+                    tuple(evaluable.replace_arguments(vector, z) for vector in self.__block_residual),
+                    evaluable.replace_arguments(self.__value, z)))
+                self.__cache[key] = f
+            jac_blocks, res_blocks, val = f(arguments)
+            if self.is_constant:
+                key = 'jacobian'
+                jac = self.__cache.get(key)
+                if jac is None:
+                    jac = matrix.assemble_block_csr(jac_blocks)
+                    self.__cache[key] = jac
+            else:
+                jac = matrix.assemble_block_csr(jac_blocks)
+            res = numpy.concatenate(res_blocks)
             x = numpy.concatenate([arguments[t].ravel() for t in self.trials])
-            matx = mat @ x
-            if self.is_symmetric:
-                val += vec @ x + .5 * (x @ matx) # val(x) = val(0) + vec(0) x + .5 x mat x
-            vec = vec + matx # vec(x) = vec(0) + mat x
-        return mat, vec, val
+            jac_x = jac @ x
+            val = self.dtype(val + res @ x + .5 * (x @ jac_x))
+            res += jac_x
+        else:
+            if f is None:
+                f = evaluable.compile((self.__block_jacobian, self.__block_residual, self.__value))
+                self.__cache[key] = f
+            jac_blocks, res_blocks, val = f(arguments)
+            jac = matrix.assemble_block_csr(jac_blocks)
+            res = numpy.concatenate(res_blocks)
+            val = self.dtype(val)
+        return jac, res, val
+
+    def assemble(self, arguments: Dict[str, numpy.ndarray]):
+        if self.is_symmetric:
+            return self.assemble_jacobian_residual_value(arguments)
+        else:
+            return *self.assemble_jacobian_residual(arguments), None
 
     def prepare_solution_vector(self, arguments: Dict[str, numpy.ndarray], constrain: Dict[str, numpy.ndarray]):
         arguments = arguments.copy()
-        x = numpy.empty(self.__trial_offsets[-1], self.dtype)
-        iscons = numpy.empty(self.__trial_offsets[-1], dtype=bool)
-        for trial, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:]):
-            trialshape = self.argshapes[trial]
-            trialarg = x[i:j].reshape(trialshape)
+        x = numpy.empty(self.__trial_total, self.dtype)
+        iscons = numpy.empty(self.__trial_total, dtype=bool)
+        for trial, shape, s in zip(self.trials, self.trial_shapes, self.__trial_slices):
+            trialarg = x[s].reshape(shape)
             trialarg[...] = arguments.get(trial, 0)
             c = constrain.get(trial, False)
             if c is not False:
-                assert c.shape == trialshape
+                assert c.shape == shape
                 if c.dtype != bool:
                     c, v = ~numpy.isnan(c), c
                     trialarg[c] = v[c]
-            trialcons = iscons[i:j].reshape(trialshape)
+            trialcons = iscons[s].reshape(shape)
             trialcons[...] = c
             arguments[trial] = trialarg # IMPORTANT: arguments share memory with x
         return x, iscons, arguments
 
     @property
     def _trial_info(self):
-        return ' and '.join(t + ' (' + ','.join(map(str, self.argshapes[t])) + ')' for t in self.trials)
+        return ' and '.join(t + ' (' + ','.join(map(str, shape)) + ')' for t, shape in zip(self.trials, self.trial_shapes))
 
     MethodIter = Iterator[Tuple[Dict[str, numpy.ndarray], float, float]]
 
@@ -353,7 +439,7 @@ class System:
             raise ValueError('iterative solver requires a strictly positive tolerance')
         first = _First()
         with log.iter.plain('iter', itertools.count()) as steps:
-            for arguments, resnorm, val in method(self, arguments=arguments, constrain=constrain, linargs=linargs):
+            for arguments, resnorm in method(self, arguments=arguments, constrain=constrain, linargs=linargs):
                 progress = numpy.log(first(resnorm)/resnorm) / numpy.log(first(resnorm)/tol) if resnorm > tol else 1
                 log.info(f'residual: {resnorm:.0e} ({100*progress:.0f}%)')
                 iiter = next(steps) # opens new log context
@@ -362,6 +448,7 @@ class System:
                 if maxiter is not None and iiter >= maxiter:
                     raise SolverError(f'failed to converge in {maxiter} iterations')
         if self.is_symmetric:
+            val = self.assemble_value(arguments)
             log.info(f'optimal value: {val:.1e}')
         return arguments
 
@@ -413,7 +500,7 @@ class System:
         try:
             return self.solve(arguments=arguments, **solveargs)
         except (SolverError, matrix.MatrixError) as e:
-            if timearg not in self.argshapes and timesteparg not in self.argshapes or maxretry <= 0:
+            if timearg not in self.arguments and timesteparg not in self.arguments or maxretry <= 0:
                 raise
             log.error(f'error: {e}; retrying with timestep {timestep/2}')
             halfstep_args = dict(solveargs, timestep=timestep/2, timearg=timearg, timesteparg=timesteparg, suffix=suffix, maxretry=maxretry-1)
@@ -470,8 +557,8 @@ class System:
         if self.is_symmetric:
             log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
         x += dx
-        for trial, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:]):
-            log.info(f'constrained {j-i-mycons[i:j].sum()} degrees of freedom of {trial}')
+        for trial, s in zip(self.trials, self.__trial_slices):
+            log.info(f'constrained {len(mycons[s])-mycons[s].sum()} degrees of freedom of {trial}')
         x[mycons & ~iscons] = numpy.nan
         return dict(constrain, **{t: arguments[t] for t in self.trials})
 
@@ -486,8 +573,8 @@ class Newton:
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
         while True:
-            jac, res, val = system.assemble(arguments)
-            yield arguments, numpy.linalg.norm(res[~iscons]), val
+            jac, res = system.assemble_jacobian_residual(arguments)
+            yield arguments, numpy.linalg.norm(res[~iscons])
             x -= jac.solve_leniently(res, constrain=iscons, **linargs)
 
 
@@ -507,16 +594,16 @@ class LinesearchNewton:
     def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
-        jac, res, val = system.assemble(arguments)
+        jac, res = system.assemble_jacobian_residual(arguments)
         relax = self.relax0
         while True: # newton iterations
-            yield arguments, numpy.linalg.norm(res[~iscons]), val
+            yield arguments, numpy.linalg.norm(res[~iscons])
             dx = -jac.solve_leniently(res, constrain=iscons, **linargs)
             x += dx * relax
             res0 = res
             jac0dx = jac@dx # == res0 if dx was solved to infinite precision
             while True: # line search
-                jac, res, _ = system.assemble(arguments)
+                jac, res = system.assemble_jacobian_residual(arguments)
                 relax, adjust = self._linesearch(res0, jac0dx, res, jac@dx, iscons, relax)
                 if not adjust:
                     break
@@ -545,14 +632,12 @@ class Minimize:
         return 'minimize'
 
     def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
-        if not system.is_symmetric:
-            raise ValueError('problem is not symmetric')
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
-        jac, res, val = system.assemble(arguments)
+        jac, res, val = system.assemble_jacobian_residual_value(arguments)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
         relax = 0.
         while True:
-            yield arguments, numpy.linalg.norm(res[~iscons]), val
+            yield arguments, numpy.linalg.norm(res[~iscons])
             dx = -jac.solve_leniently(res, constrain=iscons, **linargs) # baseline: vanilla Newton
             # compute first two ritz values to determine approximate path of steepest descent
             zres = res * ~iscons
@@ -576,7 +661,7 @@ class Minimize:
                 eL = numpy.exp(-r*L)
                 dx -= V @ eL
                 x += dx
-                jac, res, val = system.assemble(arguments)
+                jac, res, val = system.assemble_jacobian_residual_value(arguments)
                 slope = res @ (V @ (eL*L))
                 log.info('energy {:+.2e} / e{:+.1f} and {}creasing'.format(val - val0, relax, 'in' if slope > 0 else 'de'))
                 if numpy.isfinite(val) and numpy.isfinite(res).all() and val <= val0 and slope <= 0:
@@ -600,22 +685,16 @@ class Pseudotime:
     def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3)
-        djac = self._assemble_inertia_matrix([(t, system.argshapes[t]) for t in system.trials], arguments)
+        djac = matrix.assemble_block_csr(evaluable.eval_once([[evaluable.as_csr(evaluable._flat(evaluable.derivative(evaluable._flat(res), arg).simplified, 2)) for arg in system.trial_args] for res in self.inertia], arguments=arguments))
 
         first = _First()
         while True:
-            jac, res, val = system.assemble(arguments)
+            jac, res = system.assemble_jacobian_residual(arguments)
             resnorm = numpy.linalg.norm(res[~iscons])
-            yield arguments, resnorm, val
+            yield arguments, resnorm
             timestep = self.timestep * (first(resnorm) / resnorm)
             log.info(f'timestep: {timestep:.0e}')
             x -= (jac + djac / timestep).solve_leniently(res, constrain=iscons, **linargs)
-
-    def _assemble_inertia_matrix(self, trialshapes, arguments):
-        argobjs = [evaluable.Argument(t, tuple(map(evaluable.constant, shape)), float) for t, shape in trialshapes]
-        djacobians = [[evaluable._flat(evaluable.derivative(evaluable._flat(res), argobj).simplified, 2) for argobj in argobjs] for res in self.inertia]
-        djac_blocks = evaluable.eval_once(tuple(tuple(map(evaluable.as_csr, row)) for row in djacobians), arguments=arguments)
-        return matrix.assemble_block_csr(djac_blocks)
 
 
 # SOLVERS
@@ -1044,10 +1123,8 @@ class _with_solve:
 
     def __iter__(self):
         iters = self.method(self.system, arguments=self.arguments, constrain=self.constrain, linargs=self.linargs)
-        for arguments, resnorm, value in iters:
-            lhs = arguments if self.item is None else arguments[self.item]
-            info = types.attributes(resnorm=resnorm) if not self.system.is_symmetric else types.attributes(resnorm=resnorm, energy=value)
-            yield lhs, info
+        for arguments, resnorm in iters:
+            yield arguments if self.item is None else arguments[self.item], types.attributes(resnorm=resnorm)
 
     def __getitem__(self, item):
         assert self.item is None
