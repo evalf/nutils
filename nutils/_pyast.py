@@ -124,6 +124,46 @@ class Tuple(Expression):
         return frozenset().union(*(item.variables for item in self.items))
 
 
+@dataclass
+@_dataclass_type_checker
+class List(Expression):
+    '''List of `Expression`s.'''
+
+    items: typing.Tuple[Expression, ...]
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __getitem__(self, index) -> Expression:
+        return self.items[index]
+
+    @property
+    def py_expr(self) -> str:
+        return '[' + ', '.join([item.py_expr for item in self.items]) + ']'
+
+    py_paren_expr = py_expr
+
+    @property
+    def variables(self) -> frozenset[Variable]:
+        return frozenset().union(*(item.variables for item in self.items))
+
+
+@dataclass
+@_dataclass_type_checker
+class UnpackIterable(Expression):
+    '''List of `Expression`s.'''
+
+    iterable: Expression
+
+    @property
+    def py_expr(self) -> str:
+        return f'*{self.iterable.py_paren_expr}'
+
+    @property
+    def variables(self) -> frozenset[Variable]:
+        return self.iterable.variables
+
+
 class Call(Expression):
     '''Function call.'''
 
@@ -218,6 +258,22 @@ class LiteralInt(_LiteralRepr):
     '''Literal `int`.'''
 
     value: int
+
+
+@dataclass
+@_dataclass_type_checker
+class LiteralFloat(_LiteralRepr):
+    '''Literal `float`.'''
+
+    value: float
+
+
+@dataclass
+@_dataclass_type_checker
+class LiteralComplex(_LiteralRepr):
+    '''Literal `complex`.'''
+
+    value: complex
 
 
 @dataclass

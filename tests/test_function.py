@@ -49,8 +49,8 @@ class Array(TestCase):
 
     def test_iter_known(self):
         a, b = function.Array.cast([1, 2])
-        self.assertEqual(a.as_evaluable_array.eval(), 1)
-        self.assertEqual(b.as_evaluable_array.eval(), 2)
+        self.assertEqual(function.eval(a), 1)
+        self.assertEqual(function.eval(b), 2)
 
     def test_binop_notimplemented(self):
         with self.assertRaisesRegex(TypeError, '^operand type\\(s\\) all returned NotImplemented from __array_ufunc__'):
@@ -164,7 +164,7 @@ class check(TestCase):
         self.fail(''.join(lines))
 
     def test_lower_eval(self):
-        actual = self.op(*self.args).as_evaluable_array.eval()
+        actual = evaluable.eval_once(self.op(*self.args).as_evaluable_array)
         desired = self.n_op(*self.args)
         self.assertArrayAlmostEqual(actual, desired, decimal=15)
 
@@ -433,13 +433,13 @@ class Custom(TestCase):
 
     def assertEvalAlmostEqual(self, factual, fdesired, **args):
         with self.subTest('0d-points'):
-            self.assertAllAlmostEqual(factual.as_evaluable_array.eval(**args), fdesired.as_evaluable_array.eval(**args))
+            self.assertAllAlmostEqual(evaluable.eval_once(factual.as_evaluable_array, arguments=args), evaluable.eval_once(fdesired.as_evaluable_array, arguments=args))
         with self.subTest('1d-points'):
             lower_args = function.LowerArgs((evaluable.asarray(5),), {}, {})
-            self.assertAllAlmostEqual(factual.lower(lower_args).eval(**args), fdesired.lower(lower_args).eval(**args))
+            self.assertAllAlmostEqual(evaluable.eval_once(factual.lower(lower_args), arguments=args), evaluable.eval_once(fdesired.lower(lower_args), arguments=args))
         with self.subTest('2d-points'):
             lower_args = function.LowerArgs((evaluable.asarray(5), evaluable.asarray(6)), {}, {})
-            self.assertAllAlmostEqual(factual.lower(lower_args).eval(**args), fdesired.lower(lower_args).eval(**args))
+            self.assertAllAlmostEqual(evaluable.eval_once(factual.lower(lower_args), arguments=args), evaluable.eval_once(fdesired.lower(lower_args), arguments=args))
 
     def assertMultipy(self, leftval, rightval):
 
@@ -454,11 +454,11 @@ class Custom(TestCase):
                         raise ValueError('left and right arguments not aligned')
                     super().__init__(args=(left, right), shape=left.shape[npointwise:], dtype=left.dtype, npointwise=npointwise)
 
-                @staticmethod
+                @types.hashable_function
                 def evalf(left, right):
                     return left * right
 
-                @staticmethod
+                @types.hashable_function
                 def partial_derivative(iarg, left, right):
                     if iarg == 0:
                         return functools.reduce(function.diagonalize, range(right.ndim), right)
@@ -492,7 +492,7 @@ class Custom(TestCase):
             def __init__(self):
                 super().__init__(args=(), shape=(3,), dtype=int)
 
-            @staticmethod
+            @types.hashable_function
             def evalf():
                 return numpy.array([1, 2, 3])[None]
 
@@ -508,11 +508,11 @@ class Custom(TestCase):
                 assert base1.shape == base2.shape
                 super().__init__(args=(offset, base1, exp1.__index__(), base2, exp2.__index__()), shape=base1.shape, dtype=float)
 
-            @staticmethod
+            @types.hashable_function
             def evalf(offset, base1, exp1, base2, exp2):
                 return offset + base1**exp1 + base2**exp2
 
-            @staticmethod
+            @types.hashable_function
             def partial_derivative(iarg, offset, base1, exp1, base2, exp2):
                 if iarg == 1:
                     if exp1 == 0:
@@ -541,21 +541,21 @@ class Custom(TestCase):
 
         class A(function.Custom):
 
-            @staticmethod
+            @types.hashable_function
             def evalf():
                 pass
 
-            @staticmethod
+            @types.hashable_function
             def partial_derivative(iarg):
                 pass
 
         class B(function.Custom):
 
-            @staticmethod
+            @types.hashable_function
             def evalf():
                 pass
 
-            @staticmethod
+            @types.hashable_function
             def partial_derivative(iarg):
                 pass
 
@@ -593,7 +593,7 @@ class Custom(TestCase):
     def test_no_array_args_invalid_shape(self):
 
         class Test(function.Custom):
-            @staticmethod
+            @types.hashable_function
             def evalf():
                 return numpy.array([1, 2, 3])
 
@@ -606,19 +606,19 @@ class Custom(TestCase):
             def __init__(self, args, shapes, npointwise):
                 super().__init__(args=(shapes, *args), shape=(), dtype=float, npointwise=npointwise)
 
-            @staticmethod
+            @types.hashable_function
             def evalf(shapes, *args):
                 for shape, arg in zip(shapes, args):
                     self.assertEqual(tuple(map(int, arg.shape)), shape)
                 return numpy.zeros(args[0].shape[:1], float)
 
         Z = lambda *s: function.zeros(s)
-        Test((Z(1, 3, 2), Z(2, 1, 4)), ((6, 2), (6, 4)), 2).as_evaluable_array.eval()
+        evaluable.eval_once(Test((Z(1, 3, 2), Z(2, 1, 4)), ((6, 2), (6, 4)), 2).as_evaluable_array)
 
     def test_partial_derivative_invalid_shape(self):
 
         class Test(function.Custom):
-            @staticmethod
+            @types.hashable_function
             def partial_derivative(iarg, arg):
                 return function.zeros((2, 3, 4))
 
@@ -629,9 +629,10 @@ class Custom(TestCase):
     def test_grad(self):
 
         class Test(function.Custom):
-            def eval(arg):
+            @types.hashable_function
+            def evalf(arg):
                 return arg
-            @staticmethod
+            @types.hashable_function
             def partial_derivative(iarg, arg):
                 return function.ones(arg.shape)
 
@@ -648,6 +649,35 @@ class Custom(TestCase):
             function.grad(x**2 + y, x + y, spaces={'X'}),
             2*x,
         ]))
+
+    def test_evalf_not_implemented(self):
+        with self.assertRaises(NotImplementedError):
+            function.eval(function.Custom([], (), int))
+
+    def test_partial_derivative_not_implemented(self):
+        with self.assertRaisesRegex(NotImplementedError, 'The partial derivative to argument 0 .* is not defined.'):
+            function.eval(function.Custom([function.Argument('a', (), float)], (), float).derivative('a'))
+
+    def test_deprecated_unhashable_evalf(self):
+
+        with self.assertWarns(warnings.NutilsDeprecationWarning):
+            class Test(function.Custom):
+                @classmethod
+                def evalf(cls, arg):
+                    return arg
+            Test([function.zeros(())], (), float).as_evaluable_array
+
+    def test_deprecated_unhasbable_partial_derivative(self):
+
+        with self.assertWarns(warnings.NutilsDeprecationWarning):
+            class Test(function.Custom):
+                @types.hashable_function
+                def evalf(arg):
+                    return arg
+                @classmethod
+                def partial_derivative(cls, iarg, arg):
+                    return
+            Test([function.zeros(())], (), float).as_evaluable_array
 
 
 class broadcasting(TestCase):
@@ -805,7 +835,7 @@ class field(TestCase):
 
     def assertEvalAlmostEqual(self, f_actual, desired, **arguments):
         self.assertEqual(f_actual.shape, desired.shape)
-        actual = f_actual.as_evaluable_array.eval(**arguments)
+        actual = evaluable.eval_once(f_actual.as_evaluable_array, arguments=arguments)
         self.assertEqual(actual.shape, desired.shape)
         self.assertAllAlmostEqual(actual, desired)
 
@@ -1282,11 +1312,11 @@ class CommonBasis:
         points = ref.getpoints('bezier', 4)
         coordinates = evaluable.constant(points.coords)
         lowerargs = function.LowerArgs.for_space('X', (self.checktransforms,), evaluable.Argument('ielem', (), int), coordinates)
-        lowered = self.basis.lower(lowerargs)
+        lowered = evaluable.compile(self.basis.lower(lowerargs))
         with _builtin_warnings.catch_warnings():
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
             for ielem in range(self.checknelems):
-                value = lowered.eval(ielem=ielem)
+                value = lowered(ielem=ielem)
                 if value.shape[0] == 1:
                     value = numpy.tile(value, (points.npoints, 1))
                 self.assertAllAlmostEqual(value, self.checkeval(ielem, points))

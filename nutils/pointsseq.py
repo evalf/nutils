@@ -1,6 +1,6 @@
 '''Sequences of :class:`~nutils.points.Points`.'''
 
-from . import types, numeric, evaluable
+from . import types, numeric, evaluable, _pyast
 from .points import Points
 from functools import cached_property
 from typing import Tuple, Sequence, Iterable, Iterator, Optional, Union, overload
@@ -647,9 +647,15 @@ class _EvaluablePointsFromSequence(evaluable.Evaluable):
     def dependencies(self):
         return self.index,
 
-    def evalf(self, index: numpy.ndarray) -> Tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
-        pnts = self._seq.get(index.__index__())
-        return pnts.coords, getattr(pnts, 'weights', None), numpy.array(pnts.npoints)
+    def _compile(self, builder):
+        index = builder.compile(self.index).get_attr('__index__').call()
+        pnts = builder.add_constant(self._seq).get_attr('get').call(index)
+        coords = pnts.get_attr('coords')
+        weights = _pyast.Variable('getattr').call(pnts, _pyast.LiteralStr('weights'), _pyast.Variable('None'))
+        npoints = _pyast.Variable('numpy').get_attr('int_').call(pnts.get_attr('npoints'))
+        out = builder.get_variable_for_evaluable(self)
+        builder.get_block_for_evaluable(self).assign_to(out, _pyast.Tuple((coords, weights, npoints)))
+        return out
 
     @property
     def coords(self) -> evaluable.Array:

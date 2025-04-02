@@ -1,4 +1,4 @@
-from nutils import evaluable, sparse, numeric, _util as util, types, sample, matrix
+from nutils import evaluable, sparse, numeric, _util as util, types, sample, matrix, _pyast
 from nutils.testing import TestCase, parametrize
 import nutils_poly as poly
 import numpy
@@ -43,7 +43,7 @@ class check(TestCase):
 
     def test_shapes(self):
         evalargs = dict(zip(self.arg_names, self.arg_values))
-        self.assertEqual(self.desired.shape, tuple(n.eval(**evalargs) for n in self.actual.shape))
+        self.assertEqual(self.desired.shape, evaluable.eval_once(self.actual.shape, arguments=evalargs))
 
     def assertArrayAlmostEqual(self, actual, desired, decimal):
         if actual.dtype != desired.dtype:
@@ -70,11 +70,11 @@ class check(TestCase):
     def assertFunctionAlmostEqual(self, actual, desired, decimal):
         evalargs = dict(zip(self.arg_names, self.arg_values))
         with self.subTest('vanilla'):
-            self.assertArrayAlmostEqual(actual.eval(**evalargs), desired, decimal)
+            self.assertArrayAlmostEqual(evaluable.eval_once(actual, _simplify=False, _optimize=False, arguments=evalargs), desired, decimal)
         with self.subTest('simplified'):
-            self.assertArrayAlmostEqual(actual.simplified.eval(**evalargs), desired, decimal)
+            self.assertArrayAlmostEqual(evaluable.eval_once(actual, _simplify=True, _optimize=False, arguments=evalargs), desired, decimal)
         with self.subTest('optimized'):
-            self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
+            self.assertArrayAlmostEqual(evaluable.eval_once(actual, _simplify=True, _optimize=True, arguments=evalargs), desired, decimal)
         with self.subTest('sparse'):
             values, indices, shape = evaluable.eval_once(actual.simplified.assparse, arguments=evalargs)
             self.assertEqual(shape, desired.shape)
@@ -143,8 +143,7 @@ class check(TestCase):
     def test_eig(self):
         if self.actual.dtype == float:
             for ax1, ax2 in self.pairs:
-                items = self.actual, *evaluable.eig(self.actual, axes=(ax1, ax2))
-                A, L, V = evaluable.Tuple(items).simplified.eval(**dict(zip(self.arg_names, self.arg_values)))
+                A, L, V = evaluable.eval_once((self.actual, *evaluable.eig(self.actual, axes=(ax1, ax2))), arguments=dict(zip(self.arg_names, self.arg_values)))
                 self.assertArrayAlmostEqual(decimal=11,
                                             actual=(numpy.expand_dims(V, ax2) * numpy.expand_dims(L, ax2+1).swapaxes(ax1, ax2+1)).sum(ax2+1),
                                             desired=(numpy.expand_dims(A, ax2) * numpy.expand_dims(V, ax2+1).swapaxes(ax1, ax2+1)).sum(ax2+1))
@@ -366,6 +365,7 @@ class check(TestCase):
         eps = 1e-4
         fddeltas = numpy.array([1, 2, 3])
         fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1, 1+2*len(fddeltas), 2)[:, None], [1]+[0]*(len(fddeltas)-1))
+        actual = evaluable.compile(self.actual)
         for arg, arg_name, x0 in zip(self.args, self.arg_names, self.arg_values):
             if arg.dtype in (bool, int):
                 continue
@@ -374,13 +374,13 @@ class check(TestCase):
                 if arg.dtype == bool:
                     dx = dx + 1j*numpy.random.normal(size=x0.shape)
                 evalargs = dict(zip(self.arg_names, self.arg_values))
-                f0 = evaluable.derivative(self.actual, arg).eval(**evalargs)
+                f0 = evaluable.eval_once(evaluable.derivative(self.actual, arg), arguments=evalargs)
                 exact = numeric.contract(f0, dx, range(self.actual.ndim, self.actual.ndim+dx.ndim))
                 if exact.dtype.kind in 'bi' or self.zerograd:
                     approx = numpy.zeros_like(exact)
                     scale = 1
                 else:
-                    fdvals = numpy.stack([self.actual.eval(**collections.ChainMap({arg_name: numpy.asarray(x0+eps*n*dx)}, evalargs)) for n in (*-fddeltas, *fddeltas)], axis=0)
+                    fdvals = numpy.stack([actual(**collections.ChainMap({arg_name: numpy.asarray(x0+eps*n*dx)}, evalargs)) for n in (*-fddeltas, *fddeltas)], axis=0)
                     if fdvals.dtype.kind == 'i':
                         fdvals = fdvals.astype(float)
                     fdvals = fdvals.reshape(2, len(fddeltas), *fdvals.shape[1:])
@@ -598,8 +598,8 @@ _check('polygrad_xy0', lambda c: evaluable.PolyGrad(c, 2), lambda c: poly.grad(c
 _check('polygrad_xy1', lambda c: evaluable.PolyGrad(c, 2), lambda c: poly.grad(c, 2), ANY(2, 2, 3), hasgrad=False)
 _check('polygrad_xy2', lambda c: evaluable.PolyGrad(c, 2), lambda c: poly.grad(c, 2), ANY(4, 4, 6), hasgrad=False)
 
-_check('searchsorted', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata(numpy.linspace(0, 1, 9)), side='left', sorter=None), lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), a).astype(int), POS(4, 2))
-_check('searchsorted_sorter', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata([.2,.8,.4,0,.6,1]), side='left', sorter=types.arraydata([3,0,2,4,1,5])), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]).astype(int), POS(4, 2))
+_check('searchsorted', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=evaluable.constant(numpy.linspace(0, 1, 9)), side='left', sorter=None), lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), a).astype(int), POS(4, 2))
+_check('searchsorted_sorter', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=evaluable.constant([.2,.8,.4,0,.6,1]), side='left', sorter=evaluable.constant([3,0,2,4,1,5])), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]).astype(int), POS(4, 2))
 _check('argsort', evaluable.ArgSort, lambda a: numpy.argsort(a, axis=-1, kind='stable').astype(int), ANY(3, 9))
 _check('unique', evaluable.unique, numpy.unique, numpy.arange(10) % 3)
 _check('unique-index', lambda a: evaluable.unique(a, return_index=True)[1], lambda a: numpy.unique(a, return_index=True)[1].astype(int), numpy.arange(10) % 3)
@@ -659,8 +659,11 @@ class intbounds(TestCase):
         def dependencies(self):
             return evaluable.Argument(self.argname, shape=(), dtype=int),
 
-        def evalf(self, value):
-            assert self.lower <= value[()] <= self.upper
+        def _compile(self, builder):
+            value, = builder.compile(self.dependencies)
+            block = builder.get_block_for_evaluable(self)
+            block.assert_true(_pyast.BinOp(_pyast.LiteralInt(self.lower), '<=', value.get_item(_pyast.Tuple(()))))
+            block.assert_true(_pyast.BinOp(value.get_item(_pyast.Tuple(())), '<=', _pyast.LiteralInt(self.upper)))
             return value
 
         @property
@@ -669,7 +672,7 @@ class intbounds(TestCase):
 
     def assertBounds(self, func, *, tight_lower=True, tight_upper=True, **evalargs):
         lower, upper = func._intbounds
-        value = func.eval(**evalargs)
+        value = evaluable.eval_once(func, arguments=evalargs)
         (self.assertEqual if tight_lower else self.assertLessEqual)(lower, value.min())
         (self.assertEqual if tight_upper else self.assertGreaterEqual)(upper, value.max())
 
@@ -682,8 +685,6 @@ class intbounds(TestCase):
             def dependencies(self):
                 return evaluable.Argument('dummy', (), int),
 
-            def evalf(self):
-                raise NotImplementedError
         self.assertEqual(Test()._intbounds, (float('-inf'), float('inf')))
 
     def test_constant(self):
@@ -846,12 +847,12 @@ class sampled(TestCase):
 
     def test_match(self):
         f = evaluable.Sampled(evaluable.constant([[1, 2], [3, 4]]), evaluable.constant([[1, 2], [3, 4]]), 'none')
-        self.assertAllEqual(f.eval(), numpy.eye(2))
+        self.assertAllEqual(evaluable.eval_once(f), numpy.eye(2))
 
     def test_no_match(self):
         f = evaluable.Sampled(evaluable.constant([[1, 2], [3, 4]]), evaluable.constant([[3, 4], [1, 2]]), 'none')
         with self.assertRaises(Exception):
-            f.eval()
+            evaluable.eval_once(f)
 
 
 class elemwise(TestCase):
@@ -859,9 +860,9 @@ class elemwise(TestCase):
     def assertElemwise(self, items):
         items = tuple(map(types.arraydata, items))
         index = evaluable.Argument('index', (), int)
-        elemwise = evaluable.Elemwise(items, index, int)
+        elemwise = evaluable.compile(evaluable.Elemwise(items, index, int))
         for i, item in enumerate(items):
-            self.assertEqual(elemwise.eval(index=i).tolist(), numpy.asarray(item).tolist())
+            self.assertEqual(elemwise(index=i).tolist(), numpy.asarray(item).tolist())
 
     def test_const_values(self):
         self.assertElemwise((numpy.arange(2*3*4).reshape(2, 3, 4),)*3)
@@ -892,7 +893,7 @@ class derivative(TestCase):
         deriv = numpy.arange(6, dtype=float).reshape(2, 3)
         func = evaluable.zeros((evaluable.constant(2),), float)
         func = evaluable.WithDerivative(func, arg, evaluable.asarray(deriv))
-        self.assertAllAlmostEqual(evaluable.derivative(func, arg).eval(), deriv)
+        self.assertAllAlmostEqual(evaluable.eval_once(evaluable.derivative(func, arg)), deriv)
 
     def test_default_derivative(self):
         # Tests whether `evaluable.Array._derivative` correctly raises an
@@ -986,9 +987,6 @@ class simplify(TestCase):
             @property
             def dependencies(self):
                 return evaluable.Argument('R', shape=(), dtype=int),
-
-            def evalf(self, evalargs):
-                raise NotImplementedError
 
             @property
             def _intbounds(self):
@@ -1162,30 +1160,30 @@ class Einsum(TestCase):
     def test_swapaxes(self):
         arg = numpy.arange(6).reshape(2, 3)
         ret = evaluable.einsum('ij->ji', evaluable.constant(arg))
-        self.assertAllEqual(ret.eval(), arg.T)
+        self.assertAllEqual(evaluable.eval_once(ret), arg.T)
 
     def test_rollaxes(self):
         arg = numpy.arange(6).reshape(1, 2, 3)
         ret = evaluable.einsum('Ai->iA', evaluable.constant(arg))
-        self.assertAllEqual(ret.eval(), arg.transpose([2, 0, 1]))
+        self.assertAllEqual(evaluable.eval_once(ret), arg.transpose([2, 0, 1]))
 
     def test_swapgroups(self):
         arg = numpy.arange(24).reshape(1, 2, 3, 4)
         ret = evaluable.einsum('AB->BA', evaluable.constant(arg), B=2)
-        self.assertAllEqual(ret.eval(), arg.transpose([2, 3, 0, 1]))
+        self.assertAllEqual(evaluable.eval_once(ret), arg.transpose([2, 3, 0, 1]))
 
     def test_matvec(self):
         arg1 = numpy.arange(6).reshape(2, 3)
         arg2 = numpy.arange(6).reshape(3, 2)
         ret = evaluable.einsum('ij,jk->ik', evaluable.constant(arg1), evaluable.constant(arg2))
-        self.assertAllEqual(ret.eval(), arg1 @ arg2)
+        self.assertAllEqual(evaluable.eval_once(ret), arg1 @ arg2)
 
     def test_multidot(self):
         arg1 = numpy.arange(6).reshape(2, 3)
         arg2 = numpy.arange(9).reshape(3, 3)
         arg3 = numpy.arange(6).reshape(3, 2)
         ret = evaluable.einsum('ij,jk,kl->il', evaluable.constant(arg1), evaluable.constant(arg2), evaluable.constant(arg3))
-        self.assertAllEqual(ret.eval(), arg1 @ arg2 @ arg3)
+        self.assertAllEqual(evaluable.eval_once(ret), arg1 @ arg2 @ arg3)
 
     def test_wrong_args(self):
         arg = numpy.arange(6).reshape(2, 3)
@@ -1259,70 +1257,70 @@ class unalign(TestCase):
         ox = evaluable.asarray(numpy.arange(6).reshape(2,3))
         ux, where = evaluable.unalign(ox)
         self.assertEqual(where, (0, 1))
-        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(ux, where, ox.shape)).tolist(), evaluable.eval_once(ox).tolist())
 
     def test_single_trans(self):
         ox = evaluable.Transpose(evaluable.asarray(numpy.arange(6).reshape(2,3)), (1, 0))
         ux, where = evaluable.unalign(ox)
         self.assertEqual(where, (1, 0)) # transposed, because this is a single argument
-        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(ux, where, ox.shape)).tolist(), evaluable.eval_once(ox).tolist())
 
     def test_single_ins(self):
         ox = evaluable.InsertAxis(evaluable.asarray(numpy.arange(2)), evaluable.constant(3))
         ux, where = evaluable.unalign(ox)
         self.assertEqual(where, (0,))
-        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(ux, where, ox.shape)).tolist(), evaluable.eval_once(ox).tolist())
 
     def test_single_ins_trans(self):
         ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), evaluable.constant(2)), (1, 0))
         ux, where = evaluable.unalign(ox)
         self.assertEqual(where, (1,))
-        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(ux, where, ox.shape)).tolist(), evaluable.eval_once(ox).tolist())
 
     def test_single_naxes_reins(self):
         # tests reinsertion of an uninserted axis >= naxes
         ox = evaluable.InsertAxis(evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), evaluable.constant(2)), (1, 0)), evaluable.constant(4))
         ux, where = evaluable.unalign(ox, naxes=2)
         self.assertEqual(where, (1,))
-        self.assertEqual(evaluable.align(ux, where+(2,), ox.shape).eval().tolist(), ox.eval().tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(ux, where+(2,), ox.shape)).tolist(), evaluable.eval_once(ox).tolist())
 
     def test_single_naxes_trans(self):
         # tests the transpose of an axis >= naxes
         ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(12).reshape(4, 3)), evaluable.constant(2)), (2, 1, 0))
         ux, where = evaluable.unalign(ox, naxes=1)
         self.assertEqual(where, ())
-        self.assertEqual(evaluable.align(ux, where+(1, 2), ox.shape).eval().tolist(), ox.eval().tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(ux, where+(1, 2), ox.shape)).tolist(), evaluable.eval_once(ox).tolist())
 
     def test_single_naxes_reins_trans(self):
         # tests the transpose of an uninserted axis >= naxes
         ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.InsertAxis(evaluable.asarray(numpy.arange(4)), evaluable.constant(2)), evaluable.constant(3)), (1, 2, 0))
         ux, where = evaluable.unalign(ox, naxes=1)
         self.assertEqual(where, ())
-        self.assertEqual(evaluable.align(ux, where+(1, 2), ox.shape).eval().tolist(), ox.eval().tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(ux, where+(1, 2), ox.shape)).tolist(), evaluable.eval_once(ox).tolist())
 
     def test_double_noins(self):
         ox = evaluable.asarray(numpy.arange(6).reshape(2,3))
         oy = evaluable.asarray(numpy.arange(6, 12).reshape(2,3))
         ux, uy, where = evaluable.unalign(ox, oy)
         self.assertEqual(where, (0, 1))
-        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
-        self.assertEqual(evaluable.align(uy, where, oy.shape).eval().tolist(), oy.eval().tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(ux, where, ox.shape)).tolist(), evaluable.eval_once(ox).tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(uy, where, oy.shape)).tolist(), evaluable.eval_once(oy).tolist())
 
     def test_double_disjointins(self):
         ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), evaluable.constant(2)), (1, 0))
         oy = evaluable.InsertAxis(evaluable.asarray(numpy.arange(2, 4)), evaluable.constant(3))
         ux, uy, where = evaluable.unalign(ox, oy)
         self.assertEqual(where, (0, 1)) # not transposed, despite the transpose of the first argument
-        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
-        self.assertEqual(evaluable.align(uy, where, oy.shape).eval().tolist(), oy.eval().tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(ux, where, ox.shape)).tolist(), evaluable.eval_once(ox).tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(uy, where, oy.shape)).tolist(), evaluable.eval_once(oy).tolist())
 
     def test_double_commonins(self):
         ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), evaluable.constant(2)), (1, 0))
         oy = evaluable.zeros((evaluable.constant(2), evaluable.constant(3)), dtype=int)
         ux, uy, where = evaluable.unalign(ox, oy)
         self.assertEqual(where, (1,))
-        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
-        self.assertEqual(evaluable.align(uy, where, oy.shape).eval().tolist(), oy.eval().tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(ux, where, ox.shape)).tolist(), evaluable.eval_once(ox).tolist())
+        self.assertEqual(evaluable.eval_once(evaluable.align(uy, where, oy.shape)).tolist(), evaluable.eval_once(oy).tolist())
 
     def test_too_few_axes(self):
         with self.assertRaises(ValueError):
@@ -1343,7 +1341,7 @@ class Poly(TestCase):
         eval_coeffs_left = evaluable.IntToFloat(evaluable.Range(eval_ncoeffs_left))
         eval_coeffs_right = evaluable.asarray(const_coeffs_right)
         numpy.testing.assert_allclose(
-            evaluable.PolyMul(eval_coeffs_left, eval_coeffs_right, vars).eval(ncoeffs_left=numpy.array(6)),
+            evaluable.eval_once(evaluable.PolyMul(eval_coeffs_left, eval_coeffs_right, vars), arguments=dict(ncoeffs_left=numpy.array(6))),
             poly.mul(const_coeffs_left, const_coeffs_right, vars),
         )
 
@@ -1352,7 +1350,7 @@ class Poly(TestCase):
         eval_ncoeffs = evaluable.InRange(evaluable.Argument('ncoeffs', (), int), evaluable.constant(10))
         eval_coeffs = evaluable.IntToFloat(evaluable.Range(eval_ncoeffs))
         numpy.testing.assert_allclose(
-            evaluable.PolyGrad(eval_coeffs, 2).eval(ncoeffs=numpy.array(6)),
+            evaluable.eval_once(evaluable.PolyGrad(eval_coeffs, 2), arguments=dict(ncoeffs=numpy.array(6))),
             poly.grad(const_coeffs, 2),
         )
 
