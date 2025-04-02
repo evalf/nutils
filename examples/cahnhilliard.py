@@ -185,18 +185,18 @@ def main(size: Length = parse('10cm'),
     with log.iter.fraction('timestep', range(round(endtime / timestep))) as steps:
         for istep in steps:
 
-            E = numpy.stack(function.eval([nrg_mix, nrg_iface, nrg_wall], **args))
+            E = numpy.stack(function.eval([nrg_mix, nrg_iface, nrg_wall], args))
             log.user('energy: {0:,.0μJ/m} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(numpy.sum(E), 100*E/numpy.sum(E)))
 
             args = system.step(timestep=1., timesteparg='dt', suffix='0', arguments=args, tol=1, maxiter=5)
 
             with export.mplfigure('phase.png') as fig:
                 ax = fig.add_subplot(aspect='equal', xlabel='[mm]', ylabel='[mm]')
-                im = ax.tripcolor(*(bezier_x/'mm').T, bezier.tri, function.eval(bezier_φ, **args), shading='gouraud', cmap='coolwarm')
+                im = ax.tripcolor(*(bezier_x/'mm').T, bezier.tri, function.eval(bezier_φ, args), shading='gouraud', cmap='coolwarm')
                 im.set_clim(-1, 1)
                 fig.colorbar(im)
                 if showflux:
-                    v = function.eval(grid_v, **args)
+                    v = function.eval(grid_v, args)
                     log.info('largest flux: {:.2mm/s}'.format(numpy.max(numpy.hypot(v[:, 0], v[:, 1]))))
                     ax.quiver(*(grid_x/'mm').T, *(v/'m/s').T)
                 ax.autoscale(enable=True, axis='both', tight=True)

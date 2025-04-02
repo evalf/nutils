@@ -56,7 +56,7 @@ def main(etype: str = 'square',
             ns.refbasis = refdom.basis(btype=btype, degree=degree)
             res = refdom.integral('∇_k(refbasis_n) ∇_k(u) dV' @ ns, degree=degree*2)
             res -= refdom.boundary.integral('refbasis_n ∇_k(u) n_k dS' @ ns, degree=degree*2)
-            indicator = numpy.square(res.eval(**args))
+            indicator = numpy.square(res.eval(args))
             irefelems = ns.refbasis.get_support(indicator > indicator.mean())
             domain = domain.refined_by(refdom.transforms[irefelems])
 
@@ -78,14 +78,14 @@ def main(etype: str = 'square',
         args = System(res, trial='u', test='v').solve(constrain=cons)
 
         ndofs = len(args['u'])
-        error = numpy.sqrt(domain.integral(['du^2 dV', '(du^2 + ∇_k(du) ∇_k(du)) dV'] @ ns, degree=7)).eval(**args)
+        error = numpy.sqrt(domain.integral(['du^2 dV', '(du^2 + ∇_k(du) ∇_k(du)) dV'] @ ns, degree=7)).eval(args)
         treelog.user(f'errors at {ndofs} dofs: L2 {error[0]:.2e}, H1 {error[1]:.2e}')
         linreg[numpy.log(ndofs)] = numpy.log(error)
         if irefine:
             treelog.user(f'error convergence rates: L2 {linreg.rate[0]:.2f} (optimal {-(degree+1)/2}), H1 {linreg.rate[1]:.2f} (optimal {-degree/2})')
 
         bezier = domain.sample('bezier', 9)
-        xsmp, usmp, dusmp = bezier.eval(['x_i', 'u', 'du'] @ ns, **args)
+        xsmp, usmp, dusmp = bezier.eval(['x_i', 'u', 'du'] @ ns, args)
         export.triplot('sol.png', xsmp, usmp, tri=bezier.tri, hull=bezier.hull)
         export.triplot('err.png', xsmp, dusmp, tri=bezier.tri, hull=bezier.hull)
 

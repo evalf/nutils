@@ -139,7 +139,7 @@ def main(nelems: int = 32,
 
     with log.context('stokes'):
         args = System(res, trial='u,p', test='v,q').solve(constrain=cons)
-        postprocess(domain, ns, **args)
+        postprocess(domain, ns, args)
 
     # change to Navier-Stokes by adding convection
     res += domain.integral('v_i ∇_j(u_i) u_j dV' @ ns, degree=degree*3)
@@ -149,9 +149,9 @@ def main(nelems: int = 32,
 
     with log.context('navier-stokes'):
         args = System(res, trial='u,p', test='v,q').solve(arguments=args, constrain=cons, tol=1e-10, method=LinesearchNewton())
-        postprocess(domain, ns, **args)
+        postprocess(domain, ns, args)
 
-    u, ω = domain.locate(ns.x, [[.5, .5], [0, .95]], tol=1e-14).eval(['u_i', 'ω'] @ ns, **args)
+    u, ω = domain.locate(ns.x, [[.5, .5], [0, .95]], tol=1e-14).eval(['u_i', 'ω'] @ ns, args)
     log.info(f'center velocity: {u[0,0]}, {u[0,1]}')
     log.info(f'center vorticity: {ω[0]}')
     log.info(f'upper-left (0,.95) vorticity: {ω[1]}')
@@ -163,7 +163,7 @@ def main(nelems: int = 32,
 # results of Stokes and Navier-Stokes, and because of the extra steps required
 # for establishing streamlines.
 
-def postprocess(domain, ns, **arguments):
+def postprocess(domain, ns, arguments):
 
     # reconstruct velocity streamlines
     sqr = domain.integral('Σ_i (u_i - ε_ij ∇_j(ψ))^2 dV' @ ns, degree=4)
@@ -172,7 +172,7 @@ def postprocess(domain, ns, **arguments):
     arguments = System(sqr, trial='ψ').solve(arguments=arguments, constrain={'ψ': consψ})
 
     bezier = domain.sample('bezier', 4)
-    x, u, ψ, ω = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'ψ', 'ω'] @ ns, **arguments)
+    x, u, ψ, ω = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'ψ', 'ω'] @ ns, arguments)
     with export.mplfigure('velocity.png', dpi=150) as fig: # plot velocity as field, streamlines as contours
         ax = fig.add_subplot(111)
         im = export.triplot(ax, x, u, tri=bezier.tri, hull=bezier.hull, cmap='hot_r', clim=(0,1))
@@ -184,7 +184,7 @@ def postprocess(domain, ns, **arguments):
         fig.colorbar(im, label='vorticity')
         ax.tricontour(*x.T, bezier.tri, ω, levels=numpy.arange(-5, 6), colors='k', linestyles='solid', linewidths=.5, zorder=9)
 
-    xv = numpy.stack(domain.center_hor.eval(['x_0', 'u_1'] @ ns, **arguments), axis=1)
+    xv = numpy.stack(domain.center_hor.eval(['x_0', 'u_1'] @ ns, arguments), axis=1)
     xmin, vmin = xv[numpy.argmin(xv[:,1])]
     xmax, vmax = xv[numpy.argmax(xv[:,1])]
     with export.mplfigure('cross-hor.png', dpi=150) as fig:
@@ -194,7 +194,7 @@ def postprocess(domain, ns, **arguments):
         ax.annotate(f'x={xmax:.5f}\nv={vmax:.5f}', xy=(xmax, vmax), xytext=(xmax, 0), arrowprops=dict(arrowstyle="->"), ha='center', va='center')
         ax.annotate(f'x={xmin:.5f}\nv={vmin:.5f}', xy=(xmin, vmin), xytext=(xmin, 0), arrowprops=dict(arrowstyle="->"), ha='center', va='center')
 
-    uy = numpy.stack(domain.center_ver.eval(['u_0', 'x_1'] @ ns, **arguments), axis=1)
+    uy = numpy.stack(domain.center_ver.eval(['u_0', 'x_1'] @ ns, arguments), axis=1)
     umin, ymin = uy[numpy.argmin(uy[:,0])]
     with export.mplfigure('cross-ver.png', dpi=150) as fig:
         ax = fig.add_subplot(111, ylim=(0,1), title='vertical cross section at x=0.5', ylabel='y-coordinate', xlabel='horizontal velocity')

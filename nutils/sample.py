@@ -155,7 +155,7 @@ class Sample(types.Singleton):
         raise NotImplementedError
 
     @util.single_or_multiple
-    def integrate(self, funcs, /, *, legacy=None, **arguments):
+    def integrate(self, funcs, /, arguments=None, *, legacy=None, **kwargs):
         '''Integrate functions.
 
         Args
@@ -180,9 +180,19 @@ class Sample(types.Singleton):
                 'evaluation.', stacklevel=3)
             legacy = True
 
+        if arguments is None:
+            if kwargs:
+                warnings.deprecation(
+                    'providing evaluation arguments as keyword arguments is '
+                    'deprecated, please use the "arguments" parameter instead',
+                    stacklevel=3)
+            arguments = kwargs
+        elif kwargs:
+            raise ValueError('invalid argument {list(kwargs)[0]!r}')
+
         arrays = function.eval([func if not legacy or not isinstance(func, function.Array) or func.ndim < 2
                   else function.as_csr(func) if func.ndim == 2
-                  else function.as_coo(func) for func in map(self.integral, funcs)], **arguments)
+                  else function.as_coo(func) for func in map(self.integral, funcs)], arguments)
 
         for func, data in zip(funcs, arrays):
             if legacy and isinstance(func, function.Array):
@@ -199,7 +209,7 @@ class Sample(types.Singleton):
             yield data
 
     @util.single_or_multiple
-    def integrate_sparse(self, funcs, /, **arguments):
+    def integrate_sparse(self, funcs, /, arguments=None, **kwargs):
         '''Integrate functions into sparse data.
 
         Args
@@ -216,8 +226,18 @@ class Sample(types.Singleton):
             'Sample.integral, and function.as_coo or function.as_csr instead.',
             stacklevel=3)
 
+        if arguments is None:
+            if kwargs:
+                warnings.deprecation(
+                    'providing evaluation arguments as keyword arguments is '
+                    'deprecated, please use the "arguments" parameter instead',
+                    stacklevel=3)
+            arguments = kwargs
+        elif kwargs:
+            raise ValueError('invalid argument {list(kwargs)[0]!r}')
+
         from . import sparse
-        arrays = function.eval([function.as_coo(self.integral(func)) for func in funcs], **arguments)
+        arrays = function.eval([function.as_coo(self.integral(func)) for func in funcs], arguments)
         return [sparse.compose(indices, values, func.shape) for func, (values, *indices) in zip(funcs, arrays)]
 
     @util.nutils_dispatch
@@ -236,7 +256,7 @@ class Sample(types.Singleton):
         return self._integral(function.Array.cast(__func))
 
     @util.single_or_multiple
-    def eval(self, funcs, /, **arguments):
+    def eval(self, funcs, /, arguments=None, **kwargs):
         '''Evaluate function.
 
         Args
@@ -247,10 +267,20 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function.eval([self.bind(func) for func in funcs], **arguments)
+        if arguments is None:
+            if kwargs:
+                warnings.deprecation(
+                    'providing evaluation arguments as keyword arguments is '
+                    'deprecated, please use the "arguments" parameter instead',
+                    stacklevel=3)
+            arguments = kwargs
+        elif kwargs:
+            raise ValueError('invalid argument {list(kwargs)[0]!r}')
+
+        return function.eval([self.bind(func) for func in funcs], arguments)
 
     @util.single_or_multiple
-    def eval_sparse(self, funcs, /, **arguments):
+    def eval_sparse(self, funcs, arguments=None, /, **kwargs):
         '''Evaluate function.
 
         Args
@@ -266,8 +296,18 @@ class Sample(types.Singleton):
             'please use function.eval along with Sample.bind and function.as_coo '
             'or (if 2D) function.as_csr instead', stacklevel=3)
 
+        if arguments is None:
+            if kwargs:
+                warnings.deprecation(
+                    'providing evaluation arguments as keyword arguments is '
+                    'deprecated, please use the "arguments" parameter instead',
+                    stacklevel=3)
+            arguments = kwargs
+        elif kwargs:
+            raise ValueError('invalid argument {list(kwargs)[0]!r}')
+
         from . import sparse
-        for func, (values, *indices) in zip(funcs, function.eval([function.as_coo(self.bind(func)) for func in funcs], **arguments)):
+        for func, (values, *indices) in zip(funcs, function.eval([function.as_coo(self.bind(func)) for func in funcs], arguments)):
             yield sparse.compose(indices, values, (self.npoints, *func.shape))
 
     def _integral(self, func: function.Array) -> function.Array:

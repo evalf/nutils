@@ -545,7 +545,7 @@ class integral(TestCase):
         self.topo, self.ns.x = mesh.rectilinear([5])
         self.ns.basis = self.topo.basis('std', degree=1)
         self.ns.v = 'basis_n ?lhs_n'
-        self.lhs = numpy.sin(numpy.arange(len(self.ns.basis)))
+        self.args = {'lhs': numpy.sin(numpy.arange(len(self.ns.basis)))}
 
     def test_eval(self):
         self.assertAllAlmostEqual(
@@ -555,14 +555,14 @@ class integral(TestCase):
 
     def test_args(self):
         self.assertAlmostEqual(
-            self.topo.integrate('v d:x' @ self.ns, degree=2, arguments=dict(lhs=self.lhs)),
-            self.topo.integral('v d:x' @ self.ns, degree=2).eval(lhs=self.lhs),
+            self.topo.integrate('v d:x' @ self.ns, degree=2, arguments=self.args),
+            self.topo.integral('v d:x' @ self.ns, degree=2).eval(self.args),
             places=15)
 
     def test_derivative(self):
         self.assertAllAlmostEqual(
-            self.topo.integrate('2 basis_n v d:x' @ self.ns, degree=2, arguments=dict(lhs=self.lhs)),
-            self.topo.integral('v^2 d:x' @ self.ns, degree=2).derivative('lhs').eval(lhs=self.lhs),
+            self.topo.integrate('2 basis_n v d:x' @ self.ns, degree=2, arguments=self.args),
+            self.topo.integral('v^2 d:x' @ self.ns, degree=2).derivative('lhs').eval(self.args),
             places=15)
 
     def test_transpose(self):

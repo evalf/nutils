@@ -150,7 +150,7 @@ def main(nelems: int = 99,
     system = System(function.factor(res), trial='u,p', test='v,q')
 
     for _ in steps:
-        treelog.info(f'velocity divergence: {function.eval(div, **args):.0e}')
+        treelog.info(f'velocity divergence: {function.eval(div, args):.0e}')
         args = system.step(timestep=timestep, timearg='t', timesteparg='dt', suffix='0', arguments=args, constrain=cons, tol=1e-10)
         postprocess(args)
 
@@ -194,10 +194,10 @@ class PostProcessor:
         self.xgrd = numpy.concatenate([newpoints * self.spacing, self.xgrd[keep]], axis=0)
 
     def __call__(self, args):
-        x, p, ω = self.bezier.eval(['x_i', 'p', 'ω'] @ self.ns, **args)
+        x, p, ω = self.bezier.eval(['x_i', 'p', 'ω'] @ self.ns, args)
         grid0 = numpy.log(numpy.hypot(*self.xgrd.T) / .5)
         grid1 = numpy.arctan2(*self.xgrd.T) % (2 * numpy.pi)
-        ugrd = self.topo.locate(self.ns.grid, numpy.stack([grid0, grid1], axis=1), eps=1, tol=1e-5).eval(self.ns.u, **args)
+        ugrd = self.topo.locate(self.ns.grid, numpy.stack([grid0, grid1], axis=1), eps=1, tol=1e-5).eval(self.ns.u, args)
         with export.mplfigure('flow.png', figsize=self.figsize) as fig:
             ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
             ax.tripcolor(*x.T, self.bezier.tri, ω, shading='gouraud', cmap='seismic').set_clim(-self.vortlim, self.vortlim)
@@ -214,7 +214,7 @@ class test(testing.TestCase):
     def test_rot0(self):
         args, div = main(nelems=6, reynolds=100., timestep=.1, extdiam=50., endtime=.1)
         with self.subTest('divergence'):
-            self.assertLess(div.eval(**args), 1e-13)
+            self.assertLess(div.eval(args), 1e-13)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv//AzussRy7rL8DNVNU42sskxyLLJTjbPN7Q4SscGxkrHtDj9ObM6SMXmw0jFszofPFU8nsNk
@@ -228,7 +228,7 @@ class test(testing.TestCase):
     def test_rot1(self):
         args, div = main(nelems=6, reynolds=100., uwall=.5, timestep=.1, extdiam=50., endtime=.1)
         with self.subTest('divergence'):
-            self.assertLess(div.eval(**args), 1e-13)
+            self.assertLess(div.eval(args), 1e-13)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv//czw8sRy7HL6TNVNU82tckxyLDJTTbPN7Q4SscGxkrHszj9ObM6SMXmw0jFszofPFU8nsNk

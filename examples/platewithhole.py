@@ -147,7 +147,7 @@ def main(mode: Union[FCM, NURBS] = NURBS(),
     args = System(res, trial='u', test='v').solve(constrain=cons)
 
     bezier = topo.sample('bezier', 5)
-    X, σxx = bezier.eval(['X_i', 'σ_00'] @ ns, **args)
+    X, σxx = bezier.eval(['X_i', 'σ_00'] @ ns, args)
     export.triplot('stressxx.png', X, σxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(σxx), numpy.nanmax(σxx)), cmap='jet')
 
     err = numpy.sqrt(topo.integrate(['du_k du_k dV', '∇_j(du_i) ∇_j(du_i) dV'] @ ns, degree=max(degree, 3)*2, arguments=args))

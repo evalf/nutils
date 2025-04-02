@@ -444,7 +444,7 @@ class Topology:
         if edit is not None:
             warnings.warn('the "edit" argument of Topology.integrate will be removed in Nutils 10')
             funcs = [edit(func) for func in funcs]
-        return self.sample(ischeme, degree).integrate(funcs, legacy=legacy, **arguments or {})
+        return self.sample(ischeme, degree).integrate(funcs, legacy=legacy, arguments=arguments or {})
 
     def integral(self, func: function.IntoArray, ischeme: str = 'gauss', degree: Optional[int] = None, edit=None) -> function.Array:
         'integral'
@@ -862,7 +862,7 @@ class Topology:
         return self._sample(ielems, points, weights)
 
     def _locate(self, geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing):
-        centroids = self.sample('_centroid', None).eval(geom, **arguments)
+        centroids = self.sample('_centroid', None).eval(geom, arguments)
         assert len(centroids) == len(self)
         ielems = parallel.shempty(len(coords), dtype=int)
         points = parallel.shempty((len(coords), self.ndims), dtype=float)
@@ -2395,7 +2395,7 @@ class StructuredTopology(TransformChainsTopology):
         # determine geom0, scale, error such that geom ~= geom0 + index * scale + error
         n = 2 + (1 in self.shape) # number of sample points required to establish nonlinearity
         sampleshape = numpy.multiply(self.shape, n) # shape of uniform sample
-        geom_ = self.sample('uniform', n).eval(geom, **arguments) \
+        geom_ = self.sample('uniform', n).eval(geom, arguments) \
             .reshape(*self.shape, *[n] * self.ndims, self.ndims) \
             .transpose(*(i+j for i in range(self.ndims) for j in (0, self.ndims)), self.ndims*2) \
             .reshape(*sampleshape, self.ndims)

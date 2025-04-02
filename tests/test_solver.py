@@ -110,7 +110,7 @@ class laplace_field(TestCase):
 
     def test_res(self):
         args = solver.solve_linear('u:v', residual=self.residual, constrain=self.cons)
-        res = self.residual.derivative('v').eval(**args)
+        res = self.residual.derivative('v').eval(args)
         resnorm = numpy.linalg.norm(res[numpy.isnan(self.cons['u'])])
         self.assertLess(resnorm, 1e-13)
 
@@ -155,8 +155,8 @@ class navierstokes(TestCase):
         self.dofs = dofs
 
     def assert_resnorm(self, lhs):
-        res = self.residual.eval(dofs=lhs)[numpy.isnan(self.cons)] if self.single \
-            else numpy.concatenate([r[numpy.isnan(self.cons[d]) if d in self.cons else ...] for d, r in zip(self.dofs, function.eval(self.residual, **lhs))])
+        res = self.residual.eval(dict(dofs=lhs))[numpy.isnan(self.cons)] if self.single \
+            else numpy.concatenate([r[numpy.isnan(self.cons[d]) if d in self.cons else ...] for d, r in zip(self.dofs, function.eval(self.residual, lhs))])
         resnorm = numpy.linalg.norm(res)
         self.assertLess(resnorm, self.tol)
 
@@ -217,7 +217,7 @@ class finitestrain(TestCase):
         self.tol = 1e-10
 
     def assert_resnorm(self, lhs):
-        res = function.eval(self.residual, dofs=lhs)
+        res = function.eval(self.residual, dict(dofs=lhs))
         resnorm = numpy.linalg.norm(res[~self.boolcons])
         self.assertLess(resnorm, self.tol)
 
@@ -348,13 +348,13 @@ class System(TestCase):
         self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,)})
         args = {'u': numpy.arange(10, dtype=float)}
         mat, vec, val = sys.assemble(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
-        self.assertAllAlmostEqual(vec, f.derivative('v').eval(**args))
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
+        self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
         self.assertAlmostEqual(val, None)
         newargs = {'u': numpy.ones(10)}
         mat_, vec_, val_ = sys.assemble(arguments=newargs)
         self.assertIs(mat_, mat)
-        self.assertAllAlmostEqual(vec_, f.derivative('v').eval(**newargs))
+        self.assertAllAlmostEqual(vec_, f.derivative('v').eval(newargs))
 
     def test_constant_symmetric(self):
         domain, geom = mesh.rectilinear([9])
@@ -368,14 +368,14 @@ class System(TestCase):
         self.assertEqual(sys.argshapes, {'u': (10,)})
         args = {'u': numpy.arange(10, dtype=float)}
         mat, vec, val = sys.assemble(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), **args))
-        self.assertAllAlmostEqual(vec, f.derivative('u').eval(**args))
-        self.assertAlmostEqual(val, f.eval(**args))
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), args))
+        self.assertAllAlmostEqual(vec, f.derivative('u').eval(args))
+        self.assertAlmostEqual(val, f.eval(args))
         newargs = {'u': numpy.ones(10)}
         mat_, vec_, val_ = sys.assemble(arguments=newargs)
         self.assertIs(mat_, mat)
-        self.assertAllAlmostEqual(vec_, f.derivative('u').eval(**newargs))
-        self.assertAlmostEqual(val_, f.eval(**newargs))
+        self.assertAllAlmostEqual(vec_, f.derivative('u').eval(newargs))
+        self.assertAlmostEqual(val_, f.eval(newargs))
 
     def test_constant_matrix(self):
         domain, geom = mesh.rectilinear([9])
@@ -391,13 +391,13 @@ class System(TestCase):
         self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
         mat, vec, val = sys.assemble(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
-        self.assertAllAlmostEqual(vec, f.derivative('v').eval(**args))
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
+        self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
         self.assertAlmostEqual(val, None)
         newargs = {'u': numpy.ones(10), 't': -1}
         mat_, vec_, val_ = sys.assemble(arguments=newargs)
         self.assertIs(mat_, mat)
-        self.assertAllAlmostEqual(vec_, f.derivative('v').eval(**newargs))
+        self.assertAllAlmostEqual(vec_, f.derivative('v').eval(newargs))
 
     def test_linear(self):
         domain, geom = mesh.rectilinear([9])
@@ -413,8 +413,8 @@ class System(TestCase):
         self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
         mat, vec, val = sys.assemble(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
-        self.assertAllAlmostEqual(vec, f.derivative('v').eval(**args))
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
+        self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
         self.assertAlmostEqual(val, None)
 
     def test_nonlinear(self):
@@ -431,8 +431,8 @@ class System(TestCase):
         self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
         mat, vec, val = sys.assemble(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), **args))
-        self.assertAllAlmostEqual(vec, f.derivative('v').eval(**args))
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
+        self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
         self.assertAlmostEqual(val, None)
 
     def test_nonlinear_symmetric(self):
@@ -447,9 +447,9 @@ class System(TestCase):
         self.assertEqual(sys.argshapes, {'u': (10,)})
         args = {'u': numpy.arange(10, dtype=float)}
         mat, vec, val = sys.assemble(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), **args))
-        self.assertAllAlmostEqual(vec, f.derivative('u').eval(**args))
-        self.assertAlmostEqual(val, f.eval(**args))
+        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), args))
+        self.assertAllAlmostEqual(vec, f.derivative('u').eval(args))
+        self.assertAlmostEqual(val, f.eval(args))
 
 
 class system_finitestrain(TestCase):

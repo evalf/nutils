@@ -31,7 +31,7 @@ def main(nelems: int = 32):
     args = System(energy, trial='u').solve(constrain=cons)
 
     bezier = topo.sample('bezier', 3)
-    x, u = bezier.eval([x, u], **args)
+    x, u = bezier.eval([x, u], args)
     export.triplot('u.png', x, u, tri=bezier.tri, cmap='jet')
 
     return args

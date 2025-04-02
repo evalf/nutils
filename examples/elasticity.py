@@ -69,8 +69,8 @@ def main(nelems: int = 24,
 
     # visualize solution
     bezier = domain.sample('bezier', 3)
-    X, E = bezier.eval(['X_i', 'E'] @ ns, **args)
-    Xt, t = domain.boundary['top'].sample('bezier', 2).eval(['X_i', 't_i'] @ ns, **args)
+    X, E = bezier.eval(['X_i', 'E'] @ ns, args)
+    Xt, t = domain.boundary['top'].sample('bezier', 2).eval(['X_i', 't_i'] @ ns, args)
     with export.mplfigure('energy.png') as fig:
         ax = fig.add_subplot(111, ylim=(-.2,1), aspect='equal')
         im = ax.tripcolor(*X.T, bezier.tri, E, shading='gouraud', rasterized=True, cmap='turbo')

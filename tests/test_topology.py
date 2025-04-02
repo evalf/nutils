@@ -925,7 +925,7 @@ class locate(TestCase):
     def test(self):
         target = numpy.array([(.2, .3), (.1, .9), (0, 1), (.1, .3)])
         sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
-        located = sample.eval(self.geom, scale=.123)
+        located = sample.eval(self.geom, dict(scale=.123))
         self.assertAllAlmostEqual(located, target)
 
     @parametrize.enable_if(lambda etype, mode, **kwargs: etype != 'square' or mode == 'nonlinear')
@@ -934,7 +934,7 @@ class locate(TestCase):
         with self.assertRaises(topology.LocateError):
             self.domain.locate(self.geom, [(0, .3)], eps=1e-15, tol=1e-12, maxdist=.001, arguments=dict(scale=.123))
         sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, maxdist=.5, arguments=dict(scale=.123))
-        located = sample.eval(self.geom, scale=.123)
+        located = sample.eval(self.geom, dict(scale=.123))
         self.assertAllAlmostEqual(located, target)
 
     def test_invalidargs(self):
@@ -958,20 +958,20 @@ class locate(TestCase):
     def test_boundary(self):
         target = numpy.array([(.2,), (.1,), (0,)])
         sample = self.domain.boundary['bottom'].locate(self.geom[:1], target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
-        located = sample.eval(self.geom[:1], scale=.123)
+        located = sample.eval(self.geom[:1], dict(scale=.123))
         self.assertAllAlmostEqual(located, target)
 
     def test_boundary_scalar(self):
         target = numpy.array([.3, .9, 1])
         sample = self.domain.boundary['left'].locate(self.geom[1], target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
-        located = sample.eval(self.geom[1], scale=.123)
+        located = sample.eval(self.geom[1], dict(scale=.123))
         self.assertAllAlmostEqual(located, target)
 
     def test_integrate(self):
         target = numpy.array([(.2, .3), (.1, .9), (0, 1), (.1, .3)])
         weights = numpy.array([.1, .2, .3, .4])
         sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123), weights=weights)
-        integrated = sample.integrate(self.geom, scale=.123)
+        integrated = sample.integrate(self.geom, dict(scale=.123))
         self.assertAllAlmostEqual(integrated, weights @ target)
 
     def test_missing_argument(self):

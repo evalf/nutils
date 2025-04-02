@@ -468,7 +468,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def __repr__(self) -> str:
         return 'Array<{}>'.format(','.join(str(n) for n in self.shape))
 
-    def eval(self, /, *, legacy=None, **arguments) -> numpy.ndarray:
+    def eval(self, /, arguments=None, *, legacy=None, **kwargs) -> numpy.ndarray:
         'Evaluate this function.'
 
         if self.ndim > 1 and legacy is None:
@@ -484,7 +484,16 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
                 'switch to dense evaluation.')
             legacy = True
 
-        data = eval(self if not legacy or self.ndim < 2 else as_csr(self) if self.ndim == 2 else as_coo(self), **arguments)
+        if arguments is None:
+            if kwargs:
+                warnings.deprecation(
+                    'providing evaluation arguments as keyword arguments is '
+                    'deprecated, please use the "arguments" parameter instead')
+            arguments = kwargs
+        elif kwargs:
+            raise ValueError('invalid argument {list(kwargs)[0]!r}')
+
+        data = eval(self if not legacy or self.ndim < 2 else as_csr(self) if self.ndim == 2 else as_coo(self), arguments)
         if not legacy or not self.ndim > 1:
             return data
         elif self.ndim == 2:
@@ -2285,7 +2294,7 @@ def nsymgrad(arg: IntoArray, geom: IntoArray, /, ndims: int = 0, *, spaces: Opti
 
 
 @util.single_or_multiple
-def eval(funcs: evaluable.AsEvaluableArray, /, **arguments: numpy.ndarray) -> Tuple[numpy.ndarray, ...]:
+def eval(funcs: evaluable.AsEvaluableArray, /, arguments=None, **kwargs: numpy.ndarray) -> Tuple[numpy.ndarray, ...]:
     '''Evaluate one or several Array objects.
 
     Args
@@ -2300,13 +2309,21 @@ def eval(funcs: evaluable.AsEvaluableArray, /, **arguments: numpy.ndarray) -> Tu
     results : :class:`tuple` of arrays
     '''
 
+    if arguments is None:
+        if kwargs:
+            warnings.deprecation(
+                'providing evaluation arguments as keyword arguments is '
+                'deprecated, please use the "arguments" parameter instead',
+                stacklevel=3)
+        arguments = kwargs
+    elif kwargs:
+        raise ValueError('invalid argument {list(kwargs)[0]!r}')
+
     return evaluate(*funcs, arguments=arguments)
 
 
 @nutils_dispatch
 def evaluate(*arrays, arguments={}):
-    if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], dict):
-        arguments = arguments['arguments']
     return evaluable.eval_once(tuple(map(evaluable.asarray, arrays)), arguments=arguments)
 
 
