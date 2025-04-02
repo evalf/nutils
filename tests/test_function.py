@@ -419,11 +419,11 @@ class Unlower(TestCase):
 
     def test(self):
         e = evaluable.Argument('arg', tuple(map(evaluable.constant, (2, 3, 4, 5))), int)
-        arguments = {'arg': ((2, 3), int)}
+        arguments = types.frozendict({'arg': ((2, 3), int)})
         f = function._Unlower(e, frozenset(), arguments, function.LowerArgs((2, 3), {}, {}))
         self.assertEqual(f.shape, (4, 5))
         self.assertEqual(f.dtype, int)
-        self.assertEqual(f._arguments, arguments)
+        self.assertEqual(f.arguments, arguments)
         self.assertEqual(f.lower(function.LowerArgs((2, 3), {}, {})), e)
         with self.assertRaises(ValueError):
             f.lower(function.LowerArgs((3, 4), {}, {}))

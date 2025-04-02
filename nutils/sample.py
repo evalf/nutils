@@ -1020,7 +1020,7 @@ class _Integral(function.Array):
     def __init__(self, integrand: function.Array, sample: Sample) -> None:
         self._integrand = integrand
         self._sample = sample
-        super().__init__(shape=integrand.shape, dtype=float if integrand.dtype in (bool, int) else integrand.dtype, spaces=integrand.spaces - frozenset(sample.spaces), arguments=integrand._arguments)
+        super().__init__(shape=integrand.shape, dtype=float if integrand.dtype in (bool, int) else integrand.dtype, spaces=integrand.spaces - frozenset(sample.spaces), arguments=integrand.arguments)
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
@@ -1035,7 +1035,7 @@ class _ConcatenatePoints(function.Array):
     def __init__(self, func: function.Array, sample: _TransformChainsSample) -> None:
         self._func = func
         self._sample = sample
-        super().__init__(shape=(sample.npoints, *func.shape), dtype=func.dtype, spaces=func.spaces - frozenset(sample.spaces), arguments=func._arguments)
+        super().__init__(shape=(sample.npoints, *func.shape), dtype=func.dtype, spaces=func.spaces - frozenset(sample.spaces), arguments=func.arguments)
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         axis = len(args.points_shape)
@@ -1055,7 +1055,7 @@ class _ReorderPoints(function.Array):
         self._func = func
         self._indices = indices
         assert indices.ndim == 1 and func.shape[0] == indices.shape[0].__index__()
-        super().__init__(shape=func.shape, dtype=func.dtype, spaces=func.spaces, arguments=func._arguments)
+        super().__init__(shape=func.shape, dtype=func.dtype, spaces=func.spaces, arguments=func.arguments)
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         func = self._func.lower(args)
