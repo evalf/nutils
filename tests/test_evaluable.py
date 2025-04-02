@@ -577,7 +577,7 @@ _check('normal3d', evaluable.Orthonormal, lambda G, a: numeric.normalize(a - num
 _check('normalmanifold', evaluable.Orthonormal, lambda G, a: numeric.normalize(a - numpy.einsum('pij,pj->pi', G, numpy.linalg.solve(numpy.einsum('pki,pkj->pij', G, G), numpy.einsum('pij,pi->pj', G, a)[...,numpy.newaxis])[...,0])), POS(2, 3, 1), ANY(2, 3))
 _check('loopsum1', lambda: evaluable.loop_sum(evaluable.loop_index('index', 3), evaluable.loop_index('index', 3)), lambda: numpy.array(3))
 _check('loopsum2', lambda a: evaluable.loop_sum(a, evaluable.loop_index('index', 2)), lambda a: 2*a, ANY(3, 4, 2, 4))
-_check('loopsum3', lambda a: evaluable.loop_sum(evaluable.get(a, 0, evaluable.loop_index('index', 3)), evaluable.loop_index('index', 3)), lambda a: numpy.sum(a, 0), ANY(3, 4, 2, 4))
+_check('loopsum3', lambda a: evaluable.loop_sum(evaluable.get(a, 0, evaluable.loop_index('index', 3)), evaluable.loop_index('index', 3)), lambda a: numpy.sum(a, 0), ANY(3, 4, 2, 4) + 10 * numpy.eye(4)[:,numpy.newaxis])
 _check('loopsum4', lambda: evaluable.loop_sum(evaluable.Inflate(evaluable.loop_index('index', 3), evaluable.constant(0), evaluable.constant(2)), evaluable.loop_index('index', 3)), lambda: numpy.array([3, 0]))
 _check('loopsum5', lambda: evaluable.loop_sum(evaluable.loop_index('index', 1), evaluable.loop_index('index', 1)), lambda: numpy.array(0))
 _check('loopsum6', lambda: evaluable.loop_sum(evaluable.Guard(evaluable.constant(1) + evaluable.loop_index('index', 4)), evaluable.loop_index('index', 4)) * evaluable.loop_sum(evaluable.loop_index('index', 4), evaluable.loop_index('index', 4)), lambda: numpy.array(60))
