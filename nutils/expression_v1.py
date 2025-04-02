@@ -829,7 +829,7 @@ class _ExpressionParser:
                 geometry_name = self.default_geometry_name
             if not omitted_indices and self._next.type == 'indices':
                 geom = self._get_geometry(geometry_name)
-                warnings.deprecation('`[f]_i` and `[f]_x_i` are deprecated; use `[f] n({x}_i)` instead'.format(x=geometry_name))
+                warnings.deprecation('`[f]_i` and `[f]_x_i` are deprecated; use `[f] n({x}_i)` instead'.format(x=geometry_name), stacklevel=3)
                 value *= self._asarray(('normal', _(geom)), self._consume(), geom.shape, False)
         elif self._next.type == '{':
             self._consume()
@@ -863,11 +863,11 @@ class _ExpressionParser:
             assert target.type in ('geometry', 'argument')
             indices = self._consume() if self._next.type == 'indices' else None
             if target.type == 'geometry':
-                warnings.deprecation('the gradient syntax `dx_i:u` is deprecated; use `d(u, x_i)` instead')
+                warnings.deprecation('the gradient syntax `dx_i:u` is deprecated; use `d(u, x_i)` instead', stacklevel=3)
                 geom = self._get_geometry(target.data)
             elif target.type == 'argument':
                 assert target.data.startswith('?')
-                warnings.deprecation('the derivative syntax `d?a:u` is deprecated; use `d(u, ?a)` instead')
+                warnings.deprecation('the derivative syntax `d?a:u` is deprecated; use `d(u, ?a)` instead', stacklevel=3)
                 arg = self._get_arg(target.data[1:], indices)
             func = self.parse_var(False)
             if target.type == 'geometry':
@@ -931,7 +931,7 @@ class _ExpressionParser:
                                                   linked_lengths=functools.reduce(operator.or_, (arg.linked_lengths for arg in args), frozenset()))
             elif name in self.normal_symbols:
                 if self._next.type == 'geometry':
-                    warnings.deprecation('the normal syntax with explicitly geometry `n:x_i` is deprecated; use `n(x_i)` instead')
+                    warnings.deprecation('the normal syntax with explicitly geometry `n:x_i` is deprecated; use `n(x_i)` instead', stacklevel=3)
                     geometry_name = self._consume().data
                 else:
                     geometry_name = self.default_geometry_name
@@ -961,16 +961,16 @@ class _ExpressionParser:
                 gradtype = {',': 'grad', ';': 'surfgrad'}[gradient.data]
                 if target.data:
                     if gradient.data == ',':
-                        warnings.deprecation('the gradient syntax with explicit geometry `u_,x_i` is deprecated; use `d(u, x_i)` instead')
+                        warnings.deprecation('the gradient syntax with explicit geometry `u_,x_i` is deprecated; use `d(u, x_i)` instead', stacklevel=3)
                     else:
-                        warnings.deprecation('the surface gradient syntax with explicit geometry `u_;x_i` is deprecated; use `surfgrad(u, x_i)` instead')
+                        warnings.deprecation('the surface gradient syntax with explicit geometry `u_;x_i` is deprecated; use `surfgrad(u, x_i)` instead', stacklevel=3)
                 geom = self._get_geometry(target.data or self.default_geometry_name)
                 for i, index in enumerate(indices.data):
                     value = value.grad(index, geom, gradtype)
             elif target.type == 'argument':
                 assert gradient.data == ','
                 assert target.data.startswith('?')
-                warnings.deprecation('the derivative to argument syntax `u_,?a` is deprecated; use `d(u, ?a)` instead')
+                warnings.deprecation('the derivative to argument syntax `u_,?a` is deprecated; use `d(u, ?a)` instead', stacklevel=3)
                 arg = self._get_arg(target.data[1:], indices)
                 value = value.derivative(arg)
         elif not omitted_indices and self._next.type == 'indices':

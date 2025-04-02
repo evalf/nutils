@@ -376,13 +376,13 @@ class Topology:
             if 'name' not in kwargs:
                 raise TypeError("basis() missing 1 required positional argument: 'btype'")
             btype = kwargs.pop('name')
-            warnings.deprecation("the basis type parameter has been renamed from 'name' to 'btype', please update your code")
+            warnings.deprecation("the basis type parameter has been renamed from 'name' to 'btype', please update your code", stacklevel=3)
 
         if __degree is not None:
             if 'degree' in kwargs:
                 raise TypeError("basis() got multiple values for argument 'degree'")
             kwargs['degree'] = __degree
-            warnings.deprecation('the degree parameter must be specified as a keyword argument, please update your code')
+            warnings.deprecation('the degree parameter must be specified as a keyword argument, please update your code', stacklevel=3)
 
         if self.ndims == 0:
             return function.PlainBasis([[[1]]], [[0]], 1, self.f_index, self.f_coords)
@@ -842,9 +842,9 @@ class Topology:
         '''
 
         if ischeme is not None:
-            warnings.deprecation('the ischeme argument for locate is no longer used and will be removed in Nutils 10')
+            warnings.deprecation('the ischeme argument for locate is no longer used and will be removed in Nutils 10', stacklevel=4)
         if scale is not None:
-            warnings.deprecation('the scale argument for locate is no longer used and will be removed in Nutils 10')
+            warnings.deprecation('the scale argument for locate is no longer used and will be removed in Nutils 10', stacklevel=4)
         if max(tol, eps) <= 0:
             raise ValueError('locate requires either tol or eps to be strictly positive')
         coords = numpy.asarray(coords, dtype=float)

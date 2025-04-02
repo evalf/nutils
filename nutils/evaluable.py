@@ -162,7 +162,7 @@ class Evaluable(types.DataClass):
     def eval(self):
         '''Evaluate function on a specified element, point set.'''
 
-        warnings.deprecation('`Evaluable.eval()` is deprecated; use `evaluable.compile()` or `evaluable.eval_once()` instead')
+        warnings.deprecation('`Evaluable.eval()` is deprecated; use `evaluable.compile()` or `evaluable.eval_once()` instead', stacklevel=3)
         return compile(self, _simplify=False, _optimize=False, stats=False, cache_const_intermediates=False)
 
     @util.deep_replace_property
