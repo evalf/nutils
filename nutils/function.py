@@ -2738,12 +2738,12 @@ class Basis(Array):
             A 1D Array of indices.
         '''
 
-        return self._arg_dofs(_index=ielem)
+        return self._arg_dofs(dict(_index=ielem))
 
     def get_ndofs(self, ielem: int) -> int:
         '''Return the number of basis functions with support on element ``ielem``.'''
 
-        return int(self._arg_ndofs(_index=numeric.normdim(self.nelems, ielem)))
+        return int(self._arg_ndofs(dict(_index=numeric.normdim(self.nelems, ielem))))
 
     def get_coefficients(self, ielem: int) -> numpy.ndarray:
         '''Return an array of coefficients for all basis functions with support on element ``ielem``.
@@ -2761,7 +2761,7 @@ class Basis(Array):
             :meth:`get_dofs`.
         '''
 
-        return self._arg_coeffs(_index=numeric.normdim(self.nelems, ielem))
+        return self._arg_coeffs(dict(_index=numeric.normdim(self.nelems, ielem)))
 
     def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array, evaluable.Array]:
         raise NotImplementedError('{} must implement f_dofs_coeffs'.format(self.__class__.__name__))
@@ -3078,7 +3078,7 @@ class _DiscontinuousPartitionBasis(Basis):
         # Concatenate all parent dofs and stack all ndofs per element.
         cc_parent_dofs = evaluable.loop_concatenate(parent_dofs, ielem)
         cc_ndofs = evaluable.loop_concatenate(evaluable.insertaxis(parent_dofs.shape[0], 0, evaluable.asarray(1)), ielem)
-        cc_parent_dofs, cc_ndofs = evaluable.compile((cc_parent_dofs, cc_ndofs))()
+        cc_parent_dofs, cc_ndofs = evaluable.eval_once((cc_parent_dofs, cc_ndofs))
         # Stack the part index for each element for each dof.
         cc_part_indices = numpy.repeat(part_indices, cc_ndofs)
         # Renumber and count all unique dofs.

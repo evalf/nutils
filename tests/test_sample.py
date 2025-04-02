@@ -44,14 +44,14 @@ class Common:
         assert len(self.desired_indices) == self.desired_nelems
         actual = evaluable.compile(self.sample.get_evaluable_indices(evaluable.Argument('ielem', (), int)))
         for ielem, desired in enumerate(self.desired_indices):
-            self.assertEqual(actual(ielem=ielem).tolist(), desired)
+            self.assertEqual(actual(dict(ielem=ielem)).tolist(), desired)
 
     def test_get_evaluable_weights(self):
         assert len(self.desired_points) == self.desired_nelems
         actual = evaluable.compile(self.sample.get_evaluable_weights(evaluable.Argument('ielem', (), int)))
         for ielem, points in enumerate(self.desired_points):
             desired = functools.reduce(lambda l, r: numpy.einsum('...,i->...i', l, r), (p.weights for p in points))
-            self.assertAllAlmostEqual(actual(ielem=ielem).tolist(), desired.tolist())
+            self.assertAllAlmostEqual(actual(dict(ielem=ielem)).tolist(), desired.tolist())
 
     def test_get_lower_args(self):
         assert len(self.desired_transform_chains) == len(self.desired_points) == self.desired_nelems
@@ -60,7 +60,7 @@ class Common:
         for ielem, (desired_chains, desired_points) in enumerate(zip(self.desired_transform_chains, self.desired_points)):
             assert len(desired_chains) == len(desired_points) == len(self.desired_spaces)
             desired_shape = tuple(p.coords.shape[0] for p in desired_points)
-            self.assertEqual(tuple(n.__index__() for n in actual_shape(ielem=ielem)), desired_shape)
+            self.assertEqual(tuple(n.__index__() for n in actual_shape(dict(ielem=ielem))), desired_shape)
             offset = 0
             for space, desired_chain, desired_point in zip(self.desired_spaces, desired_chains, desired_points):
                 (chain, *_), index = args.transform_chains[space]

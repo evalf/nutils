@@ -234,7 +234,7 @@ class System:
             residuals = [evaluable.derivative(functional, argobjects[t]) for t in tests]
             self.is_symmetric = self.trials == tests
 
-        self.argshapes = dict(zip(argobjects.keys(), evaluable.compile(tuple(arg.shape for arg in argobjects.values()))()))
+        self.argshapes = dict(zip(argobjects.keys(), evaluable.eval_once(tuple(arg.shape for arg in argobjects.values()))))
         self.__trial_offsets = numpy.cumsum([0] + [numpy.prod(self.argshapes[t], dtype=int) for t in self.trials])
 
         value = functional if self.is_symmetric else ()
@@ -262,7 +262,7 @@ class System:
     def assemble(self, arguments: Dict[str, numpy.ndarray]):
         mat, vec, val = self.__mat_vec_val
         if vec is None:
-            mat_blocks, vec_blocks, maybe_val = self.__eval(**arguments)
+            mat_blocks, vec_blocks, maybe_val = self.__eval(arguments)
             if mat is None:
                 mat = matrix.assemble_block_csr(mat_blocks)
             vec = numpy.concatenate(vec_blocks)
@@ -614,8 +614,8 @@ class Pseudotime:
     def _assemble_inertia_matrix(self, trialshapes, arguments):
         argobjs = [evaluable.Argument(t, tuple(map(evaluable.constant, shape)), float) for t, shape in trialshapes]
         djacobians = [[evaluable._flat(evaluable.derivative(evaluable._flat(res), argobj).simplified, 2) for argobj in argobjs] for res in self.inertia]
-        djac_blocks = evaluable.compile(tuple(tuple(map(evaluable.as_csr, row)) for row in djacobians))
-        return matrix.assemble_block_csr(djac_blocks(**arguments))
+        djac_blocks = evaluable.eval_once(tuple(tuple(map(evaluable.as_csr, row)) for row in djacobians), arguments=arguments)
+        return matrix.assemble_block_csr(djac_blocks)
 
 
 # SOLVERS

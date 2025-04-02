@@ -158,12 +158,11 @@ class Evaluable(types.DataClass):
     def __str__(self):
         return self.__class__.__name__
 
-    @cached_property
-    def eval(self):
+    def eval(self, /, **evalargs):
         '''Evaluate function on a specified element, point set.'''
 
-        warnings.deprecation('`Evaluable.eval()` is deprecated; use `evaluable.compile()` or `evaluable.eval_once()` instead', stacklevel=3)
-        return compile(self, _simplify=False, _optimize=False, stats=False, cache_const_intermediates=False)
+        warnings.deprecation('`Evaluable.eval()` is deprecated; use `evaluable.compile()` or `evaluable.eval_once()` instead')
+        return eval_once(self, arguments=evalargs, _simplify=False, _optimize=False, stats=False)
 
     @util.deep_replace_property
     def simplified(obj):
@@ -912,6 +911,9 @@ class Constant(Array):
             return r
 
     def eval(self, /, **evalargs):
+        '''Evaluate function on a specified element, point set.'''
+
+        warnings.deprecation('`Evaluable.eval()` is deprecated; use `evaluable.compile()` or `evaluable.eval_once()` instead')
         return self.value
 
     def _compile(self, builder):
@@ -6494,7 +6496,7 @@ def eval_once(func: AsEvaluableArray, *, stats: typing.Optional[str] = None, arg
     '''
 
     f = compile(func, _simplify=_simplify, _optimize=_optimize, stats=stats, cache_const_intermediates=False)
-    return f(**arguments)
+    return f(arguments)
 
 
 @log.withcontext
@@ -6534,7 +6536,7 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
     >>> arg = Argument('arg', (), int)
     >>> f = arg + constant(1)
     >>> compiled = compile(f)
-    >>> compiled(arg=1)
+    >>> compiled({'arg': 1})
     2
 
     The return value of the compiled function matches the structure of the
@@ -6543,7 +6545,7 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
     >>> g = arg * constant(3)
     >>> h = arg * arg
     >>> compiled = compile((f, (g, h)))
-    >>> compiled(arg=2)
+    >>> compiled({'arg': 2})
     (3, (6, 4))
     '''
 
@@ -6598,7 +6600,7 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
     # Having defined the loop and block ids, the loops (without content) are
     # serialized. For the first example this gives
     #
-    #     def compiled(**a):
+    #     def compiled(a):
     #         # contents of blocks[0,]
     #         for v5 in range(c6):
     #             # contents of blocks[0,0]
@@ -6613,7 +6615,7 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
     # the block with the corresponding block id. The serialization of the first
     # example (without inplace additions):
     #
-    #     def compiled(**a):
+    #     def compiled(a):
     #         v0 = numpy.zeros((), int) # e0 init
     #         for v5 in range(c6):
     #             v1 = numpy.zeros((), int) # e1 init
@@ -6803,7 +6805,7 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
         ])
 
     script = StringIO()
-    print('def compiled(**a):', file=script)
+    print('def compiled(a):', file=script)
     for line in main.lines:
         print('    ' + line, file=script)
     print('    return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]), file=script)

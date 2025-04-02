@@ -673,8 +673,8 @@ class TopologyAssertions:
                         self.assertEqual(interfaces.opposites[index], opptrans)
                     imask[index] += 1
                     self.assertEqual(eref, opperef)
-                    a0 = lowered_geom(_iedge=edges.index(trans))
-                    a1 = lowered_geom(_iedge=edges.index(opptrans))
+                    a0 = lowered_geom(dict(_iedge=edges.index(trans)))
+                    a1 = lowered_geom(dict(_iedge=edges.index(opptrans)))
                     numpy.testing.assert_array_almost_equal(a0, a1)
         self.assertTrue(numpy.equal(bmask, 1).all())
         self.assertTrue(numpy.equal(imask, 2).all())

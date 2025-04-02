@@ -889,7 +889,7 @@ class Topology:
                         if iiter > maxiter > 0:
                             break  # maximum number of iterations reached
                         iiter += 1
-                        xp, Jp = xJ(**arguments)
+                        xp, Jp = xJ(arguments)
                         dx = xt - xp
                         ex0 = ex
                         ex = numpy.linalg.norm(dx)
@@ -1628,7 +1628,7 @@ class TransformChainsTopology(Topology):
             levelset = evaluable.compile(levelset.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), ielem_arg, coordinates)), stats=False)
             with log.iter.percentage('trimming', range(len(self)), self.references) as items:
                 for ielem, ref in items:
-                    levels = levelset(_trim_index=ielem, **arguments)
+                    levels = levelset(dict(arguments, _trim_index=ielem))
                     if numpy.isnan(levels).any():
                         raise Exception('levelset function evaluated to NaN values')
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
@@ -1664,7 +1664,7 @@ class TransformChainsTopology(Topology):
                             coordinates = leveltopo.references.getpoints('vertex', degree).get_evaluable_coords(ielem_arg)
                             lower_args = function.LowerArgs.for_space(self.space, (leveltopo.transforms, leveltopo.opposites), ielem_arg, coordinates)
                             lowered_levelset[degree] = evaluable.compile(levelset.lower(lower_args), stats=False)
-                        levels[indices] = lowered_levelset[degree](_ielem=ielem, **arguments)
+                        levels[indices] = lowered_levelset[degree](dict(arguments, _ielem=ielem))
                         mask[indices] = False
                     if numpy.isnan(levels).any():
                         raise Exception('levelset function evaluated to NaN values')

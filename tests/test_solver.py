@@ -467,7 +467,7 @@ class system_finitestrain(TestCase):
         self.residual = evaluable.compile(energy.derivative('u').as_evaluable_array)
 
     def assert_resnorm(self, args, tol):
-        resnorm = numpy.linalg.norm(self.residual(**args)[numpy.isnan(self.cons['u'])])
+        resnorm = numpy.linalg.norm(self.residual(args)[numpy.isnan(self.cons['u'])])
         self.assertLess(resnorm, tol)
 
     def test_direct(self):
@@ -512,7 +512,7 @@ class system_navierstokes(TestCase):
         self.residuals = evaluable.compile((res.derivative('v').as_evaluable_array, res.derivative('q').as_evaluable_array))
 
     def assert_resnorm(self, args, tol):
-        ures, pres = self.residuals(**args)
+        ures, pres = self.residuals(args)
         resnorm = numpy.linalg.norm(numpy.concatenate([ures[numpy.isnan(self.cons['u'])], pres]))
         self.assertLess(resnorm, tol)
 

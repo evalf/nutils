@@ -1316,7 +1316,7 @@ class CommonBasis:
         with _builtin_warnings.catch_warnings():
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
             for ielem in range(self.checknelems):
-                value = lowered(ielem=ielem)
+                value = lowered(dict(ielem=ielem))
                 if value.shape[0] == 1:
                     value = numpy.tile(value, (points.npoints, 1))
                 self.assertAllAlmostEqual(value, self.checkeval(ielem, points))
