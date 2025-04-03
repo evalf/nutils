@@ -1573,7 +1573,7 @@ class factor(TestCase):
 
     def test_lower_spaces(self):
         topo, geom = mesh.rectilinear([3])
-        with self.assertRaisesRegex(ValueError, r'cannot lower function with spaces \(.+\) - did you forget integral or sample?'):
+        with self.assertRaisesRegex(ValueError, r'cannot lower this function because the transform chains for space .* are missing'):
             function.factor(geom)
 
 
