@@ -579,6 +579,47 @@ class Newton:
 
 
 @dataclass(eq=True, frozen=True)
+class ReuseNewton:
+
+    require: float = .5
+
+    def __str__(self):
+        return 'reuse-newton'
+
+    def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+        x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
+        linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
+
+        res = system.assemble_residual(arguments)
+        resnorm = numpy.linalg.norm(res[~iscons])
+
+        yield arguments, resnorm
+
+        update_jacobian = True
+
+        while True:
+
+            if update_jacobian:
+                log.info('updating jacobian matrix')
+                jac = system.assemble_jacobian(arguments)
+
+            dx = jac.solve_leniently(res, constrain=iscons, **linargs)
+            x -= dx
+
+            newres = system.assemble_residual(arguments)
+            newresnorm = numpy.linalg.norm(newres[~iscons])
+
+            if update_jacobian or newresnorm < self.require * resnorm:
+                resnorm = newresnorm
+                res = newres
+                yield arguments, resnorm
+                update_jacobian = False
+            else:
+                x += dx # roll back
+                update_jacobian = True
+
+
+@dataclass(eq=True, frozen=True)
 class LinesearchNewton:
 
     strategy: Callable = NormBased()
