@@ -511,8 +511,8 @@ class Namespace(TestCase):
         ns.b = numpy.array([1, 2, 3])
         self.assertEqual(('1' @ ns).eval().tolist(), 1)
         self.assertEqual(('a_i' @ ns).eval().tolist(), [1, 2])
-        self.assertEqual(('a_i b_j' @ ns).eval().export('dense').tolist(), [[1, 2, 3], [2, 4, 6]])
-        self.assertEqual(('b_j a_i' @ ns).eval().export('dense').tolist(), [[1, 2, 3], [2, 4, 6]])
+        self.assertEqual(('a_i b_j' @ ns).eval(legacy=False).tolist(), [[1, 2, 3], [2, 4, 6]])
+        self.assertEqual(('b_j a_i' @ ns).eval(legacy=False).tolist(), [[1, 2, 3], [2, 4, 6]])
 
     def test_eval_tuple_list(self):
         ns = expression_v2.Namespace()

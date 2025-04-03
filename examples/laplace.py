@@ -87,13 +87,13 @@ def main(nelems: int = 10,
     # information required for drawing the mesh and element outlines.
 
     bezier = domain.sample('bezier', 9)
-    xsmp, usmp = bezier.eval(['x_i', 'u'] @ ns, **args)
+    xsmp, usmp = bezier.eval(['x_i', 'u'] @ ns, args)
     export.triplot('solution.png', xsmp, usmp, tri=bezier.tri, hull=bezier.hull)
 
     # To confirm that our computation is correct, we use our knowledge of the
     # analytical solution to evaluate the L2-error of the discrete result.
 
-    err = domain.integral('(u - sin(x_0) cosh(x_1))^2 dV' @ ns, degree=degree*2).eval(**args)**.5
+    err = domain.integral('(u - sin(x_0) cosh(x_1))^2 dV' @ ns, degree=degree*2).eval(args)**.5
     treelog.user('L2 error: {:.2e}'.format(err))
 
     return cons['u'], args['u'], err

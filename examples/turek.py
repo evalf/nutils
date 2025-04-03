@@ -350,9 +350,9 @@ def main(domain: Domain = Domain(), solid: Optional[Solid] = Solid(), fluid: Opt
 
         args = system.solve(constrain=cons, arguments=args, tol=1e-9)
 
-        x, xb = function.eval([x_bz, x_bbz], **args)
+        x, xb = function.eval([x_bz, x_bbz], args)
         if fluid:
-            u, p = function.eval([u_bz, p_bz], **args)
+            u, p = function.eval([u_bz, p_bz], args)
             with export.mplfigure('solution.jpg', dpi=150) as fig:
                 pstep = 25 * fluid.viscosity * fluid.velocity / domain.channel_height
                 ax = fig.add_subplot(111, title=f'flow at t={t:.3s}, pressure contours every {pstep:.0Pa}', ylabel='[m]')

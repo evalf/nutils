@@ -21,9 +21,9 @@ class basisTest(TestCase):
 
     def assertPolynomial(self, topo, geom, basis, degree):
         target = (geom**degree).sum(-1)
-        matrix, rhs, target2 = topo.integrate([basis[:, numpy.newaxis] * basis, basis * target, target**2], degree=degree*2)
-        lhs = matrix.solve(rhs)
-        error = target2 - rhs.dot(lhs)
+        matrix, rhs, target2 = topo.integrate([basis[:, numpy.newaxis] * basis, basis * target, target**2], degree=degree*2, legacy=False)
+        lhs = numpy.linalg.solve(matrix, rhs)
+        error = target2 - rhs @ lhs
         self.assertAlmostEqual(error, 0, places=10)
 
 
@@ -101,12 +101,16 @@ class sparsity(TestCase):
         ns.tnotol = topo.basis('th-spline', degree=2, truncation_tolerance=0)
         ns.hbasis = topo.basis('h-spline', degree=2)
 
-        tA, tA_tol, hA = topo.sample('gauss', 5).integrate_sparse([ns.eval_ij('tbasis_i,k tbasis_j,k'), ns.eval_ij('tnotol_i,k tnotol_j,k'), ns.eval_ij('hbasis_i,k hbasis_j,k')])
+        gauss = topo.sample('gauss', 5)
+        tA, tA_tol, hA = function.eval([
+            function.as_coo(gauss.integral(ns.eval_ij('tbasis_i,k tbasis_j,k'))),
+            function.as_coo(gauss.integral(ns.eval_ij('tnotol_i,k tnotol_j,k'))),
+            function.as_coo(gauss.integral(ns.eval_ij('hbasis_i,k hbasis_j,k')))])
 
         tA_nnz, tA_tol_nnz, hA_nnz = self.vals[self.ndim]
-        self.assertEqual(len(sparse.prune(sparse.dedup(tA))), tA_nnz)
-        self.assertEqual(len(sparse.prune(sparse.dedup(tA_tol))), tA_tol_nnz)
-        self.assertEqual(len(sparse.prune(sparse.dedup(hA))), hA_nnz)
+        self.assertEqual(len(tA[0]), tA_nnz)
+        self.assertEqual(len(tA_tol[0]), tA_tol_nnz)
+        self.assertEqual(len(hA[0]), hA_nnz)
 
 
 for ndim in 1, 2:

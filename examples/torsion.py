@@ -92,7 +92,7 @@ def main(length: float = 2*np.pi,
     for args['φ'] in np.linspace(0, rotation, round(rotation / increment) + 1):
         with log.context('{φ:.1f} deg', **args):
             args = system.solve(arguments=args, method=Minimize(), tol=restol)
-            x, W = bezier.eval(['x_i', 'W'] @ ns, **args)
+            x, W = bezier.eval(['x_i', 'W'] @ ns, args)
             export.triplot('energy.jpg', x, W, tri=bezier.tri, hull=bezier.hull,
                 clim=clim, cmap='inferno_r', vlabel='strain energy density')
             clim = None # proceed with autmatic scaling

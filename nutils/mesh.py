@@ -7,6 +7,7 @@ provided at this point.
 """
 
 from . import topology, function, _util as util, element, numeric, transform, transformseq, warnings, types, cache
+from .solver import System
 from .elementseq import References
 from .transform import TransformItem
 from .topology import Topology
@@ -536,7 +537,7 @@ def gmsh(fname, *, dimension=None, order=1, numbers={}, space='X'):
     return simplex(**_simplex_args_from_meshio(mesh), space=space)
 
 
-def simplex(nodes, cnodes, coords, tags, btags, ptags, *, space='X'):
+def simplex(nodes, cnodes, coords, tags, btags, ptags, name=None, *, space='X'):
     '''Simplex topology.
 
     Parameters
@@ -569,6 +570,9 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, *, space='X'):
     geom : :class:`nutils.function.Array`
         Geometry function.
     '''
+
+    if name is not None:
+        warnings.deprecation('the simplex name argument is deprecated and will be removed in Nutils 10; it can safely be omitted')
 
     used = numpy.zeros(len(coords), dtype=bool)
     used[nodes] = True
@@ -836,14 +840,11 @@ def unitcircle(nelems: int, variant: str) -> Tuple[Topology, function.Array]:
         # correct boundary gradients at the patch interfaces.
 
         basis = topo.basis('spline', degree=2)
-        # Minimize e = (f - B c)^2 = f^2 - 2 f B c + cT BT B c -> BT B c = BT f
-        BB, BX, BY, BW, XX, YY, WW = topo.integrate([basis[:,None] * basis[None,:],
-            basis * X, basis * Y, basis * W, X**2, Y**2, W**2], degree=4)
-        cx, cy, cw = [BB.solve(BF) for BF in (BX, BY, BW)]
-        ex, ey, ew = [FF + (BB @ cf - 2 * BF) @ cf for (cf, BF, FF) in ((cx, BX, XX), (cy, BY, YY), (cw, BW, WW))]
-        log.debug(f'NURBS projection errors: x={ex:.0e}, y={ey:.0e}, w={ew:.0e}')
-
-        return topo, (basis @ numpy.stack([cx, cy], 1)) / (basis @ cw)
+        cx, cy = cxy = function.field('cxy', basis, shape=(2,))
+        cw = function.field('cw', basis)
+        sqr = topo.integral((X - cx)**2 + (Y - cy)**2 + (W - cw)**2, degree=4)
+        args = System(sqr, trial='cxy,cw').solve()
+        return topo, function.replace_arguments(cxy / cw, args)
 
     else:
         raise Exception('invalid variant {!r}'.format(variant))

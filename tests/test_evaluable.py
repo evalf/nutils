@@ -88,7 +88,7 @@ class check(TestCase):
             self.assertArrayAlmostEqual(numeric.accumulate(values, indices, shape), desired, decimal)
         if actual.ndim == 2:
             with self.subTest('csr'):
-                values, rowptr, colidx, ncols = evaluable.compile(evaluable.as_csr(actual))(**evalargs)
+                values, rowptr, colidx, ncols = evaluable.eval_once(evaluable.as_csr(actual), arguments=evalargs)
                 shape = len(rowptr) - 1, ncols
                 self.assertEqual(shape, desired.shape)
                 actual = numpy.zeros(shape, dtype=values.dtype)
@@ -380,7 +380,7 @@ class check(TestCase):
                     approx = numpy.zeros_like(exact)
                     scale = 1
                 else:
-                    fdvals = numpy.stack([actual(**collections.ChainMap({arg_name: numpy.asarray(x0+eps*n*dx)}, evalargs)) for n in (*-fddeltas, *fddeltas)], axis=0)
+                    fdvals = numpy.stack([actual(collections.ChainMap({arg_name: numpy.asarray(x0+eps*n*dx)}, evalargs)) for n in (*-fddeltas, *fddeltas)], axis=0)
                     if fdvals.dtype.kind == 'i':
                         fdvals = fdvals.astype(float)
                     fdvals = fdvals.reshape(2, len(fddeltas), *fdvals.shape[1:])
@@ -577,7 +577,7 @@ _check('normal3d', evaluable.Orthonormal, lambda G, a: numeric.normalize(a - num
 _check('normalmanifold', evaluable.Orthonormal, lambda G, a: numeric.normalize(a - numpy.einsum('pij,pj->pi', G, numpy.linalg.solve(numpy.einsum('pki,pkj->pij', G, G), numpy.einsum('pij,pi->pj', G, a)[...,numpy.newaxis])[...,0])), POS(2, 3, 1), ANY(2, 3))
 _check('loopsum1', lambda: evaluable.loop_sum(evaluable.loop_index('index', 3), evaluable.loop_index('index', 3)), lambda: numpy.array(3))
 _check('loopsum2', lambda a: evaluable.loop_sum(a, evaluable.loop_index('index', 2)), lambda a: 2*a, ANY(3, 4, 2, 4))
-_check('loopsum3', lambda a: evaluable.loop_sum(evaluable.get(a, 0, evaluable.loop_index('index', 3)), evaluable.loop_index('index', 3)), lambda a: numpy.sum(a, 0), ANY(3, 4, 2, 4))
+_check('loopsum3', lambda a: evaluable.loop_sum(evaluable.get(a, 0, evaluable.loop_index('index', 3)), evaluable.loop_index('index', 3)), lambda a: numpy.sum(a, 0), ANY(3, 4, 2, 4) + 10 * numpy.eye(4)[:,numpy.newaxis])
 _check('loopsum4', lambda: evaluable.loop_sum(evaluable.Inflate(evaluable.loop_index('index', 3), evaluable.constant(0), evaluable.constant(2)), evaluable.loop_index('index', 3)), lambda: numpy.array([3, 0]))
 _check('loopsum5', lambda: evaluable.loop_sum(evaluable.loop_index('index', 1), evaluable.loop_index('index', 1)), lambda: numpy.array(0))
 _check('loopsum6', lambda: evaluable.loop_sum(evaluable.Guard(evaluable.constant(1) + evaluable.loop_index('index', 4)), evaluable.loop_index('index', 4)) * evaluable.loop_sum(evaluable.loop_index('index', 4), evaluable.loop_index('index', 4)), lambda: numpy.array(60))
@@ -611,26 +611,26 @@ class compile(TestCase):
     def test_array_arg(self):
         a = evaluable.Argument('a', (), int)
         f = evaluable.compile(a)
-        self.assertEqual(f(a=1), 1)
+        self.assertEqual(f(dict(a=1)), 1)
 
     def test_tuple_arg(self):
         a = evaluable.Argument('a', (), int)
         b = evaluable.Argument('b', (), int)
         f = evaluable.compile((a, b))
-        self.assertEqual(f(a=1, b=2), (1, 2))
+        self.assertEqual(f(dict(a=1, b=2)), (1, 2))
 
     def test_nested_arg(self):
         a = evaluable.Argument('a', (), int)
         b = evaluable.Argument('b', (), int)
         c = evaluable.Argument('c', (), int)
         f = evaluable.compile((a, (b, c)))
-        self.assertEqual(f(a=1, b=2, c=3), (1, (2, 3)))
+        self.assertEqual(f(dict(a=1, b=2, c=3)), (1, (2, 3)))
 
     def test_stats(self):
         a = evaluable.Argument('a', (), int)
         f = evaluable.compile(a, stats='log')
         with self.assertLogs('nutils', logging.INFO) as cm:
-            f(a=1)
+            f(dict(a=1))
             self.assertTrue(cm.output[0].startswith('INFO:nutils:total time:'))
 
 
@@ -862,7 +862,7 @@ class elemwise(TestCase):
         index = evaluable.Argument('index', (), int)
         elemwise = evaluable.compile(evaluable.Elemwise(items, index, int))
         for i, item in enumerate(items):
-            self.assertEqual(elemwise(index=i).tolist(), numpy.asarray(item).tolist())
+            self.assertEqual(elemwise(dict(index=i)).tolist(), numpy.asarray(item).tolist())
 
     def test_const_values(self):
         self.assertElemwise((numpy.arange(2*3*4).reshape(2, 3, 4),)*3)
@@ -1395,7 +1395,7 @@ class factor(TestCase):
                 F = evaluable.compile(functools.reduce(evaluable.derivative, deriv_args, orig))
                 G = evaluable.compile(functools.reduce(evaluable.derivative, deriv_args, factored))
                 for eval_args in testing_grid:
-                    self.assertAllAlmostEqual(F(**eval_args), G(**eval_args))
+                    self.assertAllAlmostEqual(F(eval_args), G(eval_args))
 
     def test_linear(self):
         self.assertFactoredEqual(1. + self.v, v=1)

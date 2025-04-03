@@ -155,7 +155,7 @@ class Sample(types.Singleton):
         raise NotImplementedError
 
     @util.single_or_multiple
-    def integrate(self, funcs, /, **arguments):
+    def integrate(self, funcs, /, arguments=None, *, legacy=None, **kwargs):
         '''Integrate functions.
 
         Args
@@ -166,10 +166,50 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function._legacy_eval([self.integral(func) for func in funcs], **arguments)
+        if any(isinstance(func, function.Array) and func.ndim > 1 for func in funcs) and legacy is None:
+            warnings.deprecation(
+                'Sample integration of arrays of dimension 2 or higher is going '
+                'to change in Nutils 10. Instead of evaluating 2D arrays as '
+                'sparse matrices, and 3D and higher as sparse array objects, '
+                'integration will be dense by default, with sparse evaluation '
+                'available via function.eval and Sample.integral, combined with '
+                'the function.as_csr and function.as_coo modifiers. To make this '
+                'transition, a new "legacy" argument is introduced that can be '
+                'set to True to explicitly request the old behaviour (and '
+                'suppress this warning), and to False to switch to dense '
+                'evaluation.', stacklevel=3)
+            legacy = True
+
+        if arguments is None:
+            if kwargs:
+                warnings.deprecation(
+                    'providing evaluation arguments as keyword arguments is '
+                    'deprecated, please use the "arguments" parameter instead',
+                    stacklevel=3)
+            arguments = kwargs
+        elif kwargs:
+            raise ValueError('invalid argument {list(kwargs)[0]!r}')
+
+        arrays = function.eval([func if not legacy or not isinstance(func, function.Array) or func.ndim < 2
+                  else function.as_csr(func) if func.ndim == 2
+                  else function.as_coo(func) for func in map(self.integral, funcs)], arguments)
+
+        for func, data in zip(funcs, arrays):
+            if legacy and isinstance(func, function.Array):
+                if func.ndim == 0:
+                    data = data[()]
+                elif func.ndim == 2:
+                    values, rowptr, colidx = data
+                    from . import matrix
+                    data = matrix.assemble_csr(values, rowptr, colidx, func.shape[1])
+                elif func.ndim > 2:
+                    values, *indices = data
+                    from . import sparse
+                    data = sparse.compose(indices, values, func.shape)
+            yield data
 
     @util.single_or_multiple
-    def integrate_sparse(self, funcs, /, **arguments):
+    def integrate_sparse(self, funcs, /, arguments=None, **kwargs):
         '''Integrate functions into sparse data.
 
         Args
@@ -180,8 +220,24 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
+        warnings.deprecation(
+            'Sample.integrate_sparse is deprecated and will be removed in '
+            'Nutils 10; please use a combination of function.eval, '
+            'Sample.integral, and function.as_coo or function.as_csr instead.',
+            stacklevel=3)
+
+        if arguments is None:
+            if kwargs:
+                warnings.deprecation(
+                    'providing evaluation arguments as keyword arguments is '
+                    'deprecated, please use the "arguments" parameter instead',
+                    stacklevel=3)
+            arguments = kwargs
+        elif kwargs:
+            raise ValueError('invalid argument {list(kwargs)[0]!r}')
+
         from . import sparse
-        arrays = function.eval([function.as_coo(self.integral(func)) for func in funcs], **arguments)
+        arrays = function.eval([function.as_coo(self.integral(func)) for func in funcs], arguments)
         return [sparse.compose(indices, values, func.shape) for func, (values, *indices) in zip(funcs, arrays)]
 
     @util.nutils_dispatch
@@ -200,7 +256,7 @@ class Sample(types.Singleton):
         return self._integral(function.Array.cast(__func))
 
     @util.single_or_multiple
-    def eval(self, funcs, /, **arguments):
+    def eval(self, funcs, /, arguments=None, **kwargs):
         '''Evaluate function.
 
         Args
@@ -211,10 +267,20 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function.eval([self.bind(func) for func in funcs], **arguments)
+        if arguments is None:
+            if kwargs:
+                warnings.deprecation(
+                    'providing evaluation arguments as keyword arguments is '
+                    'deprecated, please use the "arguments" parameter instead',
+                    stacklevel=3)
+            arguments = kwargs
+        elif kwargs:
+            raise ValueError('invalid argument {list(kwargs)[0]!r}')
+
+        return function.eval([self.bind(func) for func in funcs], arguments)
 
     @util.single_or_multiple
-    def eval_sparse(self, funcs, /, **arguments):
+    def eval_sparse(self, funcs, arguments=None, /, **kwargs):
         '''Evaluate function.
 
         Args
@@ -225,7 +291,24 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function.evaluate(*map(self, funcs), _post=lambda x: x, arguments=arguments)
+        warnings.deprecation(
+            'Sample.eval_sparse is deprecated and will be removed in Nutils 10; '
+            'please use function.eval along with Sample.bind and function.as_coo '
+            'or (if 2D) function.as_csr instead', stacklevel=3)
+
+        if arguments is None:
+            if kwargs:
+                warnings.deprecation(
+                    'providing evaluation arguments as keyword arguments is '
+                    'deprecated, please use the "arguments" parameter instead',
+                    stacklevel=3)
+            arguments = kwargs
+        elif kwargs:
+            raise ValueError('invalid argument {list(kwargs)[0]!r}')
+
+        from . import sparse
+        for func, (values, *indices) in zip(funcs, function.eval([function.as_coo(self.bind(func)) for func in funcs], arguments)):
+            yield sparse.compose(indices, values, (self.npoints, *func.shape))
 
     def _integral(self, func: function.Array) -> function.Array:
         '''Create Integral object for postponed integration.
@@ -380,9 +463,9 @@ class Sample(types.Singleton):
         integrals involving any but the first sample's geometry scale incorrectly.
 
         >>> zipped.integrate(function.J(geom1)) # correct
-        1.0
+        array(1.0)
         >>> zipped.integrate(function.J(geom2)) # wrong (expected 1)
-        1.4±1e-10
+        array(1.4)
 
         Args
         ----
@@ -937,7 +1020,7 @@ class _Integral(function.Array):
     def __init__(self, integrand: function.Array, sample: Sample) -> None:
         self._integrand = integrand
         self._sample = sample
-        super().__init__(shape=integrand.shape, dtype=float if integrand.dtype in (bool, int) else integrand.dtype, spaces=integrand.spaces - frozenset(sample.spaces), arguments=integrand._arguments)
+        super().__init__(shape=integrand.shape, dtype=float if integrand.dtype in (bool, int) else integrand.dtype, spaces=integrand.spaces - frozenset(sample.spaces), arguments=integrand.arguments)
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
@@ -952,7 +1035,7 @@ class _ConcatenatePoints(function.Array):
     def __init__(self, func: function.Array, sample: _TransformChainsSample) -> None:
         self._func = func
         self._sample = sample
-        super().__init__(shape=(sample.npoints, *func.shape), dtype=func.dtype, spaces=func.spaces - frozenset(sample.spaces), arguments=func._arguments)
+        super().__init__(shape=(sample.npoints, *func.shape), dtype=func.dtype, spaces=func.spaces - frozenset(sample.spaces), arguments=func.arguments)
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         axis = len(args.points_shape)
@@ -972,7 +1055,7 @@ class _ReorderPoints(function.Array):
         self._func = func
         self._indices = indices
         assert indices.ndim == 1 and func.shape[0] == indices.shape[0].__index__()
-        super().__init__(shape=func.shape, dtype=func.dtype, spaces=func.spaces, arguments=func._arguments)
+        super().__init__(shape=func.shape, dtype=func.dtype, spaces=func.spaces, arguments=func.arguments)
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         func = self._func.lower(args)

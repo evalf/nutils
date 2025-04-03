@@ -62,7 +62,7 @@ def main(nelems: int = 20,
 
     energy = domain.integral('energy dV' @ ns, degree=degree*2)
     args0 = System(energy, trial='u').solve(constrain=cons)
-    x, energy = bezier.eval(['x_i', 'energy'] @ ns, **args0)
+    x, energy = bezier.eval(['x_i', 'energy'] @ ns, args0)
     export.triplot('linear.png', x, energy, tri=bezier.tri, hull=bezier.hull, cmap='jet')
 
     ns.ε_ij = '.5 (∇_j(u_i) + ∇_i(u_j) + ∇_i(u_k) ∇_j(u_k))'
@@ -70,7 +70,7 @@ def main(nelems: int = 20,
 
     energy = domain.integral('energy dV' @ ns, degree=degree*2)
     args1 = System(energy, trial='u').solve(arguments=args0, constrain=cons, method=Minimize(), tol=restol)
-    x, energy = bezier.eval(['x_i', 'energy'] @ ns, **args1)
+    x, energy = bezier.eval(['x_i', 'energy'] @ ns, args1)
     export.triplot('nonlinear.png', x, energy, tri=bezier.tri, hull=bezier.hull, cmap='jet')
 
     return args0['u'], args1['u']

@@ -13,12 +13,12 @@ class NutilsInefficiencyWarning(NutilsWarning):
     'Warning about inefficient runtime.'
 
 
-def warn(message, category=NutilsWarning, stacklevel=1):
-    warnings.warn(message, category, stacklevel=stacklevel)
+def warn(message, category=NutilsWarning, stacklevel=2):
+    warnings.warn(message, category, stacklevel=stacklevel+1)
 
 
-def deprecation(message):
-    warnings.warn(message, NutilsDeprecationWarning, stacklevel=2)
+def deprecation(message, stacklevel=2):
+    warnings.warn(message, NutilsDeprecationWarning, stacklevel=stacklevel+1)
 
 
 @contextlib.contextmanager

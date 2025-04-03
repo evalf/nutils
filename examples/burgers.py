@@ -62,7 +62,7 @@ def main(nelems: int = 40,
     with log.iter.plain('timestep', itertools.count()) as steps:
         for _ in steps:
             log.info('time:', round(args['t'], 10))
-            x, u = bezier.eval(['x', 'u'] @ ns, **args)
+            x, u = bezier.eval(['x', 'u'] @ ns, args)
             export.triplot('solution.png', x[:,numpy.newaxis], u, tri=bezier.tri, hull=bezier.hull, clim=(0, 1))
             if args['t'] >= endtime:
                 break

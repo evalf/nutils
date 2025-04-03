@@ -376,13 +376,13 @@ class Topology:
             if 'name' not in kwargs:
                 raise TypeError("basis() missing 1 required positional argument: 'btype'")
             btype = kwargs.pop('name')
-            warnings.deprecation("the basis type parameter has been renamed from 'name' to 'btype', please update your code")
+            warnings.deprecation("the basis type parameter has been renamed from 'name' to 'btype', please update your code", stacklevel=3)
 
         if __degree is not None:
             if 'degree' in kwargs:
                 raise TypeError("basis() got multiple values for argument 'degree'")
             kwargs['degree'] = __degree
-            warnings.deprecation('the degree parameter must be specified as a keyword argument, please update your code')
+            warnings.deprecation('the degree parameter must be specified as a keyword argument, please update your code', stacklevel=3)
 
         if self.ndims == 0:
             return function.PlainBasis([[[1]]], [[0]], 1, self.f_index, self.f_coords)
@@ -418,8 +418,10 @@ class Topology:
     def integrate_elementwise(self, funcs: Iterable[function.Array], *, degree: int, asfunction: bool = False, ischeme: str = 'gauss', arguments: Optional[_ArgDict] = None) -> Union[List[numpy.ndarray], List[function.Array]]:
         'element-wise integration'
 
-        retvals = [sparse.toarray(retval) for retval in self.sample(ischeme, degree).integrate_sparse(
-            [function.kronecker(func, pos=self.f_index, length=len(self), axis=0) for func in funcs], arguments=arguments)]
+        retvals = self.sample(ischeme, degree).integrate(
+            [function.kronecker(func, pos=self.f_index, length=len(self), axis=0) for func in funcs],
+            legacy=False,
+            arguments=arguments)
         if asfunction:
             return [function.get(retval, 0, self.f_index) for retval in retvals]
         else:
@@ -435,13 +437,14 @@ class Topology:
         return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
     @single_or_multiple
-    def integrate(self, funcs: Iterable[function.IntoArray], ischeme: str = 'gauss', degree: Optional[int] = None, edit=None, *, arguments: Optional[_ArgDict] = None) -> Tuple[numpy.ndarray, ...]:
+    def integrate(self, funcs: Iterable[function.IntoArray], ischeme: str = 'gauss', degree: Optional[int] = None, edit=None, *, arguments: Optional[_ArgDict] = None, legacy=None) -> Tuple[numpy.ndarray, ...]:
         'integrate functions'
 
         ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
         if edit is not None:
+            warnings.warn('the "edit" argument of Topology.integrate will be removed in Nutils 10')
             funcs = [edit(func) for func in funcs]
-        return self.sample(ischeme, degree).integrate(funcs, **arguments or {})
+        return self.sample(ischeme, degree).integrate(funcs, legacy=legacy, arguments=arguments or {})
 
     def integral(self, func: function.IntoArray, ischeme: str = 'gauss', degree: Optional[int] = None, edit=None) -> function.Array:
         'integral'
@@ -490,7 +493,7 @@ class Topology:
                 raise Exception
             assert fun2.ndim == 0
             J = function.J(geometry)
-            A, b, f2, area = self.integrate([Afun*J, bfun*J, fun2*J, J], ischeme=ischeme, edit=edit, arguments=arguments)
+            A, b, f2, area = self.integrate([Afun*J, bfun*J, fun2*J, J], ischeme=ischeme, edit=edit, arguments=arguments, legacy=True)
             N = A.rowsupp(droptol)
             if numpy.equal(b, 0).all():
                 constrain[~constrain.where & N] = 0
@@ -842,9 +845,9 @@ class Topology:
         '''
 
         if ischeme is not None:
-            warnings.deprecation('the ischeme argument for locate is no longer used and will be removed in Nutils 10')
+            warnings.deprecation('the ischeme argument for locate is no longer used and will be removed in Nutils 10', stacklevel=4)
         if scale is not None:
-            warnings.deprecation('the scale argument for locate is no longer used and will be removed in Nutils 10')
+            warnings.deprecation('the scale argument for locate is no longer used and will be removed in Nutils 10', stacklevel=4)
         if max(tol, eps) <= 0:
             raise ValueError('locate requires either tol or eps to be strictly positive')
         coords = numpy.asarray(coords, dtype=float)
@@ -859,7 +862,7 @@ class Topology:
         return self._sample(ielems, points, weights)
 
     def _locate(self, geom, coords, tol, eps, arguments, maxiter, maxdist, skip_missing):
-        centroids = self.sample('_centroid', None).eval(geom, **arguments)
+        centroids = self.sample('_centroid', None).eval(geom, arguments)
         assert len(centroids) == len(self)
         ielems = parallel.shempty(len(coords), dtype=int)
         points = parallel.shempty((len(coords), self.ndims), dtype=float)
@@ -886,7 +889,7 @@ class Topology:
                         if iiter > maxiter > 0:
                             break  # maximum number of iterations reached
                         iiter += 1
-                        xp, Jp = xJ(**arguments)
+                        xp, Jp = xJ(arguments)
                         dx = xt - xp
                         ex0 = ex
                         ex = numpy.linalg.norm(dx)
@@ -1625,7 +1628,7 @@ class TransformChainsTopology(Topology):
             levelset = evaluable.compile(levelset.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), ielem_arg, coordinates)), stats=False)
             with log.iter.percentage('trimming', range(len(self)), self.references) as items:
                 for ielem, ref in items:
-                    levels = levelset(_trim_index=ielem, **arguments)
+                    levels = levelset(dict(arguments, _trim_index=ielem))
                     if numpy.isnan(levels).any():
                         raise Exception('levelset function evaluated to NaN values')
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
@@ -1661,7 +1664,7 @@ class TransformChainsTopology(Topology):
                             coordinates = leveltopo.references.getpoints('vertex', degree).get_evaluable_coords(ielem_arg)
                             lower_args = function.LowerArgs.for_space(self.space, (leveltopo.transforms, leveltopo.opposites), ielem_arg, coordinates)
                             lowered_levelset[degree] = evaluable.compile(levelset.lower(lower_args), stats=False)
-                        levels[indices] = lowered_levelset[degree](_ielem=ielem, **arguments)
+                        levels[indices] = lowered_levelset[degree](dict(arguments, _ielem=ielem))
                         mask[indices] = False
                     if numpy.isnan(levels).any():
                         raise Exception('levelset function evaluated to NaN values')
@@ -2392,7 +2395,7 @@ class StructuredTopology(TransformChainsTopology):
         # determine geom0, scale, error such that geom ~= geom0 + index * scale + error
         n = 2 + (1 in self.shape) # number of sample points required to establish nonlinearity
         sampleshape = numpy.multiply(self.shape, n) # shape of uniform sample
-        geom_ = self.sample('uniform', n).eval(geom, **arguments) \
+        geom_ = self.sample('uniform', n).eval(geom, arguments) \
             .reshape(*self.shape, *[n] * self.ndims, self.ndims) \
             .transpose(*(i+j for i in range(self.ndims) for j in (0, self.ndims)), self.ndims*2) \
             .reshape(*sampleshape, self.ndims)

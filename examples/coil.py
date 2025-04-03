@@ -134,7 +134,7 @@ def main(nelems: int = 50,
         # Magnetic vector potential. `r < 0` is the imaginary part, `r > 0` the
         # real part.
         smpl = REV0 * RZ[:-1, :-1].sample('bezier', 5)
-        r, z, A, Bmag = smpl.eval(['r', 'z', 'A_1', 'sqrt(real(B_i) real(B_i)) + sqrt(imag(B_i) imag(B_i)) j'] @ ns, **args)
+        r, z, A, Bmag = smpl.eval(['r', 'z', 'A_1', 'sqrt(real(B_i) real(B_i)) + sqrt(imag(B_i) imag(B_i)) j'] @ ns, args)
         Amax = abs(A).max()
         Bmax = abs(Bmag).max()
         levels = numpy.linspace(-Amax, Amax, 32)[1:-1]
@@ -153,7 +153,7 @@ def main(nelems: int = 50,
         # Current density (wires only). `r < 0` is the imaginary part, `r > 0` the
         # real part.
         smpl = REV0 * RZ['coil'].sample('bezier', 5)
-        r, z, J = smpl.eval(['r', 'z', 'J_1'] @ ns, **args)
+        r, z, J = smpl.eval(['r', 'z', 'J_1'] @ ns, args)
         Jmax = abs(J).max()
         r = numpy.concatenate([r, r], axis=0)
         z = numpy.concatenate([z, -z], axis=0)
@@ -184,7 +184,7 @@ def main(nelems: int = 50,
         # Reference: https://physics.stackexchange.com/a/355183
         ns.Bexact = ns.δ[2] * ns.μ0 * ns.I * ns.rcoil**2 / 2 * ((ns.rcoil**2 + (ns.z - ns.zwires)**2)**(-3/2)).sum()
         smpl = REV0 * RZ[:-1, :-1].boundary['left'].sample('bezier', 5)
-        B, Bexact, z = smpl.eval(['real(B_2)', 'Bexact_2', 'z'] @ ns, **args)
+        B, Bexact, z = smpl.eval(['real(B_2)', 'Bexact_2', 'z'] @ ns, args)
         z = numpy.concatenate([-z[::-1], z])
         B = numpy.concatenate([B[::-1], B])
         Bexact = numpy.concatenate([Bexact[::-1], Bexact])

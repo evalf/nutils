@@ -44,14 +44,14 @@ class Common:
         assert len(self.desired_indices) == self.desired_nelems
         actual = evaluable.compile(self.sample.get_evaluable_indices(evaluable.Argument('ielem', (), int)))
         for ielem, desired in enumerate(self.desired_indices):
-            self.assertEqual(actual(ielem=ielem).tolist(), desired)
+            self.assertEqual(actual(dict(ielem=ielem)).tolist(), desired)
 
     def test_get_evaluable_weights(self):
         assert len(self.desired_points) == self.desired_nelems
         actual = evaluable.compile(self.sample.get_evaluable_weights(evaluable.Argument('ielem', (), int)))
         for ielem, points in enumerate(self.desired_points):
             desired = functools.reduce(lambda l, r: numpy.einsum('...,i->...i', l, r), (p.weights for p in points))
-            self.assertAllAlmostEqual(actual(ielem=ielem).tolist(), desired.tolist())
+            self.assertAllAlmostEqual(actual(dict(ielem=ielem)).tolist(), desired.tolist())
 
     def test_get_lower_args(self):
         assert len(self.desired_transform_chains) == len(self.desired_points) == self.desired_nelems
@@ -60,7 +60,7 @@ class Common:
         for ielem, (desired_chains, desired_points) in enumerate(zip(self.desired_transform_chains, self.desired_points)):
             assert len(desired_chains) == len(desired_points) == len(self.desired_spaces)
             desired_shape = tuple(p.coords.shape[0] for p in desired_points)
-            self.assertEqual(tuple(n.__index__() for n in actual_shape(ielem=ielem)), desired_shape)
+            self.assertEqual(tuple(n.__index__() for n in actual_shape(dict(ielem=ielem))), desired_shape)
             offset = 0
             for space, desired_chain, desired_point in zip(self.desired_spaces, desired_chains, desired_points):
                 (chain, *_), index = args.transform_chains[space]
@@ -545,7 +545,7 @@ class integral(TestCase):
         self.topo, self.ns.x = mesh.rectilinear([5])
         self.ns.basis = self.topo.basis('std', degree=1)
         self.ns.v = 'basis_n ?lhs_n'
-        self.lhs = numpy.sin(numpy.arange(len(self.ns.basis)))
+        self.args = {'lhs': numpy.sin(numpy.arange(len(self.ns.basis)))}
 
     def test_eval(self):
         self.assertAllAlmostEqual(
@@ -555,24 +555,24 @@ class integral(TestCase):
 
     def test_args(self):
         self.assertAlmostEqual(
-            self.topo.integrate('v d:x' @ self.ns, degree=2, arguments=dict(lhs=self.lhs)),
-            self.topo.integral('v d:x' @ self.ns, degree=2).eval(lhs=self.lhs),
+            self.topo.integrate('v d:x' @ self.ns, degree=2, arguments=self.args),
+            self.topo.integral('v d:x' @ self.ns, degree=2).eval(self.args),
             places=15)
 
     def test_derivative(self):
         self.assertAllAlmostEqual(
-            self.topo.integrate('2 basis_n v d:x' @ self.ns, degree=2, arguments=dict(lhs=self.lhs)),
-            self.topo.integral('v^2 d:x' @ self.ns, degree=2).derivative('lhs').eval(lhs=self.lhs),
+            self.topo.integrate('2 basis_n v d:x' @ self.ns, degree=2, arguments=self.args),
+            self.topo.integral('v^2 d:x' @ self.ns, degree=2).derivative('lhs').eval(self.args),
             places=15)
 
     def test_transpose(self):
         self.assertAllAlmostEqual(
-            self.topo.integrate(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).export('dense').T,
-            self.topo.integral(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).T.eval().export('dense'),
+            self.topo.integrate(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2, legacy=False).T,
+            self.topo.integral(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).T.eval(legacy=False),
             places=15)
 
     def test_empty(self):
         shape = 2, 3
         empty = function.zeros(shape, float)
-        array = empty.eval().export('dense')
+        array = empty.eval(legacy=False)
         self.assertAllEqual(array, numpy.zeros((2, 3)))

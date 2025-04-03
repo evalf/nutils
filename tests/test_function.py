@@ -92,7 +92,7 @@ class integral_compatibility(TestCase):
     def test_eval(self):
         v = numpy.array([1, 2])
         a = function.Argument('a', (2,), dtype=float)
-        self.assertAllAlmostEqual(a.eval(a=v), v)
+        self.assertAllAlmostEqual(a.eval(dict(a=v)), v)
 
     def test_derivative(self):
         v = numpy.array([1, 2])
@@ -100,7 +100,7 @@ class integral_compatibility(TestCase):
         f = 2*a.sum()
         for name, obj in ('str', 'a'), ('argument', a):
             with self.subTest(name):
-                self.assertAllAlmostEqual(f.derivative(obj).eval(a=v), numpy.array([2, 2]))
+                self.assertAllAlmostEqual(f.derivative(obj).eval(dict(a=v)), numpy.array([2, 2]))
 
     def test_derivative_str_unknown_argument(self):
         f = function.zeros((2,), dtype=float)
@@ -117,7 +117,7 @@ class integral_compatibility(TestCase):
         a = function.Argument('a', (2,), dtype=int)
         b = function.Argument('b', (2,), dtype=int)
         f = a.replace(dict(a=b))
-        self.assertAllAlmostEqual(f.eval(b=v), v)
+        self.assertAllAlmostEqual(f.eval(dict(b=v)), v)
 
     def test_contains(self):
         f = 2*function.Argument('a', (2,), dtype=int)
@@ -419,11 +419,11 @@ class Unlower(TestCase):
 
     def test(self):
         e = evaluable.Argument('arg', tuple(map(evaluable.constant, (2, 3, 4, 5))), int)
-        arguments = {'arg': ((2, 3), int)}
+        arguments = types.frozendict({'arg': ((2, 3), int)})
         f = function._Unlower(e, frozenset(), arguments, function.LowerArgs((2, 3), {}, {}))
         self.assertEqual(f.shape, (4, 5))
         self.assertEqual(f.dtype, int)
-        self.assertEqual(f._arguments, arguments)
+        self.assertEqual(f.arguments, arguments)
         self.assertEqual(f.lower(function.LowerArgs((2, 3), {}, {})), e)
         with self.assertRaises(ValueError):
             f.lower(function.LowerArgs((3, 4), {}, {}))
@@ -873,15 +873,15 @@ class jacobian(TestCase):
         self.assertEqual(self.dJ.shape, (4,))
 
     def test_value(self):
-        values = self.domain.sample('uniform', 2).eval(self.J, dofs=[2]*4)
+        values = self.domain.sample('uniform', 2).eval(self.J, dict(dofs=[2]*4))
         numpy.testing.assert_almost_equal(values, [2]*4)
         values1, values2 = self.domain.sample('uniform', 2).eval([self.J,
-                                                                  self.v + self.v.grad(self.geom)[0] * self.geom[0]], dofs=[1, 2, 3, 10])
+                                                                  self.v + self.v.grad(self.geom)[0] * self.geom[0]], dict(dofs=[1, 2, 3, 10]))
         numpy.testing.assert_almost_equal(values1, values2)
 
     def test_derivative(self):
         values1, values2 = self.domain.sample('uniform', 2).eval([self.dJ,
-                                                                  self.basis + self.basis.grad(self.geom)[:, 0] * self.geom[0]], dofs=[1, 2, 3, 10])
+                                                                  self.basis + self.basis.grad(self.geom)[:, 0] * self.geom[0]], dict(dofs=[1, 2, 3, 10]))
         numpy.testing.assert_almost_equal(values1, values2)
 
     def test_zeroderivative(self):
@@ -1316,7 +1316,7 @@ class CommonBasis:
         with _builtin_warnings.catch_warnings():
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
             for ielem in range(self.checknelems):
-                value = lowered(ielem=ielem)
+                value = lowered(dict(ielem=ielem))
                 if value.shape[0] == 1:
                     value = numpy.tile(value, (points.npoints, 1))
                 self.assertAllAlmostEqual(value, self.checkeval(ielem, points))
@@ -1514,13 +1514,13 @@ class Eval(TestCase):
 
     def test_single(self):
         f = function.field('v', numpy.array([1, 2, 3]))
-        retval = function.eval(f, v=numpy.array([4, 5, 6]))
+        retval = function.eval(f, dict(v=numpy.array([4, 5, 6])))
         self.assertEqual(retval, 4+10+18)
 
     def test_multiple(self):
         f = function.field('v', numpy.array([1, 2, 3]))
         g = function.field('v', numpy.array([3, 2, 1]))
-        retvals = function.eval([f, g], v=numpy.array([4, 5, 6]))
+        retvals = function.eval([f, g], dict(v=numpy.array([4, 5, 6])))
         self.assertEqual(retvals, (4+10+18, 12+10+6))
 
 
@@ -1533,7 +1533,7 @@ class linearize(TestCase):
         _u = numpy.arange(3, dtype=float)[:,numpy.newaxis].repeat(4, 1)
         _v = numpy.arange(4, dtype=float)[numpy.newaxis,:].repeat(3, 0)
         _q = 5.
-        self.assertAllEqual(f.eval(u=_u, v=_v, q=_q).export('dense'), 3 * _u**2 * _v + _q)
+        self.assertAllEqual(f.eval(dict(u=_u, v=_v, q=_q), legacy=False), 3 * _u**2 * _v + _q)
 
     def test_complex(self):
         f = function.linearize(function.Argument('u', shape=(3, 4), dtype=complex)**3
@@ -1542,7 +1542,7 @@ class linearize(TestCase):
         _u = numpy.array([1+2j, 3+4j, 5+6j])[:,numpy.newaxis].repeat(4, 1)
         _v = numpy.array([5+1j, 6+2j, 7+3j, 8+4j])[numpy.newaxis,:].repeat(3, 0)
         _q = 5.
-        self.assertAllEqual(f.eval(u=_u, v=_v, q=_q).export('dense'), 3 * _u**2 * _v + _q)
+        self.assertAllEqual(f.eval(dict(u=_u, v=_v, q=_q), legacy=False), 3 * _u**2 * _v + _q)
 
 
 class attributes(TestCase):
@@ -1559,7 +1559,7 @@ class factor(TestCase):
     def test_lower_with_points(self):
         topo, geom = mesh.rectilinear([3])
         f = function.field('dof')
-        v = topo.sample('uniform', 1).eval(function.factor(f**2) * geom[0], dof=2.)
+        v = topo.sample('uniform', 1).eval(function.factor(f**2) * geom[0], dict(dof=2.))
         self.assertAllAlmostEqual(v, [2, 6, 10])
 
     def test_constant(self):
