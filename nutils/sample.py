@@ -1023,7 +1023,7 @@ class _Integral(function.Array):
         super().__init__(shape=integrand.shape, dtype=float if integrand.dtype in (bool, int) else integrand.dtype, spaces=integrand.spaces - frozenset(sample.spaces), arguments=integrand.arguments)
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
-        ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
+        ielem = evaluable.loop_index('_sample_{}_{}'.format(len(args.points_shape), '_'.join(self._sample.spaces)), self._sample.nelems)
         weights = evaluable.astype(self._sample.get_evaluable_weights(ielem), self.dtype)
         integrand = evaluable.astype(self._integrand.lower(args | self._sample.get_lower_args(ielem)), self.dtype)
         elem_integral = evaluable.einsum('B,ABC->AC', weights, integrand, B=weights.ndim, C=self.ndim)
@@ -1039,7 +1039,7 @@ class _ConcatenatePoints(function.Array):
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         axis = len(args.points_shape)
-        ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
+        ielem = evaluable.loop_index('_sample_{}_{}'.format(len(args.points_shape), '_'.join(self._sample.spaces)), self._sample.nelems)
         args |= self._sample.get_lower_args(ielem)
         func = self._func.lower(args)
         func = evaluable.Transpose.to_end(func, *range(axis, len(args.points_shape)))
