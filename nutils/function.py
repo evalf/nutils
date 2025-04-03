@@ -53,6 +53,12 @@ class LowerArgs(NamedTuple):
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
         return cls(coordinates.shape[:-1], {space: (transforms, index)}, {space: coordinates})
 
+    @property
+    def without_points(self) -> 'LowerArgs':
+        'A copy of the :class:`LowerArgs` without points (empty shape and coordinates).'
+
+        return LowerArgs((), self.transform_chains, {})
+
     def __or__(self, other: 'LowerArgs') -> 'LowerArgs':
         duplicates = set(self.transform_chains) & set(other.transform_chains)
         if duplicates:
@@ -892,7 +898,7 @@ class _WithoutPoints:
         self.arguments = __arg.arguments
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
-        return self._arg.lower(LowerArgs((), args.transform_chains, {}))
+        return self._arg.lower(args.without_points)
 
 
 class _Wrapper(Array):
@@ -978,7 +984,7 @@ class _Replace(Array):
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         arg = self._arg.lower(args)
-        replacements = {name: _WithoutPoints(value).lower(args) for name, value in self._replacements.items()}
+        replacements = {name: value.lower(args.without_points) for name, value in self._replacements.items()}
         return evaluable.replace_arguments(arg, replacements)
 
 
@@ -2678,7 +2684,7 @@ class Basis(Array):
         return evaluable.compile(self._arg_ndofs_evaluable)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
-        index = _WithoutPoints(self.index).lower(args)
+        index = self.index.lower(args.without_points)
         dofs, coeffs = self.f_dofs_coeffs(index)
         coords = self.coords.lower(args)
         return evaluable.Inflate(evaluable.Polyval(coeffs, coords), dofs, evaluable.constant(self.ndofs))
@@ -2902,7 +2908,7 @@ class LegendreBasis(Basis):
         return dofs, evaluable.astype(evaluable.asarray(coeffs), float)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
-        index = _WithoutPoints(self.index).lower(args)
+        index = self.index.lower(args.without_points)
         coords = self.coords.lower(args)
         leg = evaluable.Legendre(evaluable.get(coords, coords.ndim-1, evaluable.constant(0)) * 2. - 1., self._degree)
         dofs = evaluable.Range(evaluable.constant(self._degree+1)) + index * (self._degree+1)
