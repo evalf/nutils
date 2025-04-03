@@ -6532,6 +6532,7 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
         yield sparse.compose(indices, values, shape)
 
 
+@log.withcontext
 def eval_once(func: AsEvaluableArray, *, stats: typing.Optional[str] = None, arguments: typing.Mapping[str, numpy.ndarray] = {}, _simplify: bool = True, _optimize: bool = True) -> typing.Tuple[numpy.ndarray, ...]:
     '''Evaluate one or several Array objects by compiling it for single use.
 
