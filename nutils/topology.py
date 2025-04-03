@@ -866,7 +866,7 @@ class Topology:
         assert len(centroids) == len(self)
         ielems = parallel.shempty(len(coords), dtype=int)
         points = parallel.shempty((len(coords), self.ndims), dtype=float)
-        _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
+        _ielem = evaluable.InRange(evaluable.Argument('_locate_ielem', shape=(), dtype=int), evaluable.constant(len(centroids)))
         _point = evaluable.Argument('_locate_point', shape=(evaluable.constant(self.ndims),))
         egeom = geom.lower(self._lower_args(_ielem, _point))
         xJ = evaluable.compile((egeom, evaluable.derivative(egeom, _point)), stats=False)
@@ -1623,7 +1623,7 @@ class TransformChainsTopology(Topology):
 
         refs = []
         if leveltopo is None:
-            ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
+            ielem_arg = evaluable.InRange(evaluable.Argument('_trim_index', (), dtype=int), evaluable.constant(len(self)))
             coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
             levelset = evaluable.compile(levelset.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), ielem_arg, coordinates)), stats=False)
             with log.iter.percentage('trimming', range(len(self)), self.references) as items:

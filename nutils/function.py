@@ -2658,7 +2658,7 @@ class Basis(Array):
         arguments = _join_arguments((index.arguments, coords.arguments))
         super().__init__((ndofs,), float, spaces=index.spaces | coords.spaces, arguments=arguments)
 
-        _index = evaluable.Argument('_index', shape=(), dtype=int)
+        _index = evaluable.InRange(evaluable.Argument('_index', shape=(), dtype=int), evaluable.constant(self.nelems))
         self._arg_dofs_evaluable, self._arg_coeffs_evaluable = self.f_dofs_coeffs(_index)
         self._arg_ndofs_evaluable = evaluable.asarray(self._arg_dofs_evaluable.shape[0])
         assert self._arg_dofs_evaluable.ndim == 1

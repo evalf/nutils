@@ -188,7 +188,7 @@ class check(TestCase):
                 indices = [0, sh-1]
                 self.assertFunctionAlmostEqual(decimal=14,
                                                desired=numpy.take(self.desired, indices, axis=iax),
-                                               actual=evaluable.take(self.actual, evaluable.Guard(evaluable.asarray(indices)), axis=iax))
+                                               actual=evaluable.take(self.actual, evaluable.InRange(evaluable.Guard(evaluable.asarray(indices)), self.actual.shape[iax]), axis=iax))
 
     def test_take_reversed(self):
         indices = [-1, 0]
@@ -204,7 +204,7 @@ class check(TestCase):
                 indices = [0, sh-1, 0, 0]
                 self.assertFunctionAlmostEqual(decimal=14,
                                                desired=numpy.take(self.desired, indices, axis=iax),
-                                               actual=evaluable.take(self.actual, evaluable.Guard(evaluable.asarray(indices)), axis=iax))
+                                               actual=evaluable.take(self.actual, evaluable.InRange(evaluable.Guard(evaluable.asarray(indices)), self.actual.shape[iax]), axis=iax))
 
     def test_inflate(self):
         for iax, sh in enumerate(self.desired.shape):
@@ -558,7 +558,7 @@ _check('mod', lambda a, b: evaluable.mod(a, b), lambda a, b: numpy.mod(a, b), AN
 _check('ravel', lambda f: evaluable.ravel(f, axis=1), lambda a: a.reshape(4, 4, 4, 4), ANY(4, 2, 2, 4, 4))
 _check('unravel', lambda f: evaluable.unravel(f, axis=1, shape=[evaluable.constant(2), evaluable.constant(2)]), lambda a: a.reshape(4, 2, 2, 4, 4), ANY(4, 4, 4, 4))
 _check('ravelindex', lambda a, b: evaluable.RavelIndex(a, b, evaluable.constant(12), evaluable.constant(20)), lambda a, b: a[..., numpy.newaxis, numpy.newaxis] * 20 + b, INT(3, 4), INT(4, 5))
-_check('inflate', lambda f: evaluable._inflate(f, dofmap=evaluable.Guard(evaluable.constant([0, 3])), length=evaluable.constant(4), axis=1), lambda a: numpy.concatenate([a[:, :1], numpy.zeros_like(a), a[:, 1:]], axis=1), ANY(4, 2, 4))
+_check('inflate', lambda f: evaluable._inflate(f, dofmap=evaluable.InRange(evaluable.Guard(evaluable.constant([0, 3])), evaluable.constant(4)), length=evaluable.constant(4), axis=1), lambda a: numpy.concatenate([a[:, :1], numpy.zeros_like(a), a[:, 1:]], axis=1), ANY(4, 2, 4))
 _check('inflate-constant', lambda f: evaluable._inflate(f, dofmap=evaluable.constant([0, 3]), length=evaluable.constant(4), axis=1), lambda a: numpy.concatenate([a[:, :1], numpy.zeros_like(a), a[:, 1:]], axis=1), ANY(4, 2, 4))
 _check('inflate-duplicate', lambda f: evaluable.Inflate(f, dofmap=evaluable.constant([0, 1, 0, 3]), length=evaluable.constant(4)), lambda a: numpy.stack([a[:, 0]+a[:, 2], a[:, 1], numpy.zeros_like(a[:, 0]), a[:, 3]], axis=1), ANY(2, 4))
 _check('inflate-block', lambda f: evaluable.Inflate(f, dofmap=evaluable.constant([[5, 4, 3], [2, 1, 0]]), length=evaluable.constant(6)), lambda a: a.ravel()[::-1], ANY(2, 3))
@@ -859,7 +859,7 @@ class elemwise(TestCase):
 
     def assertElemwise(self, items):
         items = tuple(map(types.arraydata, items))
-        index = evaluable.Argument('index', (), int)
+        index = evaluable.InRange(evaluable.Argument('index', (), int), evaluable.constant(len(items)))
         elemwise = evaluable.compile(evaluable.Elemwise(items, index, int))
         for i, item in enumerate(items):
             self.assertEqual(elemwise(dict(index=i)).tolist(), numpy.asarray(item).tolist())
@@ -1018,7 +1018,7 @@ class simplify(TestCase):
     def test_add_sparse(self):
         a = evaluable.Inflate(
             func=evaluable.Argument('a', shape=tuple(map(evaluable.constant, [2, 3, 2])), dtype=float),
-            dofmap=evaluable.Argument('dofmap', shape=(evaluable.constant(2),), dtype=int),
+            dofmap=evaluable.InRange(evaluable.Argument('dofmap', shape=(evaluable.constant(2),), dtype=int), evaluable.constant(3)),
             length=evaluable.constant(3))
         b = evaluable.Diagonalize(
             func=evaluable.Argument('b', shape=tuple(map(evaluable.constant, [2, 3])), dtype=float))
