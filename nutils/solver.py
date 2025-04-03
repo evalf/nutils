@@ -714,6 +714,49 @@ class Minimize:
                 dx = V @ eL # return to baseline
 
 
+@dataclass(eq=True)
+class Picard:
+
+    maxiter: int = 2
+
+    def __str__(self):
+        return 'picard'
+
+    def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+        if not system.is_linear:
+            raise ValueError('the picard method is only valid for linear systems')
+
+        x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
+        isdof = ~iscons
+
+        jac, res = system.assemble_jacobian_residual(arguments)
+        jac = jac.submatrix(isdof, isdof)
+        res = res[isdof]
+        yield arguments, numpy.linalg.norm(res)
+
+        x0 = x.copy()
+        approx_jac = getattr(self, 'matrix', None)
+        if approx_jac is not None and approx_jac.shape == jac.shape:
+            dx_space, dres_space = numpy.empty((2, self.maxiter, len(res)))
+            for i in range(self.maxiter):
+                try:
+                    dx_space[i] = approx_dx = approx_jac.solve(res, solver='direct', rtol=1e-3)
+                    dres_space[i] = jac @ approx_dx
+                    w, (res2,), *_ = numpy.linalg.lstsq(dres_space[:i+1].T, res, rcond=None)
+                    resnorm = numpy.sqrt(res2)
+                except Exception as e:
+                    log.warning('solution failed:', e)
+                    break
+                x[isdof] -= w @ dx_space[:i+1]
+                yield arguments, resnorm
+                res -= w @ dres_space[:i+1]
+
+        log.info(f'updating picard matrix')
+        x[isdof] -= jac.solve(res, **linargs)
+        self.matrix = jac
+        yield arguments, 0.
+
+
 @dataclass(eq=True, frozen=True)
 class Pseudotime:
 
