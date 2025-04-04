@@ -1625,7 +1625,7 @@ class TransformChainsTopology(Topology):
         if leveltopo is None:
             ielem_arg = evaluable.InRange(evaluable.Argument('_trim_index', (), dtype=int), evaluable.constant(len(self)))
             coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
-            levelset = evaluable.compile(levelset.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), ielem_arg, coordinates)), stats=False)
+            levelset = evaluable.compile(levelset.lower(function.LowerArgs.for_space(self.space, self.transforms, ielem_arg, coordinates, opposites=self.opposites)), stats=False)
             with log.iter.percentage('trimming', range(len(self)), self.references) as items:
                 for ielem, ref in items:
                     levels = levelset(dict(arguments, _trim_index=ielem))
@@ -1662,7 +1662,7 @@ class TransformChainsTopology(Topology):
                         ielem = leveltopo.transforms.index(trans + tail)
                         if degree not in lowered_levelset:
                             coordinates = leveltopo.references.getpoints('vertex', degree).get_evaluable_coords(ielem_arg)
-                            lower_args = function.LowerArgs.for_space(self.space, (leveltopo.transforms, leveltopo.opposites), ielem_arg, coordinates)
+                            lower_args = function.LowerArgs.for_space(self.space, leveltopo.transforms, ielem_arg, coordinates, opposites=leveltopo.opposites)
                             lowered_levelset[degree] = evaluable.compile(levelset.lower(lower_args), stats=False)
                         levels[indices] = lowered_levelset[degree](dict(arguments, _ielem=ielem))
                         mask[indices] = False
@@ -1699,7 +1699,7 @@ class TransformChainsTopology(Topology):
         return function.get(values, 0, self.f_index)
 
     def _lower_args(self, ielem, point):
-        return function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), ielem, point)
+        return function.LowerArgs.for_space(self.space, self.transforms, ielem, point, opposites=self.opposites)
 
     def _sample(self, ielems, coords, weights=None):
         index = numpy.argsort(ielems, kind='stable')

@@ -506,7 +506,19 @@ class _TransformChainsSample(Sample):
         return self.points.get_evaluable_weights(__ielem)
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
-        return function.LowerArgs.for_space(self.space, self.transforms, __ielem, self.points.get_evaluable_coords(__ielem))
+        if len(self.transforms) == 1:
+            return function.LowerArgs.for_space(self.space, self.transforms[0], __ielem, self.points.get_evaluable_coords(__ielem))
+        elif len(self.transforms) == 2:
+            coords = self.points.get_evaluable_coords(__ielem)
+            return function.LowerArgs(
+                points_shape=coords.shape[:-1],
+                bindings=(
+                    (self.space, self.transforms[0], __ielem, coords),
+                    (self.space + ':opposite', self.transforms[1], __ielem, coords),
+                ),
+            )
+        else:
+            raise NotImplementedError
 
     def basis(self, interpolation: str = 'none') -> function.Array:
         return _Basis(self, interpolation)
@@ -940,15 +952,13 @@ class _Zip(Sample):
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
         points_shape = evaluable.Take(evaluable.Constant(self._sizes), __ielem),
-        coordinates = {}
-        transform_chains = {}
+        bindings = []
         for samplei, ielemsi, ilocalsi in zip(self._samples, self._ielems, self._ilocals):
-            argsi = samplei.get_lower_args(evaluable.Take(evaluable.Constant(ielemsi), __ielem))
             slicei = evaluable.Take(evaluable.Constant(ilocalsi), self._getslice(__ielem))
-            transform_chains.update(argsi.transform_chains)
-            for space, coords in argsi.coordinates.items():
-                coordinates[space] = evaluable.Transpose.to_end(evaluable.Take(evaluable._flat(evaluable.Transpose.from_end(coords, 0), ndim=2), slicei), 0)
-        return function.LowerArgs(points_shape, transform_chains, coordinates)
+            for space, transform_chains, index, coordinates in samplei.get_lower_args(evaluable.Take(evaluable.Constant(ielemsi), __ielem)).bindings:
+                coordinates = evaluable.Transpose.to_end(evaluable.Take(evaluable._flat(evaluable.Transpose.from_end(coordinates, 0), ndim=2), slicei), 0)
+            bindings.append((space, transform_chains, index, coordinates))
+        return function.LowerArgs(points_shape, tuple(bindings))
 
     def get_evaluable_indices(self, ielem):
         return evaluable.Take(evaluable.Constant(self._indices), self._getslice(ielem))
@@ -1023,7 +1033,7 @@ class _Integral(function.Array):
         super().__init__(shape=integrand.shape, dtype=float if integrand.dtype in (bool, int) else integrand.dtype, spaces=integrand.spaces - frozenset(sample.spaces), arguments=integrand.arguments)
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
-        ielem = evaluable.loop_index('_sample_{}_{}'.format(len(args.points_shape), '_'.join(self._sample.spaces)), self._sample.nelems)
+        ielem = evaluable.loop_index('_sample_{}'.format(len(args.bindings)), self._sample.nelems)
         weights = evaluable.astype(self._sample.get_evaluable_weights(ielem), self.dtype)
         integrand = evaluable.astype(self._integrand.lower(args | self._sample.get_lower_args(ielem)), self.dtype)
         elem_integral = evaluable.einsum('B,ABC->AC', weights, integrand, B=weights.ndim, C=self.ndim)
@@ -1039,7 +1049,7 @@ class _ConcatenatePoints(function.Array):
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         axis = len(args.points_shape)
-        ielem = evaluable.loop_index('_sample_{}_{}'.format(len(args.points_shape), '_'.join(self._sample.spaces)), self._sample.nelems)
+        ielem = evaluable.loop_index('_sample_{}'.format(len(args.bindings)), self._sample.nelems)
         args |= self._sample.get_lower_args(ielem)
         func = self._func.lower(args)
         func = evaluable.Transpose.to_end(func, *range(axis, len(args.points_shape)))
@@ -1073,7 +1083,7 @@ class _Basis(function.Array):
         super().__init__(shape=(sample.npoints,), dtype=float, spaces=frozenset({sample.space}), arguments={})
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
-        aligned_space_coords = args.coordinates[self._sample.space]
+        aligned_space_coords = args.get_coordinates(self._sample.space)
         assert aligned_space_coords.ndim == len(args.points_shape) + 1
         space_coords, where = evaluable.unalign(aligned_space_coords)
         # Reinsert the coordinate axis, the last axis of `aligned_space_coords`, or
@@ -1085,7 +1095,7 @@ class _Basis(function.Array):
             space_coords = evaluable.Transpose(space_coords, numpy.argsort(where))
             where = tuple(sorted(where))
 
-        (chain, *_), tip_index = args.transform_chains[self._sample.space]
+        chain, tip_index = args.get_transforms_index(self._sample.space)
         index = evaluable.TransformIndex(self._sample.transforms[0], chain, tip_index)
         coords = evaluable.TransformCoords(self._sample.transforms[0], chain, tip_index, space_coords)
         expect = self._sample.points.get_evaluable_coords(index)

@@ -652,7 +652,7 @@ class TopologyAssertions:
         edges = domain.transforms.edges(domain.references)
         iedge = evaluable.Argument('_iedge', (), int)
         coordinates = domain.references.edges.getpoints('gauss', 2).get_evaluable_coords(iedge)
-        lowered_geom = evaluable.compile(geom.lower(function.LowerArgs.for_space(domain.space, (edges,), iedge, coordinates)), stats=False)
+        lowered_geom = evaluable.compile(geom.lower(function.LowerArgs.for_space(domain.space, edges, iedge, coordinates)), stats=False)
         for ielem, ioppelems in enumerate(domain.connectivity):
             for iedge, ioppelem in enumerate(ioppelems):
                 etrans, eref = domain.references[ielem].edges[iedge]
