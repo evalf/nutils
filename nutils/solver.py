@@ -261,8 +261,54 @@ class System:
     def __nutils_hash__(self):
         return self.__eval.__nutils_hash__
 
+    def deconstruct(self, arguments, constrain):
+        arguments = arguments.copy()
+        xparts = []
+        for t in self.trials:
+            shape = self.argshapes[t]
+            a = arguments.get(t)
+            c = constrain.get(t)
+            if a is None:
+                if c is None:
+                    a = numpy.full(shape, numpy.nan, dtype=self.dtype)
+                elif c.dtype == bool:
+                    a = numpy.full(shape, numpy.nan, dtype=self.dtype)
+                    a[c] = 0.
+                else:
+                    a = c
+                x = numpy.zeros(numpy.isnan(a).sum(), dtype=self.dtype)
+            else:
+                if c is None:
+                    x = a.ravel()
+                    a = numpy.full(shape, numpy.nan, dtype=self.dtype)
+                elif c.dtype == bool:
+                    x = a[~c]
+                    a = a.copy()
+                    a[~c] = numpy.nan
+                else:
+                    x = a[numpy.isnan(c)]
+                    a = c
+                assert numpy.isfinite(x).all()
+            assert a.dtype == self.dtype
+            assert x.dtype == self.dtype
+            arguments[t] = a
+            xparts.append(x)
+        return arguments, numpy.concatenate(xparts, dtype=self.dtype)
+
+    def construct(self, arguments, x=None, return_free=False):
+        v = numpy.concatenate([arguments[t].ravel() for t in self.trials])
+        free = numpy.isnan(v)
+        if x is None:
+            assert not free.any()
+            free = return_free and numpy.ones_like(free)
+        else:
+            v[free] = x
+            arguments = arguments | {t: v[i:j].reshape(self.argshapes[t]) for t, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:])}
+        return (arguments, free) if return_free else arguments
+
     @log.withcontext
-    def assemble(self, arguments: ArrayDict):
+    def assemble(self, arguments: ArrayDict, x: Optional[numpy.ndarray] = None):
+        arguments, free = self.construct(arguments, x, return_free=True)
         mat, vec, val = self.__mat_vec_val
         if vec is None:
             mat_blocks, vec_blocks, maybe_val = self.__eval(arguments)
@@ -281,26 +327,7 @@ class System:
             if self.is_symmetric:
                 val += vec @ x + .5 * (x @ matx) # val(x) = val(0) + vec(0) x + .5 x mat x
             vec = vec + matx # vec(x) = vec(0) + mat x
-        return mat, vec, val
-
-    def prepare_solution_vector(self, arguments: ArrayDict, constrain: ArrayDict):
-        arguments = arguments.copy()
-        x = numpy.empty(self.__trial_offsets[-1], self.dtype)
-        iscons = numpy.empty(self.__trial_offsets[-1], dtype=bool)
-        for trial, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:]):
-            trialshape = self.argshapes[trial]
-            trialarg = x[i:j].reshape(trialshape)
-            trialarg[...] = arguments.get(trial, 0)
-            c = constrain.get(trial, False)
-            if c is not False:
-                assert c.shape == trialshape
-                if c.dtype != bool:
-                    c, v = ~numpy.isnan(c), c
-                    trialarg[c] = v[c]
-            trialcons = iscons[i:j].reshape(trialshape)
-            trialcons[...] = c
-            arguments[trial] = trialarg # IMPORTANT: arguments share memory with x
-        return x, iscons, arguments
+        return mat.submatrix(free, free), vec[free], val
 
     @property
     def _trial_info(self):
@@ -345,13 +372,13 @@ class System:
             method = Newton()
         log.info(f'{"optimizing" if self.is_symmetric else "solving"} for argument {self._trial_info} using {method or "direct"} method')
         if method is None:
-            x, iscons, arguments = self.prepare_solution_vector(arguments, constrain)
-            jac, res, val = self.assemble(arguments)
-            dx = -jac.solve(res, constrain=iscons, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
+            arguments, x = self.deconstruct(arguments, constrain)
+            jac, res, val = self.assemble(arguments, x)
+            dx = -jac.solve(res, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
             if self.is_symmetric:
                 log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
             x += dx
-            return arguments
+            return self.construct(arguments, x)
         if tol <= 0:
             raise ValueError('iterative solver requires a strictly positive tolerance')
         first = _First()
@@ -463,20 +490,20 @@ class System:
         log.info(f'{"optimizing" if self.is_symmetric else "solving"} for argument {self._trial_info} with drop tolerance {droptol:.0e}')
         if not self.is_linear:
             raise ValueError('system is not linear')
-        x, iscons, arguments = self.prepare_solution_vector(arguments, constrain)
-        jac, res, val = self.assemble(arguments)
+        arguments, x = self.deconstruct(arguments, constrain)
+        jac, res, val = self.assemble(arguments, x)
         data, colidx, _ = jac.export('csr')
-        mycons = numpy.ones_like(iscons)
+        mycons = numpy.ones(res.shape, dtype=bool)
         mycons[colidx[abs(data) > droptol]] = False # unconstrain dofs with nonzero columns
-        mycons |= iscons
         dx = -jac.solve(res, constrain=mycons, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
         if self.is_symmetric:
             log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
         x += dx
         for trial, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:]):
             log.info(f'constrained {j-i-mycons[i:j].sum()} degrees of freedom of {trial}')
-        x[mycons & ~iscons] = numpy.nan
-        return dict(constrain, **{t: arguments[t] for t in self.trials})
+        x[mycons] = numpy.nan
+        arguments = self.construct(arguments, x)
+        return constrain | {t: arguments[t] for t in self.trials}
 
 
 @dataclass(eq=True, frozen=True)
@@ -490,12 +517,12 @@ class Newton:
         return 'newton'
 
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
-        x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
+        arguments, x = system.deconstruct(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
         while True:
-            jac, res, val = system.assemble(arguments)
-            yield arguments, numpy.linalg.norm(res[~iscons]), val
-            x -= jac.solve_leniently(res, constrain=iscons, **linargs)
+            jac, res, val = system.assemble(arguments, x)
+            yield system.construct(arguments, x), numpy.linalg.norm(res), val
+            x -= jac.solve_leniently(res, **linargs)
 
 
 @dataclass(eq=True, frozen=True)
@@ -525,33 +552,28 @@ class LinesearchNewton:
         return 'linesearch-newton'
 
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
-        x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
+        arguments, x = system.deconstruct(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
-        jac, res, val = system.assemble(arguments)
+        jac, res, val = system.assemble(arguments, x)
         relax = self.relax0
         while True: # newton iterations
-            yield arguments, numpy.linalg.norm(res[~iscons]), val
-            dx = -jac.solve_leniently(res, constrain=iscons, **linargs)
-            x += dx * relax
+            yield system.construct(arguments, x), numpy.linalg.norm(res), val
+            dx = -jac.solve_leniently(res, **linargs)
             res0 = res
             jac0dx = jac@dx # == res0 if dx was solved to infinite precision
             while True: # line search
-                jac, res, _ = system.assemble(arguments)
-                relax, adjust = self._linesearch(res0, jac0dx, res, jac@dx, iscons, relax)
-                if not adjust:
+                newx = x + dx * relax
+                jac, res, val = system.assemble(arguments, newx)
+                scale, accept = self.strategy(res0, (jac0dx)*relax, res, (jac@dx)*relax)
+                if accept:
+                    log.info('update accepted at relaxation', round(relax, 5))
+                    relax = min(relax * scale, 1)
                     break
+                assert scale < 1
+                relax *= scale
                 if relax <= self.failrelax:
                     raise SolverError('stuck in local minimum')
-                x += dx * adjust
-
-    def _linesearch(self, res0, dres0, res1, dres1, iscons, relax):
-        isdof = ~iscons
-        scale, accept = self.strategy(res0[isdof], dres0[isdof] * relax, res1[isdof], dres1[isdof] * relax)
-        if accept:
-            log.info('update accepted at relaxation', round(relax, 5))
-            return min(relax * scale, 1), 0
-        assert scale < 1
-        return relax * scale, relax * (scale-1)
+            x = newx
 
 
 @dataclass(eq=True, frozen=True)
@@ -572,18 +594,18 @@ class Minimize:
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         if not system.is_symmetric:
             raise ValueError('problem is not symmetric')
-        x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
-        jac, res, val = system.assemble(arguments)
+        arguments, x = system.deconstruct(arguments, constrain)
+        jac, res, val = system.assemble(arguments, x)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
         relax = 0.
         while True:
-            yield arguments, numpy.linalg.norm(res[~iscons]), val
-            dx = -jac.solve_leniently(res, constrain=iscons, **linargs) # baseline: vanilla Newton
+            yield system.construct(arguments, x), numpy.linalg.norm(res), val
+            dx = -jac.solve_leniently(res, **linargs)
+            x += dx # baseline: vanilla Newton
             # compute first two ritz values to determine approximate path of steepest descent
-            zres = res * ~iscons
             dxnorm = numpy.linalg.norm(dx)
             k0 = dx / dxnorm
-            k1 = -zres / dxnorm # == jac @ k0
+            k1 = -res / dxnorm # == jac @ k0
             a = k1 @ k0
             k1 -= k0 * a # orthogonalize
             c = numpy.linalg.norm(k1)
@@ -592,16 +614,15 @@ class Minimize:
             # at this point k0 and k1 are orthonormal, and [k0 k1]^T jac [k0 k1] = [a c; c b]
             D = numpy.hypot(b-a, 2*c)
             L = numpy.array([a+b-D, a+b+D]) / 2 # 2nd order ritz values: eigenvalues of [a c; c b]
-            v0, v1 = zres + dx * L[:, numpy.newaxis]
-            V = numpy.stack([v1, -v0], axis=1) / D # ritz vectors times dx -- note: V @ L == -zres, V.sum() == dx
+            v0, v1 = res + dx * L[:, numpy.newaxis]
+            V = numpy.stack([v1, -v0], axis=1) / D # ritz vectors times dx -- note: V @ L == -res, V.sum() == dx
             log.info('spectrum: {:.1e}..{:.1e} ({}definite)'.format(*L, 'positive ' if L[0] > 0 else 'negative ' if L[-1] < 0 else 'in'))
             val0 = val
             while True: # line search along steepest descent curve
                 r = numpy.exp(relax - numpy.log(D)) # == exp(relax) / D
                 eL = numpy.exp(-r*L)
-                dx -= V @ eL
-                x += dx
-                jac, res, val = system.assemble(arguments)
+                newx = x - V @ eL
+                jac, res, val = system.assemble(arguments, newx)
                 slope = res @ (V @ (eL*L))
                 log.info('energy {:+.2e} / e{:+.1f} and {}creasing'.format(val - val0, relax, 'in' if slope > 0 else 'de'))
                 if numpy.isfinite(val) and numpy.isfinite(res).all() and val <= val0 and slope <= 0:
@@ -610,7 +631,7 @@ class Minimize:
                 relax += self.rampdown
                 if relax <= self.failrelax:
                     raise SolverError('stuck in local minimum')
-                dx = V @ eL # return to baseline
+            x = newx
 
 
 @dataclass(eq=True, frozen=True)
@@ -636,18 +657,19 @@ class Pseudotime:
         return 'pseudotime'
 
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
-        x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
+        arguments, x = system.deconstruct(arguments, constrain)
+        free = numpy.concatenate([numpy.isnan(arguments[t]).ravel() for t in system.trials])
         linargs = _copy_with_defaults(linargs, rtol=1-3)
-        djac = self._assemble_inertia_matrix([(t, system.argshapes[t]) for t in system.trials], arguments)
+        djac = self._assemble_inertia_matrix([(t, system.argshapes[t]) for t in system.trials], arguments).submatrix(free, free)
 
         first = _First()
         while True:
-            jac, res, val = system.assemble(arguments)
-            resnorm = numpy.linalg.norm(res[~iscons])
-            yield arguments, resnorm, val
+            jac, res, val = system.assemble(arguments, x)
+            resnorm = numpy.linalg.norm(res)
+            yield system.construct(arguments, x), resnorm, val
             timestep = self.timestep * (first(resnorm) / resnorm)
             log.info(f'timestep: {timestep:.0e}')
-            x -= (jac + djac / timestep).solve_leniently(res, constrain=iscons, **linargs)
+            x -= (jac + djac / timestep).solve_leniently(res, **linargs)
 
     def _assemble_inertia_matrix(self, trialshapes, arguments):
         argobjs = [evaluable.Argument(t, tuple(map(evaluable.constant, shape)), float) for t, shape in trialshapes]
