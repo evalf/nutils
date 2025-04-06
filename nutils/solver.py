@@ -230,30 +230,31 @@ class System:
             argobjects = _dict((arg.name, arg) for res in residuals for arg in res.arguments if isinstance(arg, evaluable.Argument))
             self.is_symmetric = False
         else:
-            functional = residual.as_evaluable_array
-            self.dtype = functional.dtype
-            argobjects = {arg.name: arg for arg in functional.arguments if isinstance(arg, evaluable.Argument)}
+            value = residual.as_evaluable_array
+            self.dtype = value.dtype
+            argobjects = {arg.name: arg for arg in value.arguments if isinstance(arg, evaluable.Argument)}
             tests = self.trials if test is None else tuple(test.split(',') if isinstance(test, str) else test)
-            residuals = [evaluable.derivative(functional, argobjects[t]) for t in tests]
+            residuals = [evaluable.derivative(value, argobjects[t]) for t in tests]
             self.is_symmetric = self.trials == tests
 
         self.argshapes = dict(zip(argobjects.keys(), evaluable.eval_once(tuple(arg.shape for arg in argobjects.values()))))
         self.__trial_offsets = numpy.cumsum([0] + [numpy.prod(self.argshapes[t], dtype=int) for t in self.trials])
 
-        value = functional if self.is_symmetric else ()
-        block_vector = [evaluable._flat(res) for res in residuals]
-        block_matrix = [[evaluable._flat(evaluable.derivative(res, argobjects[t]).simplified, 2) for t in self.trials] for res in block_vector]
+        if not self.is_symmetric:
+            value = ()
+        block_residual = [evaluable._flat(res) for res in residuals]
+        block_jacobian = [[evaluable._flat(evaluable.derivative(res, argobjects[t]).simplified, 2) for t in self.trials] for res in block_residual]
 
-        self.is_linear = not any(arg.name in self.trials for row in block_matrix for col in row for arg in col.arguments)
+        self.is_linear = not any(arg.name in self.trials for row in block_jacobian for col in row for arg in col.arguments)
         if self.is_linear:
             z = {t: evaluable.zeros_like(argobjects[t]) for t in self.trials}
-            block_vector = [evaluable.replace_arguments(vector, z).simplified for vector in block_vector]
+            block_residual = [evaluable.replace_arguments(vector, z).simplified for vector in block_residual]
             if self.is_symmetric:
                 value = evaluable.replace_arguments(value, z).simplified
 
-        self.__eval = evaluable.compile((tuple(tuple(map(evaluable.as_csr, row)) for row in block_matrix), tuple(block_vector), value))
+        self.__eval = evaluable.compile((tuple(tuple(map(evaluable.as_csr, row)) for row in block_jacobian), tuple(block_residual), value))
 
-        self.is_constant_matrix = self.is_linear and not any(col.arguments for row in block_matrix for col in row)
+        self.is_constant_matrix = self.is_linear and not any(col.arguments for row in block_jacobian for col in row)
         self.__cached_matrix = None
 
     @property
