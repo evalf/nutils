@@ -343,7 +343,6 @@ class System(TestCase):
         sys = solver.System(f, trial='u', test='v')
         self.assertTrue(sys.is_linear)
         self.assertFalse(sys.is_symmetric)
-        self.assertTrue(sys.is_constant)
         self.assertTrue(sys.is_constant_matrix)
         self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,)})
         args = {'u': numpy.arange(10, dtype=float)}
@@ -363,7 +362,6 @@ class System(TestCase):
         sys = solver.System(f, trial='u')
         self.assertTrue(sys.is_linear)
         self.assertTrue(sys.is_symmetric)
-        self.assertTrue(sys.is_constant)
         self.assertTrue(sys.is_constant_matrix)
         self.assertEqual(sys.argshapes, {'u': (10,)})
         args = {'u': numpy.arange(10, dtype=float)}
@@ -386,7 +384,6 @@ class System(TestCase):
         sys = solver.System(f, trial='u', test='v')
         self.assertTrue(sys.is_linear)
         self.assertFalse(sys.is_symmetric)
-        self.assertFalse(sys.is_constant)
         self.assertTrue(sys.is_constant_matrix)
         self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
@@ -408,7 +405,6 @@ class System(TestCase):
         sys = solver.System(f, trial='u', test='v')
         self.assertTrue(sys.is_linear)
         self.assertFalse(sys.is_symmetric)
-        self.assertFalse(sys.is_constant)
         self.assertFalse(sys.is_constant_matrix)
         self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
@@ -426,7 +422,6 @@ class System(TestCase):
         sys = solver.System(f, trial='u', test='v')
         self.assertFalse(sys.is_linear)
         self.assertFalse(sys.is_symmetric)
-        self.assertFalse(sys.is_constant)
         self.assertFalse(sys.is_constant_matrix)
         self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
@@ -442,7 +437,6 @@ class System(TestCase):
         sys = solver.System(f, trial='u')
         self.assertFalse(sys.is_linear)
         self.assertTrue(sys.is_symmetric)
-        self.assertFalse(sys.is_constant)
         self.assertFalse(sys.is_constant_matrix)
         self.assertEqual(sys.argshapes, {'u': (10,)})
         args = {'u': numpy.arange(10, dtype=float)}
