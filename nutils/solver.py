@@ -237,17 +237,25 @@ class System:
             residuals = [evaluable.derivative(value, argobjects[t]) for t in tests]
             self.is_symmetric = self.trials == tests
 
-        self.argshapes = dict(zip(argobjects.keys(), evaluable.eval_once(tuple(arg.shape for arg in argobjects.values()))))
-        self.__trial_offsets = numpy.cumsum([0] + [numpy.prod(self.argshapes[t], dtype=int) for t in self.trials])
+        self.arguments = frozenset(argobjects)
+
+        self.trial_args = tuple(argobjects[t] for t in self.trials)
+        self.trial_shapes = evaluable.eval_once([arg.shape for arg in self.trial_args])
+
+        trial_sizes = tuple(numpy.prod(shape, dtype=int) for shape in self.trial_shapes)
+        trial_offsets = numpy.cumsum([0, *trial_sizes])
+
+        self.__trial_total = trial_offsets[-1]
+        self.__trial_slices = tuple(map(slice, trial_offsets, trial_offsets[1:]))
 
         if not self.is_symmetric:
             value = ()
         block_residual = [evaluable._flat(res) for res in residuals]
-        block_jacobian = [[evaluable._flat(evaluable.derivative(res, argobjects[t]).simplified, 2) for t in self.trials] for res in block_residual]
+        block_jacobian = [[evaluable._flat(evaluable.derivative(res, arg).simplified, 2) for arg in self.trial_args] for res in block_residual]
 
         self.is_linear = not any(arg.name in self.trials for row in block_jacobian for col in row for arg in col.arguments)
         if self.is_linear:
-            z = {t: evaluable.zeros_like(argobjects[t]) for t in self.trials}
+            z = dict(zip(self.trials, map(evaluable.zeros_like, self.trial_args)))
             block_residual = [evaluable.replace_arguments(vector, z).simplified for vector in block_residual]
             if self.is_symmetric:
                 value = evaluable.replace_arguments(value, z).simplified
@@ -264,8 +272,7 @@ class System:
     def deconstruct(self, arguments, constrain):
         arguments = arguments.copy()
         xparts = []
-        for t in self.trials:
-            shape = self.argshapes[t]
+        for t, shape in zip(self.trials, self.trial_shapes):
             a = arguments.get(t)
             c = constrain.get(t)
             if a is None:
@@ -303,7 +310,7 @@ class System:
             free = return_free and numpy.ones_like(free)
         else:
             v[free] = x
-            arguments = arguments | {t: v[i:j].reshape(self.argshapes[t]) for t, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:])}
+            arguments = arguments | {t: v[s].reshape(shape) for t, shape, s in zip(self.trials, self.trial_shapes, self.__trial_slices)}
         return (arguments, free) if return_free else arguments
 
     @log.withcontext
@@ -327,7 +334,7 @@ class System:
 
     @property
     def _trial_info(self):
-        return ' and '.join(t + ' (' + ','.join(map(str, self.argshapes[t])) + ')' for t in self.trials)
+        return ' and '.join(t + ' (' + ','.join(map(str, shape)) + ')' for t, shape in zip(self.trials, self.trial_shapes))
 
     MethodIter = Iterator[Tuple[ArrayDict, float, float]]
 
@@ -439,7 +446,7 @@ class System:
         try:
             return self.solve(arguments=arguments, **solveargs)
         except (SolverError, matrix.MatrixError) as e:
-            if timearg not in self.argshapes and timesteparg not in self.argshapes or maxretry <= 0:
+            if timearg not in self.arguments and timesteparg not in self.arguments or maxretry <= 0:
                 raise
             log.error(f'error: {e}; retrying with timestep {timestep/2}')
             halfstep_args = dict(solveargs, timestep=timestep/2, timearg=timearg, timesteparg=timesteparg, suffix=suffix, maxretry=maxretry-1)
@@ -495,8 +502,8 @@ class System:
         if self.is_symmetric:
             log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
         x += dx
-        for trial, i, j in zip(self.trials, self.__trial_offsets, self.__trial_offsets[1:]):
-            log.info(f'constrained {j-i-mycons[i:j].sum()} degrees of freedom of {trial}')
+        for trial, s in zip(self.trials, self.__trial_slices):
+            log.info(f'constrained {len(mycons[s])-mycons[s].sum()} degrees of freedom of {trial}')
         x[mycons] = numpy.nan
         arguments = self.construct(arguments, x)
         return constrain | {t: arguments[t] for t in self.trials}
@@ -656,7 +663,7 @@ class Pseudotime:
         arguments, x = system.deconstruct(arguments, constrain)
         free = numpy.concatenate([numpy.isnan(arguments[t]).ravel() for t in system.trials])
         linargs = _copy_with_defaults(linargs, rtol=1-3)
-        djac = self._assemble_inertia_matrix([(t, system.argshapes[t]) for t in system.trials], arguments).submatrix(free, free)
+        djac = matrix.assemble_block_csr(evaluable.eval_once([[evaluable.as_csr(evaluable._flat(evaluable.derivative(evaluable._flat(res), arg).simplified, 2)) for arg in system.trial_args] for res in self.inertia], arguments=arguments)).submatrix(free, free)
 
         first = _First()
         while True:
@@ -666,12 +673,6 @@ class Pseudotime:
             timestep = self.timestep * (first(resnorm) / resnorm)
             log.info(f'timestep: {timestep:.0e}')
             x -= (jac + djac / timestep).solve_leniently(res, **linargs)
-
-    def _assemble_inertia_matrix(self, trialshapes, arguments):
-        argobjs = [evaluable.Argument(t, tuple(map(evaluable.constant, shape)), float) for t, shape in trialshapes]
-        djacobians = [[evaluable._flat(evaluable.derivative(evaluable._flat(res), argobj).simplified, 2) for argobj in argobjs] for res in self.inertia]
-        djac_blocks = evaluable.eval_once(tuple(tuple(map(evaluable.as_csr, row)) for row in djacobians), arguments=arguments)
-        return matrix.assemble_block_csr(djac_blocks)
 
 
 # SOLVERS
