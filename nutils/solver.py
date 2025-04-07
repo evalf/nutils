@@ -21,8 +21,7 @@ u,k + v f`` and solve for ``res == 0`` using ``solve_linear``:
 >>> res = domain.integral('(basis_n,i u_,i + basis_n) d:x' @ ns, degree=2)
 >>> lhs = solver.solve_linear('lhs', residual=res, constrain=cons)
 solve > solving for argument lhs (36) using direct method
-solve > solve > solving 25 dof system to machine precision using arnoldi solver
-solve > solve > solver returned with residual ...
+solve > residual norm: 1.5e-15
 
 The coefficients ``lhs`` represent the solution to the Poisson problem.
 
@@ -465,7 +464,7 @@ class System:
         m = method(self, arguments=arguments, constrain=constrain)
         if isinstance(m, tuple):
             arguments, resnorm = m
-            log.info(f'residual: {resnorm:.0e}')
+            log.info(f'residual norm: {resnorm:.1e}')
             if resnorm > tol > 0:
                 raise SolverError(f'failed to reach desired tolerance of {tol:.0e}')
         else:
@@ -473,7 +472,7 @@ class System:
                 raise ValueError('iterative solver requires a strictly positive tolerance')
             arguments, resnorm = next(m)
             with log.context(f'iter 0'):
-                log.info(f'residual: {resnorm:.0e}')
+                log.info(f'residual norm: {resnorm:.1e}')
             resnorm0 = resnorm
             iiter = 0
             while iiter < miniter or resnorm > tol:
@@ -483,7 +482,7 @@ class System:
                 with log.context(f'iter {iiter}'):
                     arguments, resnorm = next(m)
                     progress = numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) if resnorm > tol else 1
-                    log.info(f'residual: {resnorm:.0e} ({100*progress:.0f}%)')
+                    log.info(f'residual norm: {resnorm:.1e} ({100*progress:.0f}%)')
 
         if self.is_symmetric:
             val = self.assemble_value(arguments)
@@ -591,6 +590,7 @@ class System:
         mycons = numpy.ones(res.shape, dtype=bool)
         mycons[colidx[abs(data) > droptol]] = False # unconstrain dofs with nonzero columns
         dx = -jac.solve(res, constrain=mycons, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
+        log.info(f'residual norm: {numpy.linalg.norm((jac @ dx + res)[~mycons]):.1e}')
         if self.is_symmetric:
             log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
         x += dx
