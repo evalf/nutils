@@ -822,6 +822,65 @@ class Minimize:
             x = newx
 
 
+class Arnoldi:
+    '''Arnoldi iterations for linear systems.
+
+    Upon first use, the Arnoldi solver behaves identically to Direct, in that
+    it returns the solution to the linear system ``A x = b``.
+
+    The difference arises when the method is reused. If the matrix and residual
+    depend on a second set of arguments, as in ``A(y) x = b(y)``, then the
+    Arnoldi solver will aim to benefit from an existing factorization of ``P =
+    A(y_previous)^-1`` by projecting ``x`` on the growing subspace ``[P b(y),
+    P^2 b(y), P^3 b(y), ..)``.
+
+    If the desired tolerance is not reached at a configurable subspace
+    dimension of ``maxiter``, then the system is solved with ``A(y)`` and the
+    cached matrix updated for subsequent reuse.
+    '''
+
+    def __init__(self, maxiter: int = 2, **linargs):
+        self.maxiter = maxiter
+        self.linargs = linargs
+        self.__cached_matrix = None
+
+    def __str__(self):
+        return 'arnoldi'
+
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
+        if not system.is_linear:
+            raise ValueError('problem is not linear')
+
+        arguments, x = system.deconstruct(arguments, constrain)
+        jac, res = system.assemble_jacobian_residual(arguments, x)
+        yield system.construct(arguments, x), numpy.linalg.norm(res)
+
+        linargs = _copy_with_defaults(self.linargs, solver='direct', symmetric=system.is_symmetric)
+        approx_jac = self.__cached_matrix
+        if approx_jac is not None and approx_jac.shape == jac.shape:
+            dx_space, dres_space = numpy.empty((2, self.maxiter, len(res)))
+            for i in range(self.maxiter):
+                try:
+                    dx_space[i] = approx_dx = approx_jac.solve(res, **linargs)
+                    dres_space[i] = jac @ approx_dx
+                    w, (res2,), *_ = numpy.linalg.lstsq(dres_space[:i+1].T, res, rcond=None)
+                    resnorm = numpy.sqrt(res2)
+                except Exception as e:
+                    log.warning('solution failed:', e)
+                    break
+                x -= w @ dx_space[:i+1]
+                yield system.construct(arguments, x), resnorm
+                res -= w @ dres_space[:i+1]
+
+        log.info(f'updating jacobian')
+        self.__cached_matrix = jac
+
+        linargs = _copy_with_defaults(self.linargs, symmetric=system.is_symmetric)
+        dx = jac.solve(res, **linargs)
+        x -= dx
+        yield system.construct(arguments, x), numpy.linalg.norm(res - jac @ dx)
+
+
 class Pseudotime:
     '''Inertia assisted Newton.
 

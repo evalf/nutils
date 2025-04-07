@@ -573,3 +573,54 @@ class system_burgers(TestCase):
     def test_step(self):
         args = self.system.step(timestep=100, timearg='t', suffix='0', arguments=self.arguments, method=solver.LinesearchNewton(), tol=1e-10)
         self.assertAlmostEqual64(args['u'], 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')
+
+
+class system_elasticity(TestCase):
+
+    def setUp(self):
+        domain, geom = mesh.unitsquare(10, etype='square')
+
+        ns = Namespace()
+        ns.δ = function.eye(domain.ndims)
+        ns.x = geom
+        ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+        ns.u = domain.field('u', btype='std', degree=1, shape=[2])
+        ns.X_i = 'x_i + u_i'
+        ns.λ = 1
+        ns.μ = .5/function.field('poisson') - 1
+        ns.ε_ij = '.5 (∇_i(u_j) + ∇_j(u_i))'
+        ns.σ_ij = 'λ ε_kk δ_ij + 2 μ ε_ij'
+        ns.E = 'ε_ij σ_ij'
+        ns.q_i = '-δ_i1'
+
+        sqr = domain.boundary['top'].integral('u_k u_k dS' @ ns, degree=2)
+        self.cons = solver.System(sqr, trial='u').solve_constraints(droptol=1e-15)
+
+        energy = domain.integral('(E - u_i q_i) dV' @ ns, degree=2)
+        uarg = function.arguments_for(energy)['u']
+        self.arguments = {
+            'u': numpy.sin(numpy.arange(uarg.size)).reshape(uarg.shape),  # "random" initial vector
+            'poisson': .25}
+        self.system = solver.System(energy, trial='u')
+        self.residual = evaluable.compile(energy.derivative('u').as_evaluable_array)
+
+    def assert_resnorm(self, args, tol):
+        ures = self.residual(args)
+        resnorm = numpy.linalg.norm(ures[numpy.isnan(self.cons['u'])])
+        self.assertLess(resnorm, tol)
+
+    def test_direct(self):
+        args = self.system.solve(arguments=self.arguments, constrain=self.cons)
+        self.assert_resnorm(args, tol=1e-10)
+
+    def test_arnoldi(self):
+        method = solver.Arnoldi(maxiter=2)
+        tol = 1e-10
+        args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=method, tol=tol)
+        self.assert_resnorm(args, tol=tol)
+        args['poisson'] *= .999 # finishes in two iterations
+        args = self.system.solve(arguments=args, constrain=self.cons, method=method, tol=tol)
+        self.assert_resnorm(args, tol=tol)
+        args['poisson'] = .49 # requires new jacobian
+        args = self.system.solve(arguments=args, constrain=self.cons, method=method, tol=tol)
+        self.assert_resnorm(args, tol=tol)
