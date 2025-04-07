@@ -68,6 +68,15 @@ class LowerArg:
         coordinates = map(self.coordinates)
         return self if coordinates is self.coordinates else self.replace(coordinates=coordinates)
 
+    def rename_spaces(self, map: Mapping[str, str]) -> 'LowerArg':
+        '''Return a copy of the :class:`LowerArg` with :attr:`space` renamed using ``map``.
+
+        If the old space is not found in ``map``, the :class:`LowerArg` is returned unchanged.
+        '''
+
+        space = map.get(self.space, self.space)
+        return self if space == self.space else self.replace(space=space)
+
 
 @dataclasses.dataclass(frozen=True)
 class LowerArgs:
@@ -112,6 +121,19 @@ class LowerArgs:
         'Return a copy of the :class:`LowerArgs` with the given ``points_shape`` and :attr:`LowerArg.coordinates` mapped using ``map``.'
 
         return LowerArgs(points_shape, tuple(arg.map_coordinates(map) for arg in self.args))
+
+    def rename_spaces(self, map: Mapping[str, str]) -> 'LowerArgs':
+        '''Return a copy of the :class:`LowerArgs` with spaces renamed using ``map``.
+
+        Spaces that are not found in ``map`` are unchanged. The order of the
+        :attr:`args` remains the same.
+
+        It is allowed to map different old spaces to the same new space. Note
+        that :meth:`LowerArgs.__getitem__` only returns the last entry of
+        :attr:`args` that matches the given space.
+        '''
+
+        return LowerArgs(self.points_shape, tuple(arg.rename_spaces(map) for arg in self.args))
 
     def __or__(self, other: 'LowerArgs') -> 'LowerArgs':
         warnings.deprecation('`LowerArgs.__or__()` is deprecated; use `LowerArgs.__mul__()` instead')
