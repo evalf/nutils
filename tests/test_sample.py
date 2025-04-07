@@ -71,8 +71,6 @@ class Common:
                 self.assertEqual(actual_coords.shape, desired_coords.shape)
                 self.assertAllAlmostEqual(actual_coords, desired_coords)
                 offset += desired_point.coords.ndim - 1
-        with self.assertRaisesRegex(ValueError, '^Nested'):
-            args * self.sample.get_lower_args(evaluable.InRange(evaluable.Argument('ielem2', (), int), evaluable.constant(self.desired_nelems)))
 
     @property
     def _desired_element_tri(self):
@@ -285,8 +283,7 @@ class Zip(TestCase):
         self.assertAlmostEqual(self.stitched.integrate(function.J(self.geomX)), 5/9)  # NOTE: != norm(slope)
 
     def test_nested(self):
-        with self.assertRaisesRegex(ValueError, 'Nested integrals or samples in the same space: X.*, Y.'):
-            self.stitched.integral(self.stitched.integral(1)).eval()
+        self.stitched.integral(self.stitched.integral(1)).eval()
         topoZ, geomZ = mesh.line(2, space='Z')
         inner = self.stitched.integral((geomZ - self.geomX) * function.J(self.geomY))
         outer = topoZ.integral(inner * function.J(geomZ), degree=2)
@@ -589,3 +586,12 @@ class integral(TestCase):
         empty = function.zeros(shape, float)
         array = empty.eval(legacy=False)
         self.assertAllEqual(array, numpy.zeros((2, 3)))
+
+    def test_reuse_space(self):
+        X0, x0 = mesh.line(2, space='X')
+        X1, x1 = mesh.line(3, space='X')
+        self.assertAllAlmostEqual(
+            function.eval(X0.integral(X1.integral(function.J(x1), degree=3) * function.J(x0), degree=2)),
+            6,
+            places=14,
+        )

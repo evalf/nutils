@@ -101,7 +101,6 @@ class LowerArgs:
         assert isinstance(self.points_shape, tuple) and all(map(evaluable._isindex, self.points_shape))
         assert isinstance(self.args, tuple)
         assert all(arg.coordinates is None or evaluable._all_certainly_equal(arg.coordinates.shape[:-1], self.points_shape) for arg in self.args)
-        assert len(self.spaces) == len(self.args)
 
     @property
     def without_points(self) -> 'LowerArgs':
@@ -122,12 +121,11 @@ class LowerArgs:
         '''Return the outer product of two :class:`LowerArgs`.
 
         The :attr:`points_shape` of the product is the concatenation of the
-        :attr:`points_shape`\\s of the factors; likewise for the :attr:`args`.
+        :attr:`points_shape`\\s of the factors; likewise for the :attr:`args`. If
+        both factors contain :class:`LowerArg`\\s for a certain space, the
+        :class:`LowerArg` of the right factor will be :attr:`exposed`.
         '''
 
-        duplicates = set(self.spaces) & set(other.spaces)
-        if duplicates:
-            raise ValueError(f'Nested integrals or samples in the same space: {", ".join(sorted(duplicates))}.')
         args = tuple(arg.map_coordinates(lambda coords: evaluable.Transpose.to_end(evaluable.appendaxes(coords, other.points_shape), coords.ndim - 1)) for arg in self.args)
         args += tuple(arg.map_coordinates(lambda coords: evaluable.prependaxes(coords, self.points_shape)) for arg in other.args)
         return LowerArgs(self.points_shape + other.points_shape, args)
@@ -136,11 +134,10 @@ class LowerArgs:
         '''Join two :class:`LowerArgs` with the same :attr:`points_shape`.
 
         The :attr:`args` is the concatenation of the :attr:`args` of the terms.
+        If both terms contain :class:`LowerArg`\\s for a certain space, the
+        :class:`LowerArg` of the right term will be :attr:`exposed`.
         '''
 
-        duplicates = set(self.spaces) & set(other.spaces)
-        if duplicates:
-            raise ValueError(f'Nested integrals or samples in the same space: {", ".join(sorted(duplicates))}.')
         points_shape = evaluable.assert_equal_tuple(self.points_shape, other.points_shape)
         return LowerArgs(points_shape, self.args + other.args)
 
@@ -157,6 +154,23 @@ class LowerArgs:
             if arg.space == space:
                 return arg
         raise KeyError(f'no such space: {space} - did you forget integral or sample?')
+
+    @cached_property
+    def exposed(self):
+        '''Subset of :attr:`args` that are exposed.
+
+        An item `a` of :attr:`args` is exposed if there exists no item `b` in
+        :attr:`args` to the right of `a` with the same :attr:`LowerArg.space`
+        as `a`.
+        '''
+
+        spaces = set()
+        args = []
+        for arg in reversed(self.args):
+            if arg.space not in spaces:
+                spaces.add(arg.space)
+                args.append(arg)
+        return tuple(reversed(args))
 
     @cached_property
     def spaces(self) -> FrozenSet[str]:
@@ -210,9 +224,6 @@ def _cache_lower(self, args: LowerArgs) -> evaluable.Array:
     cached_args, cached_result = getattr(self, '_ArrayMeta__cached_lower', (None, None))
     if cached_args == args:
         return cached_result
-    missing_spaces = self.spaces - args.spaces
-    if missing_spaces:
-        raise ValueError('Cannot lower {} because the following spaces are unspecified: {}.'.format(self, missing_spaces))
     result = self._ArrayMeta__cache_lower_orig(args)
     self._ArrayMeta__cached_lower = args, result
     return result
@@ -330,8 +341,6 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
 
     @cached_property
     def as_evaluable_array(self) -> evaluable.Array:
-        if self.spaces:
-            raise ValueError(f'cannot lower function with spaces ({", ".join(self.spaces)}) - did you forget integral or sample?')
         return self.lower(LowerArgs.empty())
 
     def __index__(self):
@@ -1223,7 +1232,7 @@ class _Gradient(Array):
         ref_dim = builtins.sum(args[space].transforms.todims for space in self._spaces)
         if self._geom.shape[-1] != ref_dim:
             raise Exception('cannot invert {}x{} jacobian'.format(self._geom.shape[-1], ref_dim))
-        refs = tuple(_root_derivative_target(arg.space, evaluable.constant(arg.transforms.todims)) for arg in args.args if arg.space in self._spaces)
+        refs = tuple(_root_derivative_target(arg.space, evaluable.constant(arg.transforms.todims)) for arg in args.exposed if arg.space in self._spaces)
         dfunc_dref = evaluable.concatenate([evaluable.derivative(func, ref) for ref in refs], axis=-1)
         dgeom_dref = evaluable.concatenate([evaluable.derivative(geom, ref) for ref in refs], axis=-1)
         dref_dgeom = evaluable.inverse(dgeom_dref)
@@ -1252,7 +1261,7 @@ class _SurfaceGradient(Array):
         if self._geom.shape[-1] != ref_dim + 1:
             raise ValueError('expected a {}d geometry but got a {}d geometry'.format(ref_dim + 1, self._geom.shape[-1]))
         refs = []
-        for arg in args.args:
+        for arg in args.exposed:
             if arg.space not in self._spaces:
                 continue
             refs.append((_root_derivative_target if arg.transforms.todims == arg.transforms.fromdims else _tip_derivative_target)(arg.space, evaluable.constant(arg.transforms.fromdims)))
@@ -1289,7 +1298,7 @@ class _Jacobian(Array):
             raise ValueError('the dimension of the geometry cannot be lower than the dimension of the tip coords')
         if not self._spaces:
             return evaluable.ones(geom.shape[:-1])
-        tips = [_tip_derivative_target(arg.space, evaluable.constant(arg.transforms.fromdims)) for arg in args.args if arg.space in self._spaces]
+        tips = [_tip_derivative_target(arg.space, evaluable.constant(arg.transforms.fromdims)) for arg in args.exposed if arg.space in self._spaces]
         J = evaluable.concatenate([evaluable.derivative(geom, tip) for tip in tips], axis=-1)
         return evaluable.sqrt_abs_det_gram(J)
 
@@ -1315,7 +1324,7 @@ class _Normal(Array):
             raise ValueError('Cannot unambiguously compute the normal because the dimension of the normal space is larger than one.')
         tangents = []
         normal = None
-        for arg in args.args:
+        for arg in args.exposed:
             if arg.space not in self._spaces:
                 continue
             chain = arg.transforms
