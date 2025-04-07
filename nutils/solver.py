@@ -43,6 +43,9 @@ import math
 import treelog as log
 
 
+ArrayDict = Dict[str, numpy.ndarray]
+
+
 # EXCEPTIONS
 
 class SolverError(Exception):
@@ -259,7 +262,7 @@ class System:
         return self.__eval.__nutils_hash__
 
     @log.withcontext
-    def assemble(self, arguments: Dict[str, numpy.ndarray]):
+    def assemble(self, arguments: ArrayDict):
         mat, vec, val = self.__mat_vec_val
         if vec is None:
             mat_blocks, vec_blocks, maybe_val = self.__eval(arguments)
@@ -280,7 +283,7 @@ class System:
             vec = vec + matx # vec(x) = vec(0) + mat x
         return mat, vec, val
 
-    def prepare_solution_vector(self, arguments: Dict[str, numpy.ndarray], constrain: Dict[str, numpy.ndarray]):
+    def prepare_solution_vector(self, arguments: ArrayDict, constrain: ArrayDict):
         arguments = arguments.copy()
         x = numpy.empty(self.__trial_offsets[-1], self.dtype)
         iscons = numpy.empty(self.__trial_offsets[-1], dtype=bool)
@@ -303,11 +306,11 @@ class System:
     def _trial_info(self):
         return ' and '.join(t + ' (' + ','.join(map(str, self.argshapes[t])) + ')' for t in self.trials)
 
-    MethodIter = Iterator[Tuple[Dict[str, numpy.ndarray], float, float]]
+    MethodIter = Iterator[Tuple[ArrayDict, float, float]]
 
     @cache.function
     @log.withcontext
-    def solve(self, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}, tol: float = 0., miniter: int = 0, maxiter: Optional[int] = None, method: Optional[Callable[...,MethodIter]] = None) -> Tuple[Dict[str, numpy.ndarray], float]:
+    def solve(self, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}, tol: float = 0., miniter: int = 0, maxiter: Optional[int] = None, method: Optional[Callable[...,MethodIter]] = None) -> Tuple[ArrayDict, float]:
         '''Solve the system.
 
         Determines the trial arguments for which the derivatives of the
@@ -365,7 +368,7 @@ class System:
             log.info(f'optimal value: {val:.1e}')
         return arguments
 
-    def step(self, *, arguments: Dict[str, numpy.ndarray], suffix: str, timearg: Optional[str] = None, timesteparg: Optional[str] = None, timestep: Optional[float] = None, maxretry: int = 2, **solveargs) -> Dict[str, numpy.ndarray]:
+    def step(self, *, arguments: ArrayDict, suffix: str, timearg: Optional[str] = None, timesteparg: Optional[str] = None, timestep: Optional[float] = None, maxretry: int = 2, **solveargs) -> ArrayDict:
         '''Advance a time step.
 
         This method is best described by an example. Let ``timearg`` equal 't'
@@ -424,7 +427,7 @@ class System:
 
     @cache.function
     @log.withcontext
-    def solve_constraints(self, *, droptol: Optional[float], arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> Tuple[Dict[str, numpy.ndarray], float]:
+    def solve_constraints(self, *, droptol: Optional[float], arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> Tuple[ArrayDict, float]:
         '''Solve for Dirichlet constraints.
 
         This method is similar to ``solve``, but with two key differences.
@@ -482,7 +485,7 @@ class Newton:
     def __str__(self):
         return 'newton'
 
-    def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
         while True:
@@ -504,7 +507,7 @@ class LinesearchNewton:
     def __str__(self):
         return 'linesearch-newton'
 
-    def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
         jac, res, val = system.assemble(arguments)
@@ -544,7 +547,7 @@ class Minimize:
     def __str__(self):
         return 'minimize'
 
-    def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         if not system.is_symmetric:
             raise ValueError('problem is not symmetric')
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
@@ -597,7 +600,7 @@ class Pseudotime:
     def __str__(self):
         return 'pseudotime'
 
-    def __call__(self, system, *, arguments: Dict[str, numpy.ndarray] = {}, constrain: Dict[str, numpy.ndarray] = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         x, iscons, arguments = system.prepare_solution_vector(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3)
         djac = self._assemble_inertia_matrix([(t, system.argshapes[t]) for t in system.trials], arguments)
