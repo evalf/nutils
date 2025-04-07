@@ -63,11 +63,11 @@ class Common:
             self.assertEqual(tuple(n.__index__() for n in actual_shape(dict(ielem=ielem))), desired_shape)
             offset = 0
             for space, desired_chain, desired_point in zip(self.desired_spaces, desired_chains, desired_points):
-                (chain, *_), index = args.transform_chains[space]
-                self.assertEqual(chain[evaluable.eval_once(index, arguments=dict(ielem=ielem)).__index__()], desired_chain)
+                arg = args[space]
+                self.assertEqual(arg.transforms[evaluable.eval_once(arg.index, arguments=dict(ielem=ielem)).__index__()], desired_chain)
                 desired_coords = desired_point.coords
                 desired_coords = numpy.lib.stride_tricks.as_strided(desired_coords, shape=(*desired_shape, desired_point.ndims,), strides=(0,)*offset+desired_coords.strides[:-1]+(0,)*(len(args.points_shape)-offset-desired_coords.ndim+1)+desired_coords.strides[-1:])
-                actual_coords = evaluable.eval_once(args.coordinates[space], arguments=dict(ielem=ielem))
+                actual_coords = evaluable.eval_once(arg.coordinates, arguments=dict(ielem=ielem))
                 self.assertEqual(actual_coords.shape, desired_coords.shape)
                 self.assertAllAlmostEqual(actual_coords, desired_coords)
                 offset += desired_point.coords.ndim - 1
@@ -128,8 +128,8 @@ class Common:
             self.assertEqual(take.ndims, self.desired_ndims)
             args = take.get_lower_args(evaluable.InRange(evaluable.Argument('ielem', (), int), evaluable.constant(1)))
             for space, desired_chain in zip(self.desired_spaces, self.desired_transform_chains[ielem]):
-                (chain, *_), index = args.transform_chains[space]
-                self.assertEqual(chain[evaluable.eval_once(index, arguments=dict(ielem=0)).__index__()], desired_chain)
+                arg = args[space]
+                self.assertEqual(arg.transforms[evaluable.eval_once(arg.index, arguments=dict(ielem=0)).__index__()], desired_chain)
 
     def test_take_elements_empty(self):
         take = self.sample.take_elements(numpy.array([], int))

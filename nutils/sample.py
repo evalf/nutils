@@ -1113,7 +1113,8 @@ class _Basis(function.Array):
         super().__init__(shape=(sample.npoints,), dtype=float, spaces=frozenset({sample.space}), arguments={})
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
-        aligned_space_coords = args.coordinates[self._sample.space]
+        arg = args[self._sample.space]
+        aligned_space_coords = arg.coordinates
         assert aligned_space_coords.ndim == len(args.points_shape) + 1
         space_coords, where = evaluable.unalign(aligned_space_coords)
         # Reinsert the coordinate axis, the last axis of `aligned_space_coords`, or
@@ -1125,9 +1126,8 @@ class _Basis(function.Array):
             space_coords = evaluable.Transpose(space_coords, numpy.argsort(where))
             where = tuple(sorted(where))
 
-        (chain, *_), tip_index = args.transform_chains[self._sample.space]
-        index = evaluable.TransformIndex(self._sample.transforms[0], chain, tip_index)
-        coords = evaluable.TransformCoords(self._sample.transforms[0], chain, tip_index, space_coords)
+        index = evaluable.TransformIndex(self._sample.transforms[0], arg.transforms, arg.index)
+        coords = evaluable.TransformCoords(self._sample.transforms[0], arg.transforms, arg.index, space_coords)
         expect = self._sample.points.get_evaluable_coords(index)
         sampled = evaluable.Sampled(coords, expect, self._interpolation)
         indices = self._sample.get_evaluable_indices(index)
