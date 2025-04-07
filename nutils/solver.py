@@ -429,7 +429,7 @@ class System:
 
     @cache.function
     @log.withcontext
-    def solve(self, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}, tol: float = 0., miniter: int = 0, maxiter: Optional[int] = None, method: Optional[Callable[...,Union[MethodIter,MethodValue]]] = None) -> Tuple[ArrayDict, float]:
+    def solve(self, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, tol: float = 0., miniter: int = 0, maxiter: Optional[int] = None, method: Optional[Callable[...,Union[MethodIter,MethodValue]]] = None) -> Tuple[ArrayDict, float]:
         '''Solve the system.
 
         Determines the trial arguments for which the derivatives of the
@@ -444,8 +444,6 @@ class System:
             Constrained values for any of the trial arguments, supplied as
             float vectors with NaN entries or boolean vectors, the latter
             holding values at those of the initial guess.
-        linargs
-            Keyword arguments to be passed on to the linear solver.
         tol
             Maximum residual norm, stopping criterion for the iterative solver.
             Required for nonlinear problems.
@@ -464,7 +462,7 @@ class System:
             method = Direct() if self.is_linear else Newton()
         log.info(f'{"optimizing" if self.is_symmetric else "solving"} for argument {self._trial_info} using {method} method')
 
-        m = method(self, arguments=arguments, constrain=constrain, linargs=linargs)
+        m = method(self, arguments=arguments, constrain=constrain)
         if isinstance(m, tuple):
             arguments, resnorm = m
             log.info(f'residual: {resnorm:.0e}')
@@ -603,44 +601,55 @@ class System:
         return constrain | {t: arguments[t] for t in self.trials}
 
 
-@dataclass(eq=True, frozen=True)
 class Direct:
     '''Direct solution of a linear system.'''
+
+    def __init__(self, **linargs):
+        self.linargs = linargs
+
+    @property
+    def __nutils_hash__(self):
+        return types.nutils_hash(('Direct', self.linargs))
 
     def __str__(self):
         return 'direct'
 
-    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodValue:
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodValue:
         if not system.is_linear:
             raise ValueError('problem is not linear')
         arguments, x = system.deconstruct(arguments, constrain)
-        linargs = _copy_with_defaults(linargs, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, symmetric=system.is_symmetric)
         jac, res = system.assemble_jacobian_residual(arguments, x)
         dx = jac.solve(res, **linargs)
         x -= dx
         return system.construct(arguments, x), numpy.linalg.norm(res - jac @ dx)
 
 
-@dataclass(eq=True, frozen=True)
 class Newton:
     '''Newton solver.
 
     This solver generates the iterates ``x_n+1 = x_n - J(x_n)^-1 r(x_n)``
     consistent with a standard Newton process.'''
 
+    def __init__(self, **linargs):
+        self.linargs = linargs
+
+    @property
+    def __nutils_hash__(self):
+        return types.nutils_hash(('Newton', self.linargs))
+
     def __str__(self):
         return 'newton'
 
-    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
-        linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
         while True:
             jac, res = system.assemble_jacobian_residual(arguments, x)
             yield system.construct(arguments, x), numpy.linalg.norm(res)
             x -= jac.solve_leniently(res, **linargs)
 
 
-@dataclass(eq=True, frozen=True)
 class LinesearchNewton:
     '''Newton solver with automatic relaxation.
 
@@ -656,19 +665,23 @@ class LinesearchNewton:
     norm is likely minimal.
     '''
 
-    strategy: Callable = NormBased()
-    failrelax: float = 1e-6
-    relax0: float = 1.
+    def __init__(self, strategy: Callable = NormBased(), failrelax: float = 1e-6, relax0: float = 1., **linargs):
+        assert callable(strategy), f'invalid linesearch strategy {strategy!r}'
+        self.strategy = strategy
+        self.failrelax = failrelax
+        self.relax0 = relax0
+        self.linargs = linargs
 
-    def __post_init__(self):
-        assert callable(self.strategy), f'invalid linesearch strategy {self.strategy!r}'
+    @property
+    def __nutils_hash__(self):
+        return types.nutils_hash(('LinesearchNewton', self.strategy, self.failrelax, self.relax0, self.linargs))
 
     def __str__(self):
         return 'linesearch-newton'
 
-    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
-        linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
         jac, res = system.assemble_jacobian_residual(arguments, x)
         relax = self.relax0
         while True: # newton iterations
@@ -691,7 +704,6 @@ class LinesearchNewton:
             x = newx
 
 
-@dataclass(eq=True, frozen=True)
 class Minimize:
     '''Direct minimization of scalar functional.
 
@@ -699,19 +711,25 @@ class Minimize:
     minimizer of a locally convex scalar function.
     '''
 
-    rampup: float = .5
-    rampdown: float = -1.
-    failrelax: float = -10.
+    def __init__(self, rampup: float = .5, rampdown: float = -1., failrelax: float = -10., **linargs):
+        self.rampup = rampup
+        self.rampdown = rampdown
+        self.failrelax = failrelax
+        self.linargs = linargs
+
+    @property
+    def __nutils_hash__(self):
+        return types.nutils_hash(('Minimize', self.rampup, self.rampdown, self.failrelax, self.linargs))
 
     def __str__(self):
         return 'minimize'
 
-    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         if not system.is_symmetric:
             raise ValueError('problem is not symmetric')
         arguments, x = system.deconstruct(arguments, constrain)
         jac, res, val = system.assemble_jacobian_residual_value(arguments, x)
-        linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
         relax = 0.
         while True:
             yield system.construct(arguments, x), numpy.linalg.norm(res)
@@ -749,7 +767,6 @@ class Minimize:
             x = newx
 
 
-@dataclass(eq=True, frozen=True)
 class Pseudotime:
     '''Inertia assisted Newton.
 
@@ -765,16 +782,22 @@ class Pseudotime:
     ``timestep`` scaled by the ratio of ``|r(x0)| / |r(x)|``.
     '''
 
-    inertia: Tuple[evaluable.AsEvaluableArray,...]
-    timestep: float
+    def __init__(self, inertia: Tuple[evaluable.AsEvaluableArray,...], timestep: float, **linargs):
+        self.inertia = inertia
+        self.timestep = timestep
+        self.linargs = linargs
+
+    @property
+    def __nutils_hash__(self):
+        return types.nutils_hash(('Pseudotime', self.inertia, self.timestep, self.linargs))
 
     def __str__(self):
         return 'pseudotime'
 
-    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
         free = numpy.concatenate([numpy.isnan(arguments[t]).ravel() for t in system.trials])
-        linargs = _copy_with_defaults(linargs, rtol=1-3)
+        linargs = _copy_with_defaults(self.linargs, rtol=1-3)
         djac = matrix.assemble_block_csr(evaluable.eval_once([[evaluable.as_csr(evaluable._flat(evaluable.derivative(evaluable._flat(res), arg).simplified, 2)) for arg in system.trial_args] for res in self.inertia], arguments=arguments)).submatrix(free, free)
 
         first = _First()
@@ -821,7 +844,7 @@ def solve_linear(target, residual, *, constrain = None, lhs0: types.arraydata = 
     system = System(residual, *_split_trial_test(target))
     if not system.is_linear:
         raise SolverError('problem is not linear')
-    return system.solve(arguments=arguments, constrain=constrain or {}, linargs=linargs)
+    return system.solve(arguments=arguments, constrain=constrain or {}, method=Direct(**linargs))
 
 
 def newton(target, residual, *, jacobian = None, lhs0 = None, relax0: float = 1., constrain = None, linesearch=NormBased(), failrelax: float = 1e-6, arguments = {}, **kwargs):
@@ -881,8 +904,9 @@ def newton(target, residual, *, jacobian = None, lhs0 = None, relax0: float = 1.
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
     system = System(residual, *_split_trial_test(target))
-    method = Newton() if not linesearch else LinesearchNewton(strategy=linesearch, relax0=relax0, failrelax=failrelax)
-    return _with_solve(system, method, arguments, constrain or {}, linargs)
+    method = Newton(**linargs) if not linesearch \
+        else LinesearchNewton(strategy=linesearch, relax0=relax0, failrelax=failrelax, **linargs)
+    return _with_solve(system, method, arguments, constrain or {})
 
 
 def minimize(target, energy: evaluable.asarray, *, lhs0: types.arraydata = None, constrain = None, rampup: float = .5, rampdown: float = -1., failrelax: float = -10., arguments = {}, **kwargs):
@@ -934,8 +958,8 @@ def minimize(target, energy: evaluable.asarray, *, lhs0: types.arraydata = None,
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
     system = System(energy, *_split_trial_test(target))
-    method = Minimize(rampup=rampup, rampdown=rampdown, failrelax=failrelax)
-    return _with_solve(system, method, arguments, constrain or {}, linargs)
+    method = Minimize(rampup=rampup, rampdown=rampdown, failrelax=failrelax, **linargs)
+    return _with_solve(system, method, arguments, constrain or {})
 
 
 def pseudotime(target, residual, inertia, timestep: float, *, lhs0: types.arraydata = None, constrain = None, arguments = {}, **kwargs):
@@ -978,8 +1002,8 @@ def pseudotime(target, residual, inertia, timestep: float, *, lhs0: types.arrayd
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
     system = System(residual, *_split_trial_test(target))
-    method = Pseudotime(inertia=inertia, timestep=timestep)
-    return _with_solve(system, method, arguments, constrain or {}, linargs)
+    method = Pseudotime(inertia=inertia, timestep=timestep, **linargs)
+    return _with_solve(system, method, arguments, constrain or {})
 
 
 def thetamethod(target, residual, inertia, timestep: float, theta: float, *, lhs0: types.arraydata = None, constrain = None, newtontol: float = 1e-10, arguments = {}, newtonargs: types.frozendict = {}, timetarget: str = '_thetamethod_time', time0: float = 0., historysuffix: str = '0'):
@@ -1109,8 +1133,10 @@ def optimize(target, functional: evaluable.asarray, *, tol: float = 0., argument
     system = System(functional, *_split_trial_test(target))
     if droptol is not None:
         return system.solve_constraints(arguments=arguments, constrain=constrain or {}, linargs=linargs, droptol=droptol)
-    method = None if system.is_linear else Newton() if linesearch is None else LinesearchNewton(strategy=linesearch, relax0=relax0, failrelax=failrelax)
-    return system.solve(arguments=arguments, constrain=constrain or {}, linargs=linargs, method=method, tol=tol)
+    method = Direct(**linargs) if system.is_linear \
+        else Newton(**linargs) if linesearch is None \
+        else LinesearchNewton(strategy=linesearch, relax0=relax0, failrelax=failrelax, **linargs)
+    return system.solve(arguments=arguments, constrain=constrain or {}, method=method, tol=tol)
 
 
 # HELPER FUNCTIONS
@@ -1208,17 +1234,16 @@ class _with_solve:
     method: Any
     arguments: Any
     constrain: Any
-    linargs: Any
     item: Optional[str] = None
 
     def __iter__(self):
-        iters = self.method(self.system, arguments=self.arguments, constrain=self.constrain, linargs=self.linargs)
+        iters = self.method(self.system, arguments=self.arguments, constrain=self.constrain)
         for arguments, resnorm in iters:
             yield arguments if self.item is None else arguments[self.item], types.attributes(resnorm=resnorm)
 
     def __getitem__(self, item):
         assert self.item is None
-        return _with_solve(self.system, self.method, self.arguments, self.constrain, self.linargs, item)
+        return _with_solve(self.system, self.method, self.arguments, self.constrain, item)
 
     def solve(self, tol, maxiter=float('inf'), miniter=0):
         '''execute nonlinear solver, return lhs

@@ -534,7 +534,7 @@ class system_navierstokes(TestCase):
 
     def test_newton_tolnotreached(self):
         with self.assertLogs('nutils', logging.WARNING) as cm:
-            args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.Newton(), tol=1e-10, maxiter=3, linargs=dict(rtol=1e-99))
+            args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.Newton(rtol=1e-99), tol=1e-10, maxiter=3)
         for msg in cm.output:
             self.assertIn('solver failed to reach tolerance', msg)
         self.assert_resnorm(args, tol=1e-10)
