@@ -72,7 +72,7 @@ class Common:
                 self.assertAllAlmostEqual(actual_coords, desired_coords)
                 offset += desired_point.coords.ndim - 1
         with self.assertRaisesRegex(ValueError, '^Nested'):
-            args | self.sample.get_lower_args(evaluable.InRange(evaluable.Argument('ielem2', (), int), evaluable.constant(self.desired_nelems)))
+            args * self.sample.get_lower_args(evaluable.InRange(evaluable.Argument('ielem2', (), int), evaluable.constant(self.desired_nelems)))
 
     @property
     def _desired_element_tri(self):

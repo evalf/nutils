@@ -75,6 +75,12 @@ class LowerArgs(NamedTuple):
         )
 
     def __or__(self, other: 'LowerArgs') -> 'LowerArgs':
+        warnings.deprecation('`LowerArgs.__or__()` is deprecated; use `LowerArgs.__mul__()` instead')
+        return self * other
+
+    def __mul__(self, other: 'LowerArgs') -> 'LowerArgs':
+        'Return the outer product of two :class:`LowerArgs`.'
+
         duplicates = set(self.transform_chains) & set(other.transform_chains)
         if duplicates:
             raise ValueError(f'Nested integrals or samples in the same space: {", ".join(sorted(duplicates))}.')
@@ -84,6 +90,15 @@ class LowerArgs(NamedTuple):
         coordinates.update({space: evaluable.prependaxes(coords, self.points_shape) for space, coords in other.coordinates.items()})
         points_shape = self.points_shape + other.points_shape
         return LowerArgs(points_shape, transform_chains, coordinates)
+
+    def __add__(self, other: 'LowerArgs') -> 'LowerArgs':
+        'Join two :class:`LowerArgs` with the same :attr:`points_shape`.'
+
+        duplicates = set(self.transform_chains) & set(other.transform_chains)
+        if duplicates:
+            raise ValueError(f'Nested integrals or samples in the same space: {", ".join(sorted(duplicates))}.')
+        points_shape = evaluable.assert_equal_tuple(self.points_shape, other.points_shape)
+        return LowerArgs(points_shape, self.transform_chains | other.transform_chains, self.coordinates | other.coordinates)
 
 
 class Lowerable(Protocol):

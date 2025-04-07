@@ -837,7 +837,7 @@ class _Mul(_TensorialSample):
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
         ielem1, ielem2 = evaluable.divmod(__ielem, self._sample2.nelems)
-        return self._sample1.get_lower_args(ielem1) | self._sample2.get_lower_args(ielem2)
+        return self._sample1.get_lower_args(ielem1) * self._sample2.get_lower_args(ielem2)
 
     @property
     def _reversed_factors(self):
@@ -973,20 +973,16 @@ class _Zip(Sample):
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
         points_shape = evaluable.Take(evaluable.Constant(self._sizes), __ielem),
-        coordinates = {}
-        transform_chains = {}
+        args = function.LowerArgs.empty(points_shape)
         for samplei, ielemsi, ilocalsi in zip(self._samples, self._ielems, self._ilocals):
             slicei = evaluable.Take(evaluable.Constant(ilocalsi), self._getslice(__ielem))
-            argsi = samplei \
+            args += samplei \
                 .get_lower_args(evaluable.Take(evaluable.Constant(ielemsi), __ielem)) \
                 .map_coordinates(
                     points_shape,
                     lambda coords: evaluable.Transpose.to_end(evaluable.Take(evaluable._flat(evaluable.Transpose.from_end(coords, 0), ndim=2), slicei), 0),
                 )
-            coordinates.update(argsi.coordinates)
-            transform_chains.update(argsi.transform_chains)
-        return function.LowerArgs(points_shape, transform_chains, coordinates)
-
+        return args
 
     def get_evaluable_indices(self, ielem):
         return evaluable.Take(evaluable.Constant(self._indices), self._getslice(ielem))
@@ -1069,7 +1065,7 @@ class _Integral(function.Array):
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
         weights = evaluable.astype(self._sample.get_evaluable_weights(ielem), self.dtype)
-        integrand = evaluable.astype(self._integrand.lower(args | self._sample.get_lower_args(ielem)), self.dtype)
+        integrand = evaluable.astype(self._integrand.lower(args * self._sample.get_lower_args(ielem)), self.dtype)
         elem_integral = evaluable.einsum('B,ABC->AC', weights, integrand, B=weights.ndim, C=self.ndim)
         return evaluable.loop_sum(elem_integral, ielem)
 
@@ -1084,7 +1080,7 @@ class _ConcatenatePoints(function.Array):
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         axis = len(args.points_shape)
         ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
-        args |= self._sample.get_lower_args(ielem)
+        args *= self._sample.get_lower_args(ielem)
         func = self._func.lower(args)
         func = evaluable.Transpose.to_end(func, *range(axis, len(args.points_shape)))
         for i in range(len(args.points_shape) - axis - 1):

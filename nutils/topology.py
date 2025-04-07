@@ -1388,7 +1388,7 @@ class _Mul(_TensorialTopology):
         ielem1, ielem2 = evaluable.divmod(ielem, len(self.topo2))
         largs1 = self.topo1._lower_args(ielem1, point[:self.topo1.ndims])
         largs2 = self.topo2._lower_args(ielem2, point[self.topo1.ndims:])
-        return largs1 | largs2
+        return largs1 * largs2
 
     def _sample(self, ielems, coords, weights=None):
         ielems1, ielems2 = divmod(ielems, len(self.topo2))
