@@ -459,7 +459,7 @@ class System:
         '''
 
         if method is None:
-            method = Direct() if self.is_linear else Newton()
+            method = (Direct if self.is_linear else Newton)(atol=tol)
         log.info(f'{"optimizing" if self.is_symmetric else "solving"} for argument {self._trial_info} using {method} method')
 
         m = method(self, arguments=arguments, constrain=constrain)
