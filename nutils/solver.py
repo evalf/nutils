@@ -481,6 +481,10 @@ class System:
 
 @dataclass(eq=True, frozen=True)
 class Newton:
+    '''Newton solver.
+
+    This solver generates the iterates ``x_n+1 = x_n - J(x_n)^-1 r(x_n)``
+    consistent with a standard Newton process.'''
 
     def __str__(self):
         return 'newton'
@@ -496,6 +500,19 @@ class Newton:
 
 @dataclass(eq=True, frozen=True)
 class LinesearchNewton:
+    '''Newton solver with automatic relaxation.
+
+    This solver generates the iterates ``x_n+1 = x_n - α J(x_n)^-1 r(x_n)``,
+    where ``0 < α <= 1`` is a relaxation value. The value for ``α`` is
+    initially ``relax0``, and subsequently determined by a configurable
+    ``strategy``. If the value falls below ``failrelax`` then the solver fails
+    with a ``SolverError``.
+
+    The default strategy is ``NormBased``, which employs a polynomial
+    interpolation of the residual norm between the current value of ``x`` and
+    the prospective next value to determine at what value of ``α`` the residual
+    norm is likely minimal.
+    '''
 
     strategy: Callable = NormBased()
     failrelax: float = 1e-6
@@ -539,6 +556,11 @@ class LinesearchNewton:
 
 @dataclass(eq=True, frozen=True)
 class Minimize:
+    '''Direct minimization of scalar functional.
+
+    This solver constructs a trajectory of steepest descent to find the
+    minimizer of a locally convex scalar function.
+    '''
 
     rampup: float = .5
     rampdown: float = -1.
@@ -593,6 +615,19 @@ class Minimize:
 
 @dataclass(eq=True, frozen=True)
 class Pseudotime:
+    '''Inertia assisted Newton.
+
+    This solver is a variant of the Newton solver for problems that do not
+    converge along the standard Newton path. For problems that represent the
+    steady state solution of a dynamic system, the pseudo-time solver uses a
+    provided inertia matrix to progress towards the steady state along the
+    (approximately) physical path using ever larger time steps.
+
+    Concretely, rather than forming updates of the form ``J(x) dx = r(x)``, the
+    pseudo-time solver solves ``(J(x) + dJ / dt) dx = r(x)``, where ``dJ`` is
+    the provided inertia matrix and ``dt`` is the configured initial
+    ``timestep`` scaled by the ratio of ``|r(x0)| / |r(x)|``.
+    '''
 
     inertia: Tuple[evaluable.AsEvaluableArray,...]
     timestep: float
