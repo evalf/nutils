@@ -650,6 +650,61 @@ class Newton:
             x -= jac.solve_leniently(res, **linargs)
 
 
+class ReuseNewton:
+    '''Newton with approximate Jacobians.
+
+    This is a modification of the vanilla Newton process, in which a new
+    Jacobian matrix is NOT created for every update, but an existing matrix is
+    reused instead for as long as ``|res(x - J^-1 res(x))| < require
+    |res(x)|``.
+
+    When the condition no longer holds, a new Jacobian matrix is assembled and
+    a standard Newton update is performed without regard for the ``require``
+    parameter.
+    '''
+
+    def __init__(self, require: float = .5, **linargs):
+        self.require = require
+        self.linargs = linargs
+
+    @property
+    def __nutils_hash__(self):
+        return types.nutils_hash(('ReuseNewton', self.require, self.linargs))
+
+    def __str__(self):
+        return 'reuse-newton'
+
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
+        arguments, x = system.deconstruct(arguments, constrain)
+        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
+
+        res = system.assemble_residual(arguments, x)
+        resnorm = numpy.linalg.norm(res)
+
+        yield system.construct(arguments, x), resnorm
+
+        update_jacobian = True
+
+        while True:
+
+            if update_jacobian:
+                log.info('updating jacobian matrix')
+                jac = system.assemble_jacobian(arguments, x)
+
+            newx = x - jac.solve_leniently(res, **linargs)
+            newres = system.assemble_residual(arguments, newx)
+            newresnorm = numpy.linalg.norm(newres)
+
+            if update_jacobian or newresnorm < self.require * resnorm:
+                resnorm = newresnorm
+                res = newres
+                x = newx
+                yield system.construct(arguments, x), resnorm
+                update_jacobian = False
+            else:
+                update_jacobian = True
+
+
 class LinesearchNewton:
     '''Newton solver with automatic relaxation.
 

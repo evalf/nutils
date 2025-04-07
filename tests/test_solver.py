@@ -478,6 +478,10 @@ class system_finitestrain(TestCase):
         args = self.system.solve(constrain=self.cons, method=solver.Newton(), tol=1e-10, maxiter=7)
         self.assert_resnorm(args, tol=1e-10)
 
+    def test_newton_reuse(self):
+        args = self.system.solve(constrain=self.cons, method=solver.ReuseNewton(), tol=1e-10, maxiter=11)
+        self.assert_resnorm(args, tol=1e-10)
+
     def test_newton_linesearch(self):
         args = self.system.solve(constrain=self.cons, method=solver.LinesearchNewton(), tol=1e-10, maxiter=7)
         self.assert_resnorm(args, tol=1e-10)
@@ -522,6 +526,10 @@ class system_navierstokes(TestCase):
 
     def test_newton(self):
         args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.Newton(), tol=1e-10, maxiter=3)
+        self.assert_resnorm(args, tol=1e-10)
+
+    def test_newton_reuse(self):
+        args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.ReuseNewton(), tol=1e-10, maxiter=8)
         self.assert_resnorm(args, tol=1e-10)
 
     def test_newton_linesearch_normbased(self):
