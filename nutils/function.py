@@ -48,6 +48,12 @@ class LowerArgs(NamedTuple):
                 for space, coords in self.coordinates.items())
 
     @classmethod
+    def empty(cls, points_shape=()) -> 'LowerArgs':
+        'Returns an empty instance of :class:`LowerArgs`, optionally with the provided ``points_shape``.'
+
+        return cls(points_shape, {}, {})
+
+    @classmethod
     def for_space(cls, space: str, transforms: Tuple[Transforms, ...], index: evaluable.Array, coordinates: evaluable.Array) -> 'LowerArgs':
         if index.dtype != int or index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
@@ -239,7 +245,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def as_evaluable_array(self) -> evaluable.Array:
         if self.spaces:
             raise ValueError(f'cannot lower function with spaces ({", ".join(self.spaces)}) - did you forget integral or sample?')
-        return self.lower(LowerArgs((), {}, {}))
+        return self.lower(LowerArgs.empty())
 
     def __index__(self):
         if self.arguments or self.spaces:

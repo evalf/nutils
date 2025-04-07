@@ -651,7 +651,7 @@ class _Empty(_TensorialSample):
         return evaluable.Zeros((evaluable.constant(0),) * len(self.spaces), dtype=float)
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
-        return function.LowerArgs((), {}, {})
+        return function.LowerArgs.empty()
 
     def get_element_tri(self, ielem: int) -> numpy.ndarray:
         raise IndexError('index out of range')
