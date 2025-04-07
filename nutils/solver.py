@@ -424,11 +424,12 @@ class System:
     def _trial_info(self):
         return ' and '.join(t + ' (' + ','.join(map(str, shape)) + ')' for t, shape in zip(self.trials, self.trial_shapes))
 
-    MethodIter = Iterator[Tuple[ArrayDict, float, float]]
+    MethodValue = Tuple[ArrayDict, float]
+    MethodIter = Iterator[MethodValue]
 
     @cache.function
     @log.withcontext
-    def solve(self, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}, tol: float = 0., miniter: int = 0, maxiter: Optional[int] = None, method: Optional[Callable[...,MethodIter]] = None) -> Tuple[ArrayDict, float]:
+    def solve(self, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}, tol: float = 0., miniter: int = 0, maxiter: Optional[int] = None, method: Optional[Callable[...,Union[MethodIter,MethodValue]]] = None) -> Tuple[ArrayDict, float]:
         '''Solve the system.
 
         Determines the trial arguments for which the derivatives of the
@@ -459,30 +460,35 @@ class System:
             an iterator of (arguments, resnorm, value) triplets.
         '''
 
-        if method is None and not self.is_linear:
-            method = Newton()
-        log.info(f'{"optimizing" if self.is_symmetric else "solving"} for argument {self._trial_info} using {method or "direct"} method')
         if method is None:
-            arguments, x = self.deconstruct(arguments, constrain)
-            jac, res, val = self.assemble(arguments, x)
-            dx = -jac.solve(res, **_copy_with_defaults(linargs, symmetric=self.is_symmetric))
-            if self.is_symmetric:
-                log.info(f'optimal value: {val+.5*(res@dx):.1e}') # val(x + dx) = val(x) + res(x) dx + .5 dx jac dx
-            x += dx
-            return self.construct(arguments, x)
-        if tol <= 0:
-            raise ValueError('iterative solver requires a strictly positive tolerance')
-        first = _First()
-        with log.iter.plain('iter', itertools.count()) as steps:
-            for arguments, resnorm, val in method(self, arguments=arguments, constrain=constrain, linargs=linargs):
-                progress = numpy.log(first(resnorm)/resnorm) / numpy.log(first(resnorm)/tol) if resnorm > tol else 1
-                log.info(f'residual: {resnorm:.0e} ({100*progress:.0f}%)')
-                iiter = next(steps) # opens new log context
-                if iiter >= miniter and resnorm <= tol:
-                    break
+            method = Direct() if self.is_linear else Newton()
+        log.info(f'{"optimizing" if self.is_symmetric else "solving"} for argument {self._trial_info} using {method} method')
+
+        m = method(self, arguments=arguments, constrain=constrain, linargs=linargs)
+        if isinstance(m, tuple):
+            arguments, resnorm = m
+            log.info(f'residual: {resnorm:.0e}')
+            if resnorm > tol > 0:
+                raise SolverError(f'failed to reach desired tolerance of {tol:.0e}')
+        else:
+            if tol <= 0:
+                raise ValueError('iterative solver requires a strictly positive tolerance')
+            arguments, resnorm = next(m)
+            with log.context(f'iter 0'):
+                log.info(f'residual: {resnorm:.0e}')
+            resnorm0 = resnorm
+            iiter = 0
+            while iiter < miniter or resnorm > tol:
                 if maxiter is not None and iiter >= maxiter:
                     raise SolverError(f'failed to converge in {maxiter} iterations')
+                iiter += 1
+                with log.context(f'iter {iiter}'):
+                    arguments, resnorm = next(m)
+                    progress = numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol) if resnorm > tol else 1
+                    log.info(f'residual: {resnorm:.0e} ({100*progress:.0f}%)')
+
         if self.is_symmetric:
+            val = self.assemble_value(arguments)
             log.info(f'optimal value: {val:.1e}')
         return arguments
 
@@ -598,6 +604,24 @@ class System:
 
 
 @dataclass(eq=True, frozen=True)
+class Direct:
+    '''Direct solution of a linear system.'''
+
+    def __str__(self):
+        return 'direct'
+
+    def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodValue:
+        if not system.is_linear:
+            raise ValueError('problem is not linear')
+        arguments, x = system.deconstruct(arguments, constrain)
+        linargs = _copy_with_defaults(linargs, symmetric=system.is_symmetric)
+        jac, res = system.assemble_jacobian_residual(arguments, x)
+        dx = jac.solve(res, **linargs)
+        x -= dx
+        return system.construct(arguments, x), numpy.linalg.norm(res - jac @ dx)
+
+
+@dataclass(eq=True, frozen=True)
 class Newton:
     '''Newton solver.
 
@@ -611,8 +635,8 @@ class Newton:
         arguments, x = system.deconstruct(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
         while True:
-            jac, res, val = system.assemble(arguments, x)
-            yield system.construct(arguments, x), numpy.linalg.norm(res), val
+            jac, res = system.assemble_jacobian_residual(arguments, x)
+            yield system.construct(arguments, x), numpy.linalg.norm(res)
             x -= jac.solve_leniently(res, **linargs)
 
 
@@ -645,16 +669,16 @@ class LinesearchNewton:
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, linargs: Dict[str, Any] = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
-        jac, res, val = system.assemble(arguments, x)
+        jac, res = system.assemble_jacobian_residual(arguments, x)
         relax = self.relax0
         while True: # newton iterations
-            yield system.construct(arguments, x), numpy.linalg.norm(res), val
+            yield system.construct(arguments, x), numpy.linalg.norm(res)
             dx = -jac.solve_leniently(res, **linargs)
             res0 = res
             jac0dx = jac@dx # == res0 if dx was solved to infinite precision
             while True: # line search
                 newx = x + dx * relax
-                jac, res, val = system.assemble(arguments, newx)
+                jac, res = system.assemble_jacobian_residual(arguments, newx)
                 scale, accept = self.strategy(res0, (jac0dx)*relax, res, (jac@dx)*relax)
                 if accept:
                     log.info('update accepted at relaxation', round(relax, 5))
@@ -686,11 +710,11 @@ class Minimize:
         if not system.is_symmetric:
             raise ValueError('problem is not symmetric')
         arguments, x = system.deconstruct(arguments, constrain)
-        jac, res, val = system.assemble(arguments, x)
+        jac, res, val = system.assemble_jacobian_residual_value(arguments, x)
         linargs = _copy_with_defaults(linargs, rtol=1-3, symmetric=system.is_symmetric)
         relax = 0.
         while True:
-            yield system.construct(arguments, x), numpy.linalg.norm(res), val
+            yield system.construct(arguments, x), numpy.linalg.norm(res)
             dx = -jac.solve_leniently(res, **linargs)
             x += dx # baseline: vanilla Newton
             # compute first two ritz values to determine approximate path of steepest descent
@@ -713,7 +737,7 @@ class Minimize:
                 r = numpy.exp(relax - numpy.log(D)) # == exp(relax) / D
                 eL = numpy.exp(-r*L)
                 newx = x - V @ eL
-                jac, res, val = system.assemble(arguments, newx)
+                jac, res, val = system.assemble_jacobian_residual_value(arguments, newx)
                 slope = res @ (V @ (eL*L))
                 log.info('energy {:+.2e} / e{:+.1f} and {}creasing'.format(val - val0, relax, 'in' if slope > 0 else 'de'))
                 if numpy.isfinite(val) and numpy.isfinite(res).all() and val <= val0 and slope <= 0:
@@ -755,9 +779,9 @@ class Pseudotime:
 
         first = _First()
         while True:
-            jac, res, val = system.assemble(arguments, x)
+            jac, res = system.assemble_jacobian_residual(arguments, x)
             resnorm = numpy.linalg.norm(res)
-            yield system.construct(arguments, x), resnorm, val
+            yield system.construct(arguments, x), resnorm
             timestep = self.timestep * (first(resnorm) / resnorm)
             log.info(f'timestep: {timestep:.0e}')
             x -= (jac + djac / timestep).solve_leniently(res, **linargs)
@@ -1189,10 +1213,8 @@ class _with_solve:
 
     def __iter__(self):
         iters = self.method(self.system, arguments=self.arguments, constrain=self.constrain, linargs=self.linargs)
-        for arguments, resnorm, value in iters:
-            lhs = arguments if self.item is None else arguments[self.item]
-            info = types.attributes(resnorm=resnorm) if not self.system.is_symmetric else types.attributes(resnorm=resnorm, energy=value)
-            yield lhs, info
+        for arguments, resnorm in iters:
+            yield arguments if self.item is None else arguments[self.item], types.attributes(resnorm=resnorm)
 
     def __getitem__(self, item):
         assert self.item is None
