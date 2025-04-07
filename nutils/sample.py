@@ -976,12 +976,17 @@ class _Zip(Sample):
         coordinates = {}
         transform_chains = {}
         for samplei, ielemsi, ilocalsi in zip(self._samples, self._ielems, self._ilocals):
-            argsi = samplei.get_lower_args(evaluable.Take(evaluable.Constant(ielemsi), __ielem))
             slicei = evaluable.Take(evaluable.Constant(ilocalsi), self._getslice(__ielem))
+            argsi = samplei \
+                .get_lower_args(evaluable.Take(evaluable.Constant(ielemsi), __ielem)) \
+                .map_coordinates(
+                    points_shape,
+                    lambda coords: evaluable.Transpose.to_end(evaluable.Take(evaluable._flat(evaluable.Transpose.from_end(coords, 0), ndim=2), slicei), 0),
+                )
+            coordinates.update(argsi.coordinates)
             transform_chains.update(argsi.transform_chains)
-            for space, coords in argsi.coordinates.items():
-                coordinates[space] = evaluable.Transpose.to_end(evaluable.Take(evaluable._flat(evaluable.Transpose.from_end(coords, 0), ndim=2), slicei), 0)
         return function.LowerArgs(points_shape, transform_chains, coordinates)
+
 
     def get_evaluable_indices(self, ielem):
         return evaluable.Take(evaluable.Constant(self._indices), self._getslice(ielem))

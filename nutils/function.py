@@ -65,6 +65,15 @@ class LowerArgs(NamedTuple):
 
         return LowerArgs((), self.transform_chains, {})
 
+    def map_coordinates(self, points_shape, map: Callable[[evaluable.Array], Optional[evaluable.Array]]) -> 'LowerArgs':
+        'Return a copy of the :class:`LowerArgs` with the given ``points_shape`` and coordinates mapped using ``map``.'
+
+        return LowerArgs(
+            points_shape,
+            self.transform_chains,
+            {space: map(coordinates) for space, coordinates in self.coordinates.items()},
+        )
+
     def __or__(self, other: 'LowerArgs') -> 'LowerArgs':
         duplicates = set(self.transform_chains) & set(other.transform_chains)
         if duplicates:
@@ -733,8 +742,10 @@ class Custom(Array):
     def lower(self, args: LowerArgs) -> evaluable.Array:
         evalargs = tuple(arg.lower(args) if isinstance(arg, Array) else arg for arg in self._args)
         add_points_shape = tuple(map(evaluable.asarray, self.shape[:self._npointwise]))
-        points_shape = args.points_shape + add_points_shape
-        coordinates = {space: evaluable.Transpose.to_end(evaluable.appendaxes(coords, add_points_shape), coords.ndim-1) for space, coords in args.coordinates.items()}
+        args = args.map_coordinates(
+            args.points_shape + add_points_shape,
+            lambda coords: evaluable.Transpose.to_end(evaluable.appendaxes(coords, add_points_shape), coords.ndim-1),
+        )
         evalf = self.evalf
         partial_derivative = self.partial_derivative
         if getattr(self.evalf, '__nutils_hash__', None) is None:
@@ -752,7 +763,7 @@ class Custom(Array):
             self.dtype,
             self.spaces,
             self.arguments,
-            LowerArgs(points_shape, types.frozendict(args.transform_chains), types.frozendict(coordinates)),
+            LowerArgs(args.points_shape, types.frozendict(args.transform_chains), types.frozendict(args.coordinates)),
         )
 
     @types.hashable_function('NotImplemented')
