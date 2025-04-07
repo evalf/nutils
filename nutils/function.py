@@ -32,27 +32,23 @@ class LowerArg:
     Attributes
     ----------
     space : :class:`str`
-    transforms_list : :class:`tuple` or :class:`nutils.transformseq.Transforms`
+    transforms : :class:`nutils.transformseq.Transforms`
     index : :class:`nutils.evaluable.Array`
     coordinates : :class:`nutils.evaluable.Array`, optional
     '''
 
     space: str
-    transforms_list: Tuple[Transforms, ...]
+    transforms: Transforms
     index: evaluable.Array
     coordinates: Optional[evaluable.Array]
 
     def __post_init__(self):
         assert isinstance(self.space, str)
-        assert isinstance(self.transforms_list, tuple) and all(isinstance(transforms, Transforms) for transforms in self.transforms_list)
+        assert isinstance(self.transforms, Transforms)
         assert isinstance(self.index, evaluable.Array) and self.index.dtype == int and self.index.ndim == 0
         assert self.coordinates is None or isinstance(self.coordinates, evaluable.Array)
 
     replace = dataclasses.replace
-
-    @property
-    def transforms(self):
-        return self.transforms_list[0]
 
     @property
     def without_points(self) -> 'LowerArg':
@@ -104,7 +100,10 @@ class LowerArgs:
     def for_space(cls, space: str, transforms: Tuple[Transforms, ...], index: evaluable.Array, coordinates: evaluable.Array) -> 'LowerArgs':
         if index.dtype != int or index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
-        return cls(coordinates.shape[:-1], (LowerArg(space, transforms, index, coordinates),))
+        args = LowerArg(space, transforms[0], index, coordinates),
+        if len(transforms) > 1:
+            args += LowerArg('~' + space, transforms[-1], index, coordinates),
+        return cls(coordinates.shape[:-1], args)
 
     def __post_init__(self):
         assert isinstance(self.points_shape, tuple) and all(map(evaluable._isindex, self.points_shape))
@@ -1155,11 +1154,10 @@ class _Opposite(Array):
         super().__init__(arg.shape, arg.dtype, arg.spaces, arg.arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
-        opposite_args = LowerArgs(
-            args.points_shape,
-            tuple(LowerArg(arg.space, arg.transforms_list[::-1], arg.index, arg.coordinates) if arg.space == self._space else arg for arg in args.args),
-        )
-        return self._arg.lower(opposite_args)
+        opp_space = '~' + self._space
+        if self._space in args.spaces and opp_space in args.spaces:
+            args = args.rename_spaces({self._space: opp_space, opp_space: self._space})
+        return self._arg.lower(args)
 
 
 class _RootCoords(Array):
