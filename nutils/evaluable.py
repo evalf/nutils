@@ -601,7 +601,9 @@ class Array(Evaluable):
                 value_parts.append(_flat(values))
                 index_parts.append(_flat(flatindex))
             if value_parts:
-                flatindex, inverse = unique(concatenate(index_parts), return_inverse=True)
+                # Guard the concatenation to avoid expensive swap-inflate-take
+                # operations due to take in unique
+                flatindex, inverse = unique(Guard(concatenate(index_parts)), return_inverse=True)
                 values = Inflate(concatenate(value_parts), inverse, flatindex.shape[0])
                 indices = [flatindex]
                 for n in reversed(self.shape[1:]):
