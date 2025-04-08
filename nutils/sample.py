@@ -91,6 +91,9 @@ class Sample(types.Singleton):
             The number of points.
         '''
 
+        for i, space in enumerate(spaces):
+            if space in spaces[i+1:]:
+                raise ValueError(f'All spaces in a `Sample` must be unique, but space {space} is repeated.')
         self.spaces = spaces
         self.ndims = ndims
         self.nelems = nelems

@@ -438,6 +438,10 @@ class CustomIndex(TestCase, Common):
 
 class Special(TestCase):
 
+    def test_init_repeated_spaces(self):
+        with self.assertRaisesRegex(ValueError, 'space a is repeated.$'):
+            Sample(('a', 'b', 'a'), 1, 1, 1)
+
     def test_add_different_spaces(self):
         class Dummy(Sample):
             pass
