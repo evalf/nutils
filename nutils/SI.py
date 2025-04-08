@@ -346,6 +346,7 @@ class Quantity(metaclass=Dimension):
     @register(function.jump)
     @register(function.kronecker)
     @register(function.linearize)
+    @register(function.swap_spaces)
     @register(function.opposite)
     @register(function.replace_arguments)
     @register(function.scatter)

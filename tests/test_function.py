@@ -1603,3 +1603,21 @@ class arguments_for(TestCase):
         g = x**2 * y2
         with self.assertRaisesRegex(ValueError, "inconsistent shapes for argument 'y'"):
             function.arguments_for(f, g)
+
+
+class swap_spaces(TestCase):
+
+    def test_different(self):
+        X, x = mesh.line(2, space='X')
+        self.assertEqual(X.f_index.spaces, frozenset('X'))
+        f = function.swap_spaces(X.f_index, 'X', 'Y')
+        self.assertEqual(f.spaces, frozenset('Y'))
+        with self.assertRaisesRegex(KeyError, 'no such space'):
+            X.sample('gauss', 0).eval(f)
+        self.assertEqual(X.sample('gauss', 0).rename_spaces({'X': 'Y'}).eval(f).tolist(), [0, 1])
+
+    def test_same(self):
+        X, x = mesh.line(2, space='X')
+        f = function.swap_spaces(X.f_index, 'X', 'X')
+        self.assertEqual(f.spaces, frozenset('X'))
+        self.assertEqual(X.sample('gauss', 0).eval(f).tolist(), [0, 1])

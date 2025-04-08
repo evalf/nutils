@@ -1146,6 +1146,18 @@ class _Transpose(Array):
         return evaluable.transpose(arg, axes)
 
 
+class _SwapSpaces(Array):
+
+    def __init__(self, arg: Array, space0: str, space1: str) -> None:
+        self._arg = arg
+        self._map = {space0: space1, space1: space0}
+        spaces = tuple(self._map.get(space, space) for space in arg.spaces)
+        super().__init__(arg.shape, arg.dtype, spaces, arg.arguments)
+
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        return self._arg.lower(args.rename_spaces(self._map))
+
+
 class _Opposite(Array):
 
     def __init__(self, arg: Array, space: str) -> None:
@@ -1501,6 +1513,27 @@ def levicivita(__n: int, dtype: DType = float) -> Array:
     '''
 
     return _Constant(numeric.levicivita(__n))
+
+
+@nutils_dispatch
+def swap_spaces(arg: IntoArray, space0: str, space1: str, /) -> Array:
+    '''Swap the two :attr:`~Array.spaces` of ``arg``.
+
+    If ``arg`` is invariant to the spaces :func:`swap_spaces` does nothing.
+    Also, swapping ``arg`` twice with the same set of spaces results in the
+    original ``arg``.
+
+    Parameters
+    ----------
+    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+    space0 : :class:`str`
+        Space to swap.
+    space1 : :class:`str`
+        Space to swap.
+    '''
+
+    arg = Array.cast(arg)
+    return arg if space0 == space1 else _SwapSpaces(arg, space0, space1)
 
 
 @nutils_dispatch
