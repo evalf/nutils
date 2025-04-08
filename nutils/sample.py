@@ -482,6 +482,21 @@ class Sample(types.Singleton):
 
         return _Zip(*samples)
 
+    def rename_spaces(self, map: Mapping[str, str], /) -> 'Sample':
+        '''Return a :class:`Sample` with spaces renamed according to ``map``.
+
+        Args
+        ----
+        map : mapping of :class:`str` to :class:`str`
+            A mapping of old space to new space.
+
+        Returns
+        -------
+        renamed : :class:`Sample`
+        '''
+
+        raise NotImplementedError
+
 
 class _TransformChainsSample(Sample):
 
@@ -557,6 +572,9 @@ class _DefaultIndex(_TransformChainsSample):
     def _bind(self, func: function.Array) -> function.Array:
         return _ConcatenatePoints(func, self)
 
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _DefaultIndex(map.get(self.space, self.space), self.transforms, self.points)
+
 
 class _CustomIndex(_TransformChainsSample):
 
@@ -580,6 +598,9 @@ class _CustomIndex(_TransformChainsSample):
     @property
     def hull(self) -> numpy.ndarray:
         return numpy.take(self._index, self._parent.hull)
+
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _CustomIndex(self._parent.rename_spaces(map), self._index)
 
 
 if os.environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
@@ -650,6 +671,9 @@ class _Empty(_TensorialSample):
     def basis(self, interpolation: str = 'none') -> function.Array:
         return function.zeros((0,), float)
 
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _Empty(tuple(map.get(space, space) for space in self.spaces), self.ndims)
+
 
 class _Add(_TensorialSample):
 
@@ -696,6 +720,9 @@ class _Add(_TensorialSample):
 
     def _bind(self, func: function.Array) -> function.Array:
         return numpy.concatenate([self._sample1._bind(func), self._sample2._bind(func)])
+
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _Add(self._sample1.rename_spaces(map), self._sample2.rename_spaces(map))
 
 
 def _simplex_strip(strip):
@@ -903,6 +930,9 @@ class _Mul(_TensorialSample):
         assert basis1.ndim == basis2.ndim == 1
         return numpy.ravel(basis1[:, None] * basis2[None, :])
 
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _Mul(self._sample1.rename_spaces(map), self._sample2.rename_spaces(map))
+
 
 class _Zip(Sample):
 
@@ -962,6 +992,9 @@ class _Zip(Sample):
         weights = self._samples[0].get_evaluable_weights(ielem0)
         return evaluable._take(evaluable._flat(weights), slice0, axis=0)
 
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _Zip(*[smpl.rename_spaces(map) for smpl in self._samples])
+
 
 class _TakeElements(_TensorialSample):
 
@@ -1016,6 +1049,9 @@ class _TakeElements(_TensorialSample):
 
     def take_elements(self, __indices: numpy.ndarray) -> Sample:
         return self._parent.take_elements(numpy.take(self._indices, __indices))
+
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _TakeElements(self._parent.rename_spaces(map), self._indices)
 
 
 class _Integral(function.Array):

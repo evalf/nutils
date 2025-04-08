@@ -148,6 +148,11 @@ class Common:
         func = self.sample.asfunction(numpy.arange(self.sample.npoints))
         self.assertEqual(self.sample.bind(func).eval().tolist(), numpy.arange(self.desired_npoints).tolist())
 
+    def test_rename_spaces(self):
+        assert not any(space.endswith('!') for space in self.desired_spaces)
+        renamed = self.sample.rename_spaces({space: space + '!' for space in self.desired_spaces})
+        self.assertEqual(renamed.spaces, tuple(space + '!' for space in self.desired_spaces))
+
 
 class Empty(TestCase, Common):
 
@@ -294,6 +299,10 @@ class Zip(TestCase):
         geomX, geomY, geomZ = triplet.eval([self.geomX, self.geomY, geomZ])
         self.assertAllAlmostEqual(geomX, geomY[:, numpy.newaxis] * self.slope)
         self.assertAllAlmostEqual(geomY, geomZ / 3)
+
+    def test_rename_spaces(self):
+        renamed = self.stitched.rename_spaces({'X': 'B', 'X0': 'B', 'X1': 'C', 'Y': 'A'})
+        self.assertEqual(renamed.spaces, ('A', 'B') if 'X' in self.sampleX.spaces else ('A', 'B', 'C'))
 
 
 Zip(etype='square')
