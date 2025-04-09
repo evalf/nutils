@@ -4,6 +4,7 @@ Nutils
 [![Test Status](https://github.com/evalf/nutils/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/evalf/nutils/actions?query=workflow%3Atest+branch%3Amain)
 [![Coverage Status](https://codecov.io/gh/evalf/nutils/branch/main/graph/badge.svg)](https://codecov.io/gh/evalf/nutils/branch/main)
 [![Documentation Status](https://readthedocs.org/projects/nutils/badge/?version=latest)](https://docs.nutils.org/en/latest/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/evalf/nutils/blob/readme/LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.822369.svg)](https://doi.org/10.5281/zenodo.822369)
 
 Nutils is a Free and Open Source Python programming library for Finite Element
