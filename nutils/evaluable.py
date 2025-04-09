@@ -601,8 +601,14 @@ class Array(Evaluable):
                 value_parts.append(_flat(values))
                 index_parts.append(_flat(flatindex))
             if value_parts:
-                flatindex, inverse = unique(concatenate(index_parts), return_inverse=True)
-                values = Inflate(concatenate(value_parts), inverse, flatindex.shape[0])
+                # Guard the concatenation to avoid expensive swap-inflate-take
+                # operations due to take in unique
+                flatindex, inverse = unique(Guard(concatenate(index_parts)), return_inverse=True)
+                # The next three lines are equivalent to values = Inflate(concatenate(value_parts), inverse, flatindex.shape[0])
+                lengths = [arg.shape[0] for arg in value_parts]
+                slices = [Range(length) + offset for length, offset in zip(lengths, util.cumsum(lengths))]
+                values = util.sum(Inflate(f, Take(inverse, s), flatindex.shape[0]) for f, s in zip(value_parts, slices))
+                # Unravel indices
                 indices = [flatindex]
                 for n in reversed(self.shape[1:]):
                     indices[:1] = divmod(indices[0], n)
@@ -3475,7 +3481,7 @@ class Inflate(Array):
             return Inflate(unravel(self.func, axis, shape), self.dofmap, self.length)
 
     def _sign(self):
-        if isinstance(self.dofmap, Constant) and _isunique(self.dofmap.value):
+        if isinstance(self.dofmap, Constant) and _ismonotonic(numpy.sort(self.dofmap.value, axis=None)):
             return Inflate(Sign(self.func), self.dofmap, self.length)
 
     @cached_property
@@ -3521,8 +3527,8 @@ class SwapInflateTake(Evaluable):
 
     @staticmethod
     def evalf(inflateidx, takeidx):
-        uniqueinflate = _isunique(inflateidx)
-        uniquetake = _isunique(takeidx)
+        uniqueinflate = _ismonotonic(numpy.sort(inflateidx, axis=None))
+        uniquetake = _ismonotonic(numpy.sort(takeidx, axis=None))
         unique = uniqueinflate and uniquetake
         # If both indices are unique (i.e. they do not contain duplicates) then the
         # take and inflate operations can simply be restricted to the intersection,
@@ -5916,8 +5922,10 @@ def _inflate_scalar(arg, shape):
     return arg
 
 
-def _isunique(array):
-    return numpy.unique(array).size == array.size
+def _ismonotonic(indices):
+    'check if indices are strict monotonic ascending'
+    assert indices.ndim == 1 and indices.dtype == int
+    return len(indices) <= 1 or indices[-1] - indices[0] >= len(indices) - 1 and (indices[1:] > indices[:-1]).all()
 
 
 def _make_loop_ids_unique(funcs: typing.Tuple[Evaluable, ...]) -> typing.Tuple[Evaluable, ...]:
