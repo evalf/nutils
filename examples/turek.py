@@ -560,4 +560,4 @@ if __name__ == '__main__':
     cli.choose(main, CFD1, CFD2, CFD3, CSM1, CSM2, CSM3, FSI1, FSI2, FSI3)
 
 
-# example:tags=FSI,benchmark problem
+# example:tags=FSI,benchmark problem:thumbnail=1
