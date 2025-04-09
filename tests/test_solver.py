@@ -343,9 +343,9 @@ class System(TestCase):
         sys = solver.System(f, trial='u', test='v')
         self.assertTrue(sys.is_linear)
         self.assertFalse(sys.is_symmetric)
-        self.assertTrue(sys.is_constant)
         self.assertTrue(sys.is_constant_matrix)
-        self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,)})
+        self.assertEqual(sys.trials, ('u',))
+        self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float)}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
@@ -363,9 +363,9 @@ class System(TestCase):
         sys = solver.System(f, trial='u')
         self.assertTrue(sys.is_linear)
         self.assertTrue(sys.is_symmetric)
-        self.assertTrue(sys.is_constant)
         self.assertTrue(sys.is_constant_matrix)
-        self.assertEqual(sys.argshapes, {'u': (10,)})
+        self.assertEqual(sys.trials, ('u',))
+        self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float)}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), args))
@@ -386,9 +386,9 @@ class System(TestCase):
         sys = solver.System(f, trial='u', test='v')
         self.assertTrue(sys.is_linear)
         self.assertFalse(sys.is_symmetric)
-        self.assertFalse(sys.is_constant)
         self.assertTrue(sys.is_constant_matrix)
-        self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
+        self.assertEqual(sys.trials, ('u',))
+        self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
@@ -408,9 +408,9 @@ class System(TestCase):
         sys = solver.System(f, trial='u', test='v')
         self.assertTrue(sys.is_linear)
         self.assertFalse(sys.is_symmetric)
-        self.assertFalse(sys.is_constant)
         self.assertFalse(sys.is_constant_matrix)
-        self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
+        self.assertEqual(sys.trials, ('u',))
+        self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
@@ -426,9 +426,9 @@ class System(TestCase):
         sys = solver.System(f, trial='u', test='v')
         self.assertFalse(sys.is_linear)
         self.assertFalse(sys.is_symmetric)
-        self.assertFalse(sys.is_constant)
         self.assertFalse(sys.is_constant_matrix)
-        self.assertEqual(sys.argshapes, {'u': (10,), 'v': (10,), 't': ()})
+        self.assertEqual(sys.trials, ('u',))
+        self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
@@ -442,9 +442,9 @@ class System(TestCase):
         sys = solver.System(f, trial='u')
         self.assertFalse(sys.is_linear)
         self.assertTrue(sys.is_symmetric)
-        self.assertFalse(sys.is_constant)
         self.assertFalse(sys.is_constant_matrix)
-        self.assertEqual(sys.argshapes, {'u': (10,)})
+        self.assertEqual(sys.trials, ('u',))
+        self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float)}
         mat, vec, val = sys.assemble(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), args))
@@ -476,6 +476,10 @@ class system_finitestrain(TestCase):
 
     def test_newton(self):
         args = self.system.solve(constrain=self.cons, method=solver.Newton(), tol=1e-10, maxiter=7)
+        self.assert_resnorm(args, tol=1e-10)
+
+    def test_newton_reuse(self):
+        args = self.system.solve(constrain=self.cons, method=solver.ReuseNewton(), tol=1e-10, maxiter=11)
         self.assert_resnorm(args, tol=1e-10)
 
     def test_newton_linesearch(self):
@@ -524,6 +528,10 @@ class system_navierstokes(TestCase):
         args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.Newton(), tol=1e-10, maxiter=3)
         self.assert_resnorm(args, tol=1e-10)
 
+    def test_newton_reuse(self):
+        args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.ReuseNewton(), tol=1e-10, maxiter=8)
+        self.assert_resnorm(args, tol=1e-10)
+
     def test_newton_linesearch_normbased(self):
         args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.LinesearchNewton(strategy=solver.NormBased()), tol=1e-10, maxiter=3)
         self.assert_resnorm(args, tol=1e-10)
@@ -534,7 +542,7 @@ class system_navierstokes(TestCase):
 
     def test_newton_tolnotreached(self):
         with self.assertLogs('nutils', logging.WARNING) as cm:
-            args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.Newton(), tol=1e-10, maxiter=3, linargs=dict(rtol=1e-99))
+            args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=solver.Newton(rtol=1e-99), tol=1e-10, maxiter=3)
         for msg in cm.output:
             self.assertIn('solver failed to reach tolerance', msg)
         self.assert_resnorm(args, tol=1e-10)
@@ -565,3 +573,54 @@ class system_burgers(TestCase):
     def test_step(self):
         args = self.system.step(timestep=100, timearg='t', suffix='0', arguments=self.arguments, method=solver.LinesearchNewton(), tol=1e-10)
         self.assertAlmostEqual64(args['u'], 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')
+
+
+class system_elasticity(TestCase):
+
+    def setUp(self):
+        domain, geom = mesh.unitsquare(10, etype='square')
+
+        ns = Namespace()
+        ns.δ = function.eye(domain.ndims)
+        ns.x = geom
+        ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+        ns.u = domain.field('u', btype='std', degree=1, shape=[2])
+        ns.X_i = 'x_i + u_i'
+        ns.λ = 1
+        ns.μ = .5/function.field('poisson') - 1
+        ns.ε_ij = '.5 (∇_i(u_j) + ∇_j(u_i))'
+        ns.σ_ij = 'λ ε_kk δ_ij + 2 μ ε_ij'
+        ns.E = 'ε_ij σ_ij'
+        ns.q_i = '-δ_i1'
+
+        sqr = domain.boundary['top'].integral('u_k u_k dS' @ ns, degree=2)
+        self.cons = solver.System(sqr, trial='u').solve_constraints(droptol=1e-15)
+
+        energy = domain.integral('(E - u_i q_i) dV' @ ns, degree=2)
+        uarg = function.arguments_for(energy)['u']
+        self.arguments = {
+            'u': numpy.sin(numpy.arange(uarg.size)).reshape(uarg.shape),  # "random" initial vector
+            'poisson': .25}
+        self.system = solver.System(energy, trial='u')
+        self.residual = evaluable.compile(energy.derivative('u').as_evaluable_array)
+
+    def assert_resnorm(self, args, tol):
+        ures = self.residual(args)
+        resnorm = numpy.linalg.norm(ures[numpy.isnan(self.cons['u'])])
+        self.assertLess(resnorm, tol)
+
+    def test_direct(self):
+        args = self.system.solve(arguments=self.arguments, constrain=self.cons)
+        self.assert_resnorm(args, tol=1e-10)
+
+    def test_arnoldi(self):
+        method = solver.Arnoldi(maxiter=2)
+        tol = 1e-10
+        args = self.system.solve(arguments=self.arguments, constrain=self.cons, method=method, tol=tol)
+        self.assert_resnorm(args, tol=tol)
+        args['poisson'] *= .999 # finishes in two iterations
+        args = self.system.solve(arguments=args, constrain=self.cons, method=method, tol=tol)
+        self.assert_resnorm(args, tol=tol)
+        args['poisson'] = .49 # requires new jacobian
+        args = self.system.solve(arguments=args, constrain=self.cons, method=method, tol=tol)
+        self.assert_resnorm(args, tol=tol)

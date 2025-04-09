@@ -97,7 +97,6 @@ class Matrix:
         supp[row[abs(data) > tol]] = True
         return supp
 
-    @treelog.withcontext
     def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='arnoldi', atol=0., rtol=0., **solverargs):
         '''Solve system given right hand side vector and/or constraints.
 
@@ -205,10 +204,10 @@ class Matrix:
         rhsnorm = numpy.linalg.norm(rhs, axis=0).max()
         atol = max(atol, rtol * rhsnorm)
         if rhsnorm <= atol:
-            treelog.info('skipping solver because initial vector is within tolerance')
+            treelog.warning('skipping linear solver because initial vector is within tolerance')
             return numpy.zeros_like(rhs)
         solver_method, solver_name = self._method('solver', solver)
-        treelog.info('solving {} dof system to {} using {} solver'.format(self.shape[0], 'tolerance {:.0e}'.format(atol) if atol else 'machine precision', solver_name))
+        treelog.debug('solving {} dof system to {} using {} solver'.format(self.shape[0], 'tolerance {:.0e}'.format(atol) if atol else 'machine precision', solver_name))
         try:
             lhs = solver_method(rhs, atol=atol, **solverargs)
         except MatrixError:
@@ -218,7 +217,7 @@ class Matrix:
         if not numpy.isfinite(lhs).all():
             raise MatrixError('solver returned non-finite left hand side')
         resnorm = numpy.linalg.norm(rhs - self @ lhs, axis=0).max()
-        treelog.info('solver returned with residual {:.0e}'.format(resnorm))
+        treelog.debug('solver returned with residual {:.0e}'.format(resnorm))
         if resnorm > atol > 0:
             raise ToleranceNotReached(lhs)
         return lhs
