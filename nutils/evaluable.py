@@ -604,7 +604,11 @@ class Array(Evaluable):
                 # Guard the concatenation to avoid expensive swap-inflate-take
                 # operations due to take in unique
                 flatindex, inverse = unique(Guard(concatenate(index_parts)), return_inverse=True)
-                values = Inflate(concatenate(value_parts), inverse, flatindex.shape[0])
+                # The next three lines are equivalent to values = Inflate(concatenate(value_parts), inverse, flatindex.shape[0])
+                lengths = [arg.shape[0] for arg in value_parts]
+                slices = [Range(length) + offset for length, offset in zip(lengths, util.cumsum(lengths))]
+                values = util.sum(Inflate(f, Take(inverse, s), flatindex.shape[0]) for f, s in zip(value_parts, slices))
+                # Unravel indices
                 indices = [flatindex]
                 for n in reversed(self.shape[1:]):
                     indices[:1] = divmod(indices[0], n)
