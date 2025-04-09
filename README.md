@@ -7,17 +7,18 @@ Nutils
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.822369.svg)](https://doi.org/10.5281/zenodo.822369)
 
 Nutils is a Free and Open Source Python programming library for Finite Element
-Method computations, developed by [Evalf Computing][1] and distributed under
-the permissive MIT license. Key features are a readable, math centric syntax,
-an object oriented design, strict separation of topology and geometry, and high
-level function manipulations with support for automatic differentiation.
+Method computations, developed by [Evalf](https://evalf.com/) and distributed
+under the permissive MIT license. Key features are a readable, math centric
+syntax, an object oriented design, strict separation of topology and geometry,
+and high level function manipulations with support for automatic
+differentiation.
 
 Nutils provides the tools required to construct a typical simulation workflow
 in just a few lines of Python code, while at the same time leaving full
 flexibility to build novel workflows or interact with third party tools. With
 native support for Isogeometric Analysis (IGA), the Finite Cell method (FCM),
-multi-physics, mixed methods, and hierarchical refinement, Nutils is at the
-forefront of numerical discretization science. Efficient under-the-hood
+multi-physics, mixed methods, and hierarchical refinement, Nutils forms an
+excellent platform for numerical science. Efficient under-the-hood
 vectorization and built-in parallellisation provide for an effortless
 transition from academic research projects to full scale, real world
 applications.
@@ -35,20 +36,20 @@ about which to use, a safe option is to go with the [official installer][2].
 With Python installed, the recommended way to install the latest stable version
 of Nutils is through [pip][4] (included in the standard installer):
 
-    python3 -m pip install --user nutils
+    python3 -m pip install nutils
 
 By default and without explicitly specifying the source of the given packages,
 pip installs packages from the [Python Package Index][5]. To install the latest
 development version of Nutils, pass a zip of branch main of the [official
 repository][3] to pip:
 
-    python3 -m pip install --user https://github.com/evalf/nutils/archive/main.zip
+    python3 -m pip install https://github.com/evalf/nutils/archive/main.zip
 
 To view which version of Nutils is currently installed, run:
 
     python3 -m pip show nutils
 
-Nutils can be installed in a Windows machine using WSL environment.
+Nutils can be installed on a Windows machine using the WSL environment.
 If you want to assemble matrices in parallel using nutils on a Windows machine, 
 then WSL is the way to go. Instructions to setup WSL are available [here][13]. 
 After setting up WSL, nutils can be installed using the above instructions. 
