@@ -100,8 +100,8 @@ class Container:
 
 def get_container_tag_from_ref(ref: str) -> str:
     if not ref.startswith('refs/'):
-        raise SystemExit(f'expected an absolute ref, e.g. `refs/heads/master`, but got `{ref}`')
-    elif ref == 'refs/heads/master':
+        raise SystemExit(f'expected an absolute ref, e.g. `refs/heads/main`, but got `{ref}`')
+    elif ref == 'refs/heads/main':
         return 'latest'
     elif ref.startswith('refs/heads/release/'):
         return ref[19:]

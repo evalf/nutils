@@ -1,8 +1,8 @@
 Nutils
 ======
 
-[![Test Status](https://github.com/joostvanzwieten/nutils/workflows/test/badge.svg?branch=master)](https://github.com/evalf/nutils/actions?query=workflow%3Atest+branch%3Amaster)
-[![Coverage Status](https://codecov.io/gh/evalf/nutils/branch/master/graph/badge.svg)](https://codecov.io/gh/evalf/nutils/branch/master)
+[![Test Status](https://github.com/joostvanzwieten/nutils/workflows/test/badge.svg?branch=main)](https://github.com/evalf/nutils/actions?query=workflow%3Atest+branch%3Amain)
+[![Coverage Status](https://codecov.io/gh/evalf/nutils/branch/main/graph/badge.svg)](https://codecov.io/gh/evalf/nutils/branch/main)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.822369.svg)](https://doi.org/10.5281/zenodo.822369)
 
 Nutils is a Free and Open Source Python programming library for Finite Element
@@ -38,10 +38,10 @@ of Nutils is through [pip][4] (included in the standard installer):
 
 By default and without explicitly specifying the source of the given packages,
 pip installs packages from the [Python Package Index][5]. To install the latest
-development version of Nutils, pass a zip of branch master of the [official
+development version of Nutils, pass a zip of branch main of the [official
 repository][3] to pip:
 
-    python3 -m pip install --user https://github.com/evalf/nutils/archive/master.zip
+    python3 -m pip install --user https://github.com/evalf/nutils/archive/main.zip
 
 To view which version of Nutils is currently installed, run:
 
@@ -125,5 +125,5 @@ Nutils][9].
 [9]: https://doi.org/10.5281/zenodo.822369
 [10]: https://www.docker.com/
 [11]: https://github.com/orgs/evalf/packages/container/package/nutils
-[12]: https://raw.githubusercontent.com/evalf/nutils/master/examples/laplace.py
+[12]: https://raw.githubusercontent.com/evalf/nutils/main/examples/laplace.py
 [13]: https://ubuntu.com/tutorials/install-ubuntu-on-wsl2-on-windows-11-with-gui-support#1-overview
