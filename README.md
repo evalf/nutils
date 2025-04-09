@@ -1,7 +1,7 @@
 Nutils
 ======
 
-[![Test Status](https://github.com/joostvanzwieten/nutils/workflows/test/badge.svg?branch=main)](https://github.com/evalf/nutils/actions?query=workflow%3Atest+branch%3Amain)
+[![Test Status](https://github.com/evalf/nutils/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/evalf/nutils/actions?query=workflow%3Atest+branch%3Amain)
 [![Coverage Status](https://codecov.io/gh/evalf/nutils/branch/main/graph/badge.svg)](https://codecov.io/gh/evalf/nutils/branch/main)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.822369.svg)](https://doi.org/10.5281/zenodo.822369)
 
