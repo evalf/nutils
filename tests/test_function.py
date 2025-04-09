@@ -418,15 +418,16 @@ _check('interp_lr', lambda a: numpy.interp(function.Array.cast(a), [-.5,0,.5], [
 class Unlower(TestCase):
 
     def test(self):
-        e = evaluable.Argument('arg', tuple(map(evaluable.constant, (2, 3, 4, 5))), int)
+        shape = tuple(map(evaluable.constant, (2, 3, 4, 5)))
+        e = evaluable.Argument('arg', shape, int)
         arguments = types.frozendict({'arg': ((2, 3), int)})
-        f = function._Unlower(e, frozenset(), arguments, function.LowerArgs((2, 3), {}, {}))
+        f = function._Unlower(e, frozenset(), arguments, function.LowerArgs.empty(shape[:2]))
         self.assertEqual(f.shape, (4, 5))
         self.assertEqual(f.dtype, int)
         self.assertEqual(f.arguments, arguments)
-        self.assertEqual(f.lower(function.LowerArgs((2, 3), {}, {})), e)
+        self.assertEqual(f.lower(function.LowerArgs.empty(shape[:2])), e)
         with self.assertRaises(ValueError):
-            f.lower(function.LowerArgs((3, 4), {}, {}))
+            f.lower(function.LowerArgs.empty(shape[1:3]))
 
 
 class Custom(TestCase):
@@ -435,10 +436,10 @@ class Custom(TestCase):
         with self.subTest('0d-points'):
             self.assertAllAlmostEqual(evaluable.eval_once(factual.as_evaluable_array, arguments=args), evaluable.eval_once(fdesired.as_evaluable_array, arguments=args))
         with self.subTest('1d-points'):
-            lower_args = function.LowerArgs((evaluable.asarray(5),), {}, {})
+            lower_args = function.LowerArgs.empty((evaluable.asarray(5),))
             self.assertAllAlmostEqual(evaluable.eval_once(factual.lower(lower_args), arguments=args), evaluable.eval_once(fdesired.lower(lower_args), arguments=args))
         with self.subTest('2d-points'):
-            lower_args = function.LowerArgs((evaluable.asarray(5), evaluable.asarray(6)), {}, {})
+            lower_args = function.LowerArgs.empty((evaluable.asarray(5), evaluable.asarray(6)))
             self.assertAllAlmostEqual(evaluable.eval_once(factual.lower(lower_args), arguments=args), evaluable.eval_once(fdesired.lower(lower_args), arguments=args))
 
     def assertMultipy(self, leftval, rightval):
@@ -1573,7 +1574,7 @@ class factor(TestCase):
 
     def test_lower_spaces(self):
         topo, geom = mesh.rectilinear([3])
-        with self.assertRaisesRegex(ValueError, r'cannot lower function with spaces \(.+\) - did you forget integral or sample?'):
+        with self.assertRaisesRegex(KeyError, r'no such space: .* - did you forget integral or sample?'):
             function.factor(geom)
 
 
@@ -1602,3 +1603,21 @@ class arguments_for(TestCase):
         g = x**2 * y2
         with self.assertRaisesRegex(ValueError, "inconsistent shapes for argument 'y'"):
             function.arguments_for(f, g)
+
+
+class swap_spaces(TestCase):
+
+    def test_different(self):
+        X, x = mesh.line(2, space='X')
+        self.assertEqual(X.f_index.spaces, frozenset('X'))
+        f = function.swap_spaces(X.f_index, 'X', 'Y')
+        self.assertEqual(f.spaces, frozenset('Y'))
+        with self.assertRaisesRegex(KeyError, 'no such space'):
+            X.sample('gauss', 0).eval(f)
+        self.assertEqual(X.sample('gauss', 0).rename_spaces({'X': 'Y'}).eval(f).tolist(), [0, 1])
+
+    def test_same(self):
+        X, x = mesh.line(2, space='X')
+        f = function.swap_spaces(X.f_index, 'X', 'X')
+        self.assertEqual(f.spaces, frozenset('X'))
+        self.assertEqual(X.sample('gauss', 0).eval(f).tolist(), [0, 1])

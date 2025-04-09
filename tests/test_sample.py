@@ -63,16 +63,14 @@ class Common:
             self.assertEqual(tuple(n.__index__() for n in actual_shape(dict(ielem=ielem))), desired_shape)
             offset = 0
             for space, desired_chain, desired_point in zip(self.desired_spaces, desired_chains, desired_points):
-                (chain, *_), index = args.transform_chains[space]
-                self.assertEqual(chain[evaluable.eval_once(index, arguments=dict(ielem=ielem)).__index__()], desired_chain)
+                arg = args[space]
+                self.assertEqual(arg.transforms[evaluable.eval_once(arg.index, arguments=dict(ielem=ielem)).__index__()], desired_chain)
                 desired_coords = desired_point.coords
                 desired_coords = numpy.lib.stride_tricks.as_strided(desired_coords, shape=(*desired_shape, desired_point.ndims,), strides=(0,)*offset+desired_coords.strides[:-1]+(0,)*(len(args.points_shape)-offset-desired_coords.ndim+1)+desired_coords.strides[-1:])
-                actual_coords = evaluable.eval_once(args.coordinates[space], arguments=dict(ielem=ielem))
+                actual_coords = evaluable.eval_once(arg.coordinates, arguments=dict(ielem=ielem))
                 self.assertEqual(actual_coords.shape, desired_coords.shape)
                 self.assertAllAlmostEqual(actual_coords, desired_coords)
                 offset += desired_point.coords.ndim - 1
-        with self.assertRaisesRegex(ValueError, '^Nested'):
-            args | self.sample.get_lower_args(evaluable.InRange(evaluable.Argument('ielem2', (), int), evaluable.constant(self.desired_nelems)))
 
     @property
     def _desired_element_tri(self):
@@ -128,8 +126,8 @@ class Common:
             self.assertEqual(take.ndims, self.desired_ndims)
             args = take.get_lower_args(evaluable.InRange(evaluable.Argument('ielem', (), int), evaluable.constant(1)))
             for space, desired_chain in zip(self.desired_spaces, self.desired_transform_chains[ielem]):
-                (chain, *_), index = args.transform_chains[space]
-                self.assertEqual(chain[evaluable.eval_once(index, arguments=dict(ielem=0)).__index__()], desired_chain)
+                arg = args[space]
+                self.assertEqual(arg.transforms[evaluable.eval_once(arg.index, arguments=dict(ielem=0)).__index__()], desired_chain)
 
     def test_take_elements_empty(self):
         take = self.sample.take_elements(numpy.array([], int))
@@ -147,6 +145,11 @@ class Common:
     def test_asfunction(self):
         func = self.sample.asfunction(numpy.arange(self.sample.npoints))
         self.assertEqual(self.sample.bind(func).eval().tolist(), numpy.arange(self.desired_npoints).tolist())
+
+    def test_rename_spaces(self):
+        assert not any(space.endswith('!') for space in self.desired_spaces)
+        renamed = self.sample.rename_spaces({space: space + '!' for space in self.desired_spaces})
+        self.assertEqual(renamed.spaces, tuple(space + '!' for space in self.desired_spaces))
 
 
 class Empty(TestCase, Common):
@@ -280,8 +283,7 @@ class Zip(TestCase):
         self.assertAlmostEqual(self.stitched.integrate(function.J(self.geomX)), 5/9)  # NOTE: != norm(slope)
 
     def test_nested(self):
-        with self.assertRaisesRegex(ValueError, 'Nested integrals or samples in the same space: X.*, Y.'):
-            self.stitched.integral(self.stitched.integral(1)).eval()
+        self.stitched.integral(self.stitched.integral(1)).eval()
         topoZ, geomZ = mesh.line(2, space='Z')
         inner = self.stitched.integral((geomZ - self.geomX) * function.J(self.geomY))
         outer = topoZ.integral(inner * function.J(geomZ), degree=2)
@@ -294,6 +296,10 @@ class Zip(TestCase):
         geomX, geomY, geomZ = triplet.eval([self.geomX, self.geomY, geomZ])
         self.assertAllAlmostEqual(geomX, geomY[:, numpy.newaxis] * self.slope)
         self.assertAllAlmostEqual(geomY, geomZ / 3)
+
+    def test_rename_spaces(self):
+        renamed = self.stitched.rename_spaces({'X': 'B', 'X0': 'B', 'X1': 'C', 'Y': 'A'})
+        self.assertEqual(renamed.spaces, ('A', 'B') if 'X' in self.sampleX.spaces else ('A', 'B', 'C'))
 
 
 Zip(etype='square')
@@ -438,6 +444,10 @@ class CustomIndex(TestCase, Common):
 
 class Special(TestCase):
 
+    def test_init_repeated_spaces(self):
+        with self.assertRaisesRegex(ValueError, 'space a is repeated.$'):
+            Sample(('a', 'b', 'a'), 1, 1, 1)
+
     def test_add_different_spaces(self):
         class Dummy(Sample):
             pass
@@ -576,3 +586,12 @@ class integral(TestCase):
         empty = function.zeros(shape, float)
         array = empty.eval(legacy=False)
         self.assertAllEqual(array, numpy.zeros((2, 3)))
+
+    def test_reuse_space(self):
+        X0, x0 = mesh.line(2, space='X')
+        X1, x1 = mesh.line(3, space='X')
+        self.assertAllAlmostEqual(
+            function.eval(X0.integral(X1.integral(function.J(x1), degree=3) * function.J(x0), degree=2)),
+            6,
+            places=14,
+        )

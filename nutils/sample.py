@@ -91,6 +91,9 @@ class Sample(types.Singleton):
             The number of points.
         '''
 
+        for i, space in enumerate(spaces):
+            if space in spaces[i+1:]:
+                raise ValueError(f'All spaces in a `Sample` must be unique, but space {space} is repeated.')
         self.spaces = spaces
         self.ndims = ndims
         self.nelems = nelems
@@ -479,6 +482,21 @@ class Sample(types.Singleton):
 
         return _Zip(*samples)
 
+    def rename_spaces(self, map: Mapping[str, str], /) -> 'Sample':
+        '''Return a :class:`Sample` with spaces renamed according to ``map``.
+
+        Args
+        ----
+        map : mapping of :class:`str` to :class:`str`
+            A mapping of old space to new space.
+
+        Returns
+        -------
+        renamed : :class:`Sample`
+        '''
+
+        raise NotImplementedError
+
 
 class _TransformChainsSample(Sample):
 
@@ -554,6 +572,9 @@ class _DefaultIndex(_TransformChainsSample):
     def _bind(self, func: function.Array) -> function.Array:
         return _ConcatenatePoints(func, self)
 
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _DefaultIndex(map.get(self.space, self.space), self.transforms, self.points)
+
 
 class _CustomIndex(_TransformChainsSample):
 
@@ -577,6 +598,9 @@ class _CustomIndex(_TransformChainsSample):
     @property
     def hull(self) -> numpy.ndarray:
         return numpy.take(self._index, self._parent.hull)
+
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _CustomIndex(self._parent.rename_spaces(map), self._index)
 
 
 if os.environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
@@ -627,7 +651,7 @@ class _Empty(_TensorialSample):
         return evaluable.Zeros((evaluable.constant(0),) * len(self.spaces), dtype=float)
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
-        return function.LowerArgs((), {}, {})
+        return function.LowerArgs.empty()
 
     def get_element_tri(self, ielem: int) -> numpy.ndarray:
         raise IndexError('index out of range')
@@ -646,6 +670,9 @@ class _Empty(_TensorialSample):
 
     def basis(self, interpolation: str = 'none') -> function.Array:
         return function.zeros((0,), float)
+
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _Empty(tuple(map.get(space, space) for space in self.spaces), self.ndims)
 
 
 class _Add(_TensorialSample):
@@ -693,6 +720,9 @@ class _Add(_TensorialSample):
 
     def _bind(self, func: function.Array) -> function.Array:
         return numpy.concatenate([self._sample1._bind(func), self._sample2._bind(func)])
+
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _Add(self._sample1.rename_spaces(map), self._sample2.rename_spaces(map))
 
 
 def _simplex_strip(strip):
@@ -807,7 +837,7 @@ class _Mul(_TensorialSample):
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
         ielem1, ielem2 = evaluable.divmod(__ielem, self._sample2.nelems)
-        return self._sample1.get_lower_args(ielem1) | self._sample2.get_lower_args(ielem2)
+        return self._sample1.get_lower_args(ielem1) * self._sample2.get_lower_args(ielem2)
 
     @property
     def _reversed_factors(self):
@@ -900,6 +930,9 @@ class _Mul(_TensorialSample):
         assert basis1.ndim == basis2.ndim == 1
         return numpy.ravel(basis1[:, None] * basis2[None, :])
 
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _Mul(self._sample1.rename_spaces(map), self._sample2.rename_spaces(map))
+
 
 class _Zip(Sample):
 
@@ -940,15 +973,16 @@ class _Zip(Sample):
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
         points_shape = evaluable.Take(evaluable.Constant(self._sizes), __ielem),
-        coordinates = {}
-        transform_chains = {}
+        args = function.LowerArgs.empty(points_shape)
         for samplei, ielemsi, ilocalsi in zip(self._samples, self._ielems, self._ilocals):
-            argsi = samplei.get_lower_args(evaluable.Take(evaluable.Constant(ielemsi), __ielem))
             slicei = evaluable.Take(evaluable.Constant(ilocalsi), self._getslice(__ielem))
-            transform_chains.update(argsi.transform_chains)
-            for space, coords in argsi.coordinates.items():
-                coordinates[space] = evaluable.Transpose.to_end(evaluable.Take(evaluable._flat(evaluable.Transpose.from_end(coords, 0), ndim=2), slicei), 0)
-        return function.LowerArgs(points_shape, transform_chains, coordinates)
+            args += samplei \
+                .get_lower_args(evaluable.Take(evaluable.Constant(ielemsi), __ielem)) \
+                .map_coordinates(
+                    points_shape,
+                    lambda coords: evaluable.Transpose.to_end(evaluable.Take(evaluable._flat(evaluable.Transpose.from_end(coords, 0), ndim=2), slicei), 0),
+                )
+        return args
 
     def get_evaluable_indices(self, ielem):
         return evaluable.Take(evaluable.Constant(self._indices), self._getslice(ielem))
@@ -958,6 +992,9 @@ class _Zip(Sample):
         slice0 = evaluable.Take(evaluable.Constant(self._ilocals[0]), self._getslice(ielem))
         weights = self._samples[0].get_evaluable_weights(ielem0)
         return evaluable._take(evaluable._flat(weights), slice0, axis=0)
+
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _Zip(*[smpl.rename_spaces(map) for smpl in self._samples])
 
 
 class _TakeElements(_TensorialSample):
@@ -1014,6 +1051,9 @@ class _TakeElements(_TensorialSample):
     def take_elements(self, __indices: numpy.ndarray) -> Sample:
         return self._parent.take_elements(numpy.take(self._indices, __indices))
 
+    def rename_spaces(self, map: Mapping[str, str], /) -> Sample:
+        return _TakeElements(self._parent.rename_spaces(map), self._indices)
+
 
 class _Integral(function.Array):
 
@@ -1023,9 +1063,9 @@ class _Integral(function.Array):
         super().__init__(shape=integrand.shape, dtype=float if integrand.dtype in (bool, int) else integrand.dtype, spaces=integrand.spaces - frozenset(sample.spaces), arguments=integrand.arguments)
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
-        ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
+        ielem = evaluable.loop_index(f'_sample_{len(args.args)}', self._sample.nelems)
         weights = evaluable.astype(self._sample.get_evaluable_weights(ielem), self.dtype)
-        integrand = evaluable.astype(self._integrand.lower(args | self._sample.get_lower_args(ielem)), self.dtype)
+        integrand = evaluable.astype(self._integrand.lower(args * self._sample.get_lower_args(ielem)), self.dtype)
         elem_integral = evaluable.einsum('B,ABC->AC', weights, integrand, B=weights.ndim, C=self.ndim)
         return evaluable.loop_sum(elem_integral, ielem)
 
@@ -1039,8 +1079,8 @@ class _ConcatenatePoints(function.Array):
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         axis = len(args.points_shape)
-        ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
-        args |= self._sample.get_lower_args(ielem)
+        ielem = evaluable.loop_index(f'_sample_{len(args.args)}', self._sample.nelems)
+        args *= self._sample.get_lower_args(ielem)
         func = self._func.lower(args)
         func = evaluable.Transpose.to_end(func, *range(axis, len(args.points_shape)))
         for i in range(len(args.points_shape) - axis - 1):
@@ -1073,7 +1113,8 @@ class _Basis(function.Array):
         super().__init__(shape=(sample.npoints,), dtype=float, spaces=frozenset({sample.space}), arguments={})
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
-        aligned_space_coords = args.coordinates[self._sample.space]
+        arg = args[self._sample.space]
+        aligned_space_coords = arg.coordinates
         assert aligned_space_coords.ndim == len(args.points_shape) + 1
         space_coords, where = evaluable.unalign(aligned_space_coords)
         # Reinsert the coordinate axis, the last axis of `aligned_space_coords`, or
@@ -1085,9 +1126,8 @@ class _Basis(function.Array):
             space_coords = evaluable.Transpose(space_coords, numpy.argsort(where))
             where = tuple(sorted(where))
 
-        (chain, *_), tip_index = args.transform_chains[self._sample.space]
-        index = evaluable.TransformIndex(self._sample.transforms[0], chain, tip_index)
-        coords = evaluable.TransformCoords(self._sample.transforms[0], chain, tip_index, space_coords)
+        index = evaluable.TransformIndex(self._sample.transforms[0], arg.transforms, arg.index)
+        coords = evaluable.TransformCoords(self._sample.transforms[0], arg.transforms, arg.index, space_coords)
         expect = self._sample.points.get_evaluable_coords(index)
         sampled = evaluable.Sampled(coords, expect, self._interpolation)
         indices = self._sample.get_evaluable_indices(index)
