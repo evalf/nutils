@@ -308,6 +308,7 @@ class System:
             arguments = arguments | {t: v[s].reshape(shape) for t, shape, s in zip(self.trials, self.trial_shapes, self.__trial_slices)}
         return (arguments, free) if return_free else arguments
 
+    @log.withcontext
     def assemble_jacobian(self, arguments: ArrayDict, x=None):
         arguments, free = self.construct(arguments, x, return_free=True)
         key = 'jacobian'
@@ -324,6 +325,7 @@ class System:
             jacobian = matrix.assemble_block_csr(jacobian(arguments))
         return jacobian.submatrix(free, free)
 
+    @log.withcontext
     def assemble_residual(self, arguments: ArrayDict, x=None):
         arguments, free = self.construct(arguments, x, return_free=True)
         key = 'residual'
@@ -334,6 +336,7 @@ class System:
         res = numpy.concatenate(residual(arguments))
         return res[free]
 
+    @log.withcontext
     def assemble_value(self, arguments: ArrayDict, x=None):
         if not self.is_symmetric:
             raise Exception('value is not defined')
@@ -345,6 +348,7 @@ class System:
             self.__cache[key] = value
         return value(arguments)
 
+    @log.withcontext
     def assemble_jacobian_residual(self, arguments: ArrayDict, x=None):
         arguments, free = self.construct(arguments, x, return_free=True)
         key = 'jacobian_residual'
@@ -375,6 +379,7 @@ class System:
             res = numpy.concatenate(res_blocks)
         return jac.submatrix(free, free), res[free]
 
+    @log.withcontext
     def assemble_jacobian_residual_value(self, arguments: ArrayDict, x=None):
         if not self.is_symmetric:
             raise Exception('value is not defined')
