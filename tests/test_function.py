@@ -661,7 +661,7 @@ class Custom(TestCase):
 
     def test_deprecated_unhashable_evalf(self):
 
-        with self.assertWarns(warnings.NutilsDeprecationWarning):
+        with self.assertRaises(ValueError):
             class Test(function.Custom):
                 @classmethod
                 def evalf(cls, arg):
@@ -670,7 +670,7 @@ class Custom(TestCase):
 
     def test_deprecated_unhasbable_partial_derivative(self):
 
-        with self.assertWarns(warnings.NutilsDeprecationWarning):
+        with self.assertRaises(ValueError):
             class Test(function.Custom):
                 @types.hashable_function
                 def evalf(arg):
