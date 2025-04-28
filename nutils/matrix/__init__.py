@@ -6,7 +6,7 @@ Matrices can be converted into other forms suitable for external processing via
 the ``export`` method.
 """
 
-from .. import _util as util, sparse, warnings, numeric
+from .. import _util as util, warnings, numeric
 import numpy
 import importlib
 import os

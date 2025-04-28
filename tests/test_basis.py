@@ -1,4 +1,4 @@
-from nutils import function, mesh, sparse, transformseq, topology, element, numeric
+from nutils import function, mesh, transformseq, topology, element, numeric
 from nutils.testing import TestCase, parametrize
 import random
 import itertools

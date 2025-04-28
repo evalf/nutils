@@ -30,7 +30,7 @@ In addition to ``solve_linear`` the solver module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, evaluable, cache, numeric, types, _util as util, matrix, warnings, sparse
+from . import function, evaluable, cache, numeric, types, _util as util, matrix, warnings
 from dataclasses import dataclass
 from typing import Optional, Union, Tuple, Dict, Any, Iterator, Callable
 import abc
