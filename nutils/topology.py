@@ -14,7 +14,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, evaluable, _util as util, parallel, numeric, cache, transform, transformseq, warnings, types, points, sparse
+from . import element, function, evaluable, _util as util, parallel, numeric, cache, transform, transformseq, warnings, types, points, matrix
 from ._util import single_or_multiple, nutils_dispatch
 from functools import cached_property
 from .elementseq import References
@@ -362,7 +362,7 @@ class Topology:
         yield f(**kwargs)
 
     @log.withcontext
-    def basis(self, btype=None, __degree=None, **kwargs):
+    def basis(self, btype, **kwargs):
         '''Create a basis.
 
         A basis is a set of basis functions organized in a one dimensional
@@ -371,18 +371,6 @@ class Topology:
 
         # The basis method is not redefined in Topology subclasses;
         # specialization happens via the _tensorial_bases method.
-
-        if btype is None:
-            if 'name' not in kwargs:
-                raise TypeError("basis() missing 1 required positional argument: 'btype'")
-            btype = kwargs.pop('name')
-            warnings.deprecation("the basis type parameter has been renamed from 'name' to 'btype', please update your code", stacklevel=3)
-
-        if __degree is not None:
-            if 'degree' in kwargs:
-                raise TypeError("basis() got multiple values for argument 'degree'")
-            kwargs['degree'] = __degree
-            warnings.deprecation('the degree parameter must be specified as a keyword argument, please update your code', stacklevel=3)
 
         if self.ndims == 0:
             return function.PlainBasis([[[1]]], [[0]], 1, self.f_index, self.f_coords)
@@ -420,7 +408,6 @@ class Topology:
 
         retvals = self.sample(ischeme, degree).integrate(
             [function.kronecker(func, pos=self.f_index, length=len(self), axis=0) for func in funcs],
-            legacy=False,
             arguments=arguments)
         if asfunction:
             return [function.get(retval, 0, self.f_index) for retval in retvals]
@@ -437,13 +424,10 @@ class Topology:
         return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
     @single_or_multiple
-    def integrate(self, funcs: Iterable[function.IntoArray], ischeme: str = 'gauss', degree: Optional[int] = None, edit=None, *, arguments: Optional[_ArgDict] = None, legacy=None) -> Tuple[numpy.ndarray, ...]:
+    def integrate(self, funcs: Iterable[function.IntoArray], ischeme: str = 'gauss', degree: Optional[int] = None, *, arguments: Optional[_ArgDict] = None, legacy=False) -> Tuple[numpy.ndarray, ...]:
         'integrate functions'
 
         ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
-        if edit is not None:
-            warnings.warn('the "edit" argument of Topology.integrate will be removed in Nutils 10')
-            funcs = [edit(func) for func in funcs]
         return self.sample(ischeme, degree).integrate(funcs, legacy=legacy, arguments=arguments or {})
 
     def integral(self, func: function.IntoArray, ischeme: str = 'gauss', degree: Optional[int] = None, edit=None) -> function.Array:
@@ -451,6 +435,7 @@ class Topology:
 
         ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
         if edit is not None:
+            warnings.deprecation('edit is deprecated and will be removed in Nutils 11')
             funcs = edit(func)
         return self.sample(ischeme, degree).integral(func)
 
@@ -460,7 +445,7 @@ class Topology:
         return self.project(fun, onto, geometry, **kwargs) @ onto
 
     @log.withcontext
-    def project(self, fun: function.Array, onto: function.Array, geometry: function.Array, ischeme: str = 'gauss', degree: Optional[int] = None, droptol: float = 1e-12, exact_boundaries: bool = False, constrain=None, verify=None, ptype='lsqr', edit=None, *, arguments: Optional[_ArgDict] = None, **solverargs) -> numpy.ndarray:
+    def project(self, fun: function.Array, onto: function.Array, geometry: function.Array, ischeme: str = 'gauss', degree: Optional[int] = None, droptol: float = 1e-12, exact_boundaries: bool = False, constrain=None, verify=None, ptype='lsqr', *, arguments: Optional[_ArgDict] = None, **solverargs) -> numpy.ndarray:
         'L2 projection of function onto function space'
 
         log.debug('projection type:', ptype)
@@ -472,7 +457,7 @@ class Topology:
         else:
             constrain = constrain.copy()
         if exact_boundaries:
-            constrain |= self.boundary.project(fun, onto, geometry, constrain=constrain, ischeme=ischeme, droptol=droptol, ptype=ptype, edit=edit, arguments=arguments)
+            constrain |= self.boundary.project(fun, onto, geometry, constrain=constrain, ischeme=ischeme, droptol=droptol, ptype=ptype, arguments=arguments)
         assert isinstance(constrain, util.NanVec)
         assert constrain.shape == onto.shape[:1]
 
@@ -493,7 +478,10 @@ class Topology:
                 raise Exception
             assert fun2.ndim == 0
             J = function.J(geometry)
-            A, b, f2, area = self.integrate([Afun*J, bfun*J, fun2*J, J], ischeme=ischeme, edit=edit, arguments=arguments, legacy=True)
+            funcs = [self.integral(f * J, ischeme=ischeme) for f in [Afun, bfun, fun2, 1]]
+            funcs[0] = function.as_csr(funcs[0])
+            A, b, f2, area = function.eval(funcs)
+            A = matrix.assemble_csr(*A, Afun.shape[1])
             N = A.rowsupp(droptol)
             if numpy.equal(b, 0).all():
                 constrain[~constrain.where & N] = 0
@@ -517,7 +505,7 @@ class Topology:
             else:
                 raise Exception
             J = function.J(geometry)
-            u, scale = self.integrate([ufun*J, afun*J], ischeme=ischeme, edit=edit, arguments=arguments)
+            u, scale = self.integrate([ufun*J, afun*J], ischeme=ischeme, arguments=arguments)
             N = ~constrain.where & (scale > droptol)
             constrain[N] = u[N] / scale[N]
 
@@ -786,7 +774,7 @@ class Topology:
 
     @nutils_dispatch
     @log.withcontext
-    def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False) -> Sample:
+    def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, skip_missing=False) -> Sample:
         '''Create a sample based on physical coordinates.
 
         In a finite element application, functions are commonly evaluated in points
@@ -844,10 +832,6 @@ class Topology:
         located : :class:`nutils.sample.Sample`
         '''
 
-        if ischeme is not None:
-            warnings.deprecation('the ischeme argument for locate is no longer used and will be removed in Nutils 10', stacklevel=4)
-        if scale is not None:
-            warnings.deprecation('the scale argument for locate is no longer used and will be removed in Nutils 10', stacklevel=4)
         if max(tol, eps) <= 0:
             raise ValueError('locate requires either tol or eps to be strictly positive')
         coords = numpy.asarray(coords, dtype=float)

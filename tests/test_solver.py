@@ -1,4 +1,4 @@
-from nutils import solver, mesh, function, cache, types, evaluable, sparse
+from nutils import solver, mesh, function, cache, types, evaluable
 from nutils.expression_v2 import Namespace
 from nutils.testing import TestCase, parametrize
 import numpy

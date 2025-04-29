@@ -334,9 +334,9 @@ class _Array:
                 'Cannot stack arrays with unmatched indices (excluding the stack index {!r}): {}.'
                 .format(index, ', '.join(array.indices for array in arrays)))
         if any(index in array.indices for array in arrays):
-            warnings.deprecation('Concatenating arrays with `<a_i, b_i>_i` syntax is deprecated.')
-        indices = index + ''.join(i for i in arrays[0].indices if i != index)
-        arrays = [(array.append_axis(index, 1) if index not in array.indices else array).transpose(indices) for array in arrays]
+            raise SyntaxError('Concatenating arrays with `<a_i, b_i>_i` syntax is no longer supported.')
+        indices = index + ''.join(arrays[0].indices)
+        arrays = [array.append_axis(index, 1).transpose(indices) for array in arrays]
 
         if len(arrays) == 1:
             return arrays[0]
@@ -347,18 +347,8 @@ class _Array:
             shape, linked_lengths = helper._join_shapes(other)
             helper = helper.replace(shape=shape, linked_lengths=linked_lengths, summed=helper.summed | other.summed)
 
-        # Apply `helper.linked_lengths` to all `arrays`.  If the lengths at
-        # `index` is not known at this point, we won't be able to resolve this
-        # ever, so raise an exception here.
-        length = 0
-        for array in arrays:
-            shape = array._simplify_shape(helper.linked_lengths)
-            if isinstance(shape[0], _Length):
-                raise _IntermediateError('Cannot determine the length of the stack axis, because the length at {} is unknown.'.format(shape[0].pos), at=shape[0].pos)
-            length += shape[0]
-
         ast = ('concatenate',) + tuple(array.ast for array in arrays)
-        return helper.replace(ast=ast, indices=indices, shape=(length,)+helper.shape)
+        return helper.replace(ast=ast, indices=indices, shape=(len(arrays),)+helper.shape)
 
     @staticmethod
     def align(*arrays):
@@ -828,9 +818,7 @@ class _ExpressionParser:
             else:
                 geometry_name = self.default_geometry_name
             if not omitted_indices and self._next.type == 'indices':
-                geom = self._get_geometry(geometry_name)
-                warnings.deprecation('`[f]_i` and `[f]_x_i` are deprecated; use `[f] n({x}_i)` instead'.format(x=geometry_name), stacklevel=3)
-                value *= self._asarray(('normal', _(geom)), self._consume(), geom.shape, False)
+                raise SyntaxError(f'`[f]_i` and `[f]_x_i` are no longer supported; use `[f] n({geometry_name}_i)` instead')
         elif self._next.type == '{':
             self._consume()
             value = self.parse_subexpression_cast(omitted_indices)
@@ -863,12 +851,10 @@ class _ExpressionParser:
             assert target.type in ('geometry', 'argument')
             indices = self._consume() if self._next.type == 'indices' else None
             if target.type == 'geometry':
-                warnings.deprecation('the gradient syntax `dx_i:u` is deprecated; use `d(u, x_i)` instead', stacklevel=3)
-                geom = self._get_geometry(target.data)
+                raise SyntaxError('the gradient syntax `dx_i:u` is no longer supported; use `d(u, x_i)` instead')
             elif target.type == 'argument':
                 assert target.data.startswith('?')
-                warnings.deprecation('the derivative syntax `d?a:u` is deprecated; use `d(u, ?a)` instead', stacklevel=3)
-                arg = self._get_arg(target.data[1:], indices)
+                raise SyntaxError('the derivative syntax `d?a:u` is no longer supported; use `d(u, ?a)` instead')
             func = self.parse_var(False)
             if target.type == 'geometry':
                 return func.grad(indices.data if indices else '', geom, 'grad')
@@ -931,11 +917,8 @@ class _ExpressionParser:
                                                   linked_lengths=functools.reduce(operator.or_, (arg.linked_lengths for arg in args), frozenset()))
             elif name in self.normal_symbols:
                 if self._next.type == 'geometry':
-                    warnings.deprecation('the normal syntax with explicitly geometry `n:x_i` is deprecated; use `n(x_i)` instead', stacklevel=3)
-                    geometry_name = self._consume().data
-                else:
-                    geometry_name = self.default_geometry_name
-                geom = self._get_geometry(geometry_name)
+                    raise SyntaxError('the normal syntax with explicitly geometry `n:x_i` is no longer supported; use `n(x_i)` instead')
+                geom = self._get_geometry(self.default_geometry_name)
                 if omitted_indices:
                     value = _ArrayOmittedIndices(('normal', _(geom)), geom.shape)
                 else:
@@ -960,19 +943,15 @@ class _ExpressionParser:
                 assert indices
                 gradtype = {',': 'grad', ';': 'surfgrad'}[gradient.data]
                 if target.data:
-                    if gradient.data == ',':
-                        warnings.deprecation('the gradient syntax with explicit geometry `u_,x_i` is deprecated; use `d(u, x_i)` instead', stacklevel=3)
-                    else:
-                        warnings.deprecation('the surface gradient syntax with explicit geometry `u_;x_i` is deprecated; use `surfgrad(u, x_i)` instead', stacklevel=3)
+                    raise SyntaxError('the gradient syntax with explicit geometry `u_,x_i` is no longer supported; use `d(u, x_i)` instead' if gradient.data == ','
+                                 else 'the surface gradient syntax with explicit geometry `u_;x_i` is no longer supported; use `surfgrad(u, x_i)` instead')
                 geom = self._get_geometry(target.data or self.default_geometry_name)
                 for i, index in enumerate(indices.data):
                     value = value.grad(index, geom, gradtype)
             elif target.type == 'argument':
                 assert gradient.data == ','
                 assert target.data.startswith('?')
-                warnings.deprecation('the derivative to argument syntax `u_,?a` is deprecated; use `d(u, ?a)` instead', stacklevel=3)
-                arg = self._get_arg(target.data[1:], indices)
-                value = value.derivative(arg)
+                raise SyntaxError('the derivative to argument syntax `u_,?a` is no longer supported; use `d(u, ?a)` instead')
         elif not omitted_indices and self._next.type == 'indices':
             raise _IntermediateError("Indices can only be specified for variables, e.g. 'a_ij', not for groups, e.g. '(a+b)_ij'.", at=self._next.pos, count=len(self._next.data))
 

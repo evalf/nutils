@@ -1,6 +1,6 @@
 import numpy
 import pickle
-from nutils import matrix, sparse, testing, warnings
+from nutils import matrix, testing, warnings
 
 
 class construction(testing.TestCase):
@@ -42,14 +42,6 @@ class construction(testing.TestCase):
         self.assertEqual(rowptr.tolist(), [0, 2, 3])
         self.assertEqual(colidx.tolist(), orig_colidx)
         self.assertEqual(ncols, orig_ncols)
-
-    def test_fromsparse(self):
-        data = sparse.prune(sparse.fromarray(numpy.eye(2, 3, 1)), inplace=True)
-        values, rowptr, colidx, ncols = matrix.fromsparse(data)
-        self.assertEqual(values.tolist(), [1., 1.])
-        self.assertEqual(rowptr.tolist(), [0, 1, 2])
-        self.assertEqual(colidx.tolist(), [1, 2])
-        self.assertEqual(ncols, 3)
 
     def test_empty(self):
         values, rowptr, colidx, ncols = matrix.empty((3, 2))
@@ -99,9 +91,9 @@ class backend(testing.TestCase):
         self.enter_context(matrix.backend(self.backend))
         self.offdiag = -1+.5j if self.complex else -1
         self.exact = 2 * numpy.eye(self.n) + self.offdiag * numpy.eye(self.n, self.n, 1) + self.offdiag * numpy.eye(self.n, self.n, -1)
-        data = sparse.prune(sparse.fromarray(self.exact), inplace=True)
-        assert len(data) == self.n*3-2
-        self.matrix = matrix.fromsparse(data, inplace=True)
+        rowidx, colidx = self.exact.nonzero()
+        values = self.exact[rowidx, colidx]
+        self.matrix = matrix.assemble_coo(values, rowidx, self.n, colidx, self.n)
 
     def test_size(self):
         self.assertEqual(self.matrix.size, self.n**2)

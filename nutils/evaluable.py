@@ -158,12 +158,6 @@ class Evaluable(types.DataClass):
     def __str__(self):
         return self.__class__.__name__
 
-    def eval(self, /, **evalargs):
-        '''Evaluate function on a specified element, point set.'''
-
-        warnings.deprecation('`Evaluable.eval()` is deprecated; use `evaluable.compile()` or `evaluable.eval_once()` instead')
-        return eval_once(self, arguments=evalargs, _simplify=False, _optimize=False, stats=False)
-
     @util.deep_replace_property
     def simplified(obj):
         retval = obj._simplified()
@@ -915,12 +909,6 @@ class Constant(Array):
             if self.value[0]:
                 r += self.value[0]
             return r
-
-    def eval(self, /, **evalargs):
-        '''Evaluate function on a specified element, point set.'''
-
-        warnings.deprecation('`Evaluable.eval()` is deprecated; use `evaluable.compile()` or `evaluable.eval_once()` instead')
-        return self.value
 
     def _compile(self, builder):
         # `self.value` is always a `numpy.ndarray`. If the array is 0d, we
@@ -6515,29 +6503,6 @@ def einsum(fmt, *args, **dims):
     for i in range(len(sout), len(sall)):
         ret = Sum(ret)
     return ret
-
-
-@util.single_or_multiple
-def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.ndarray]) -> typing.Tuple[numpy.ndarray, ...]:
-    '''Evaluate one or several Array objects as sparse data.
-
-    Args
-    ----
-    funcs : :class:`tuple` of Array objects
-        Arrays to be evaluated.
-    arguments : :class:`dict` (default: None)
-        Optional arguments for function evaluation.
-
-    Returns
-    -------
-    results : :class:`tuple` of sparse data arrays
-    '''
-
-    warnings.deprecation('evaluable.eval_sparse is deprecated and will be removed in Nutils 10', stacklevel=3)
-
-    from . import sparse
-    for values, indices, shape in eval_once([func.as_evaluable_array.assparse for func in funcs]):
-        yield sparse.compose(indices, values, shape)
 
 
 @log.withcontext

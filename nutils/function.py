@@ -134,10 +134,6 @@ class LowerArgs:
 
         return LowerArgs(self.points_shape, tuple(arg.rename_spaces(map) for arg in self.args))
 
-    def __or__(self, other: 'LowerArgs') -> 'LowerArgs':
-        warnings.deprecation('`LowerArgs.__or__()` is deprecated; use `LowerArgs.__mul__()` instead')
-        return self * other
-
     def __mul__(self, other: 'LowerArgs') -> 'LowerArgs':
         '''Return the outer product of two :class:`LowerArgs`.
 
@@ -597,42 +593,13 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def __repr__(self) -> str:
         return 'Array<{}>'.format(','.join(str(n) for n in self.shape))
 
-    def eval(self, /, arguments=None, *, legacy=None, **kwargs) -> numpy.ndarray:
+    def eval(self, /, arguments={}, *, legacy=False) -> numpy.ndarray:
         'Evaluate this function.'
 
-        if self.ndim > 1 and legacy is None:
-            warnings.deprecation(
-                'Evaluation of an array of dimension 2 or higher is going to '
-                'change in Nutils 10. Instead of evaluating a 2D array as a '
-                'sparse matrix, and 3D and higher as a sparse array object, '
-                'evaluation will be dense by default, with sparse evaluation '
-                'available via the function.as_csr and function.as_coo '
-                'modifiers. To make this transition, a new "legacy" argument is '
-                'introduced that can be set to True to explicitly request the '
-                'old behaviour (and suppress this warning), and to False to '
-                'switch to dense evaluation.')
-            legacy = True
+        if legacy:
+            raise ValueError('legacy mode has been removed in Nutils 10')
 
-        if arguments is None:
-            if kwargs:
-                warnings.deprecation(
-                    'providing evaluation arguments as keyword arguments is '
-                    'deprecated, please use the "arguments" parameter instead')
-            arguments = kwargs
-        elif kwargs:
-            raise ValueError('invalid argument {list(kwargs)[0]!r}')
-
-        data = eval(self if not legacy or self.ndim < 2 else as_csr(self) if self.ndim == 2 else as_coo(self), arguments)
-        if not legacy or not self.ndim > 1:
-            return data
-        elif self.ndim == 2:
-            values, rowptr, colidx = data
-            from . import matrix
-            return matrix.assemble_csr(values, rowptr, colidx, self.shape[1])
-        else:
-            values, *indices = data
-            from . import sparse
-            return sparse.compose(indices, values, func.shape)
+        return eval(self, arguments)
 
     def derivative(self, __var: Union[str, 'Argument']) -> 'Array':
         'See :func:`derivative`.'
@@ -645,11 +612,6 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def contains(self, __name: str) -> bool:
         'Test if target occurs in this function.'
         return __name in self.arguments
-
-    @property
-    def argshapes(self) -> Mapping[str, Tuple[int, ...]]:
-        warnings.deprecation("array.argshapes[...] is deprecated and will be removed in Nutils 10, please use function.arguments_for(array)[...].shape instead")
-        return {name: shape for name, (shape, dtype) in self.arguments.items()}
 
     def conjugate(self):
         '''Return the complex conjugate, elementwise.
@@ -783,7 +745,7 @@ class Custom(Array):
     >>> Multiply([1., 2.], [3., 4.]).eval()
     array([ 3.,  8.])
     >>> a = Argument('a', (2,))
-    >>> Multiply(a, [3., 4.]).derivative(a).eval(a=numpy.array([1., 2.])).export('dense')
+    >>> Multiply(a, [3., 4.]).derivative(a).eval(arguments={'a': numpy.array([1., 2.])})
     array([[ 3.,  0.],
            [ 0.,  4.]])
 
@@ -820,7 +782,7 @@ class Custom(Array):
     >>> Roll([1, 2, 3], 1).eval()
     array([3, 1, 2])
     >>> b = Argument('b', (3,))
-    >>> Roll(b, 1).derivative(b).eval().export('dense')
+    >>> Roll(b, 1).derivative(b).eval()
     array([[ 0.,  0.,  1.],
            [ 1.,  0.,  0.],
            [ 0.,  1.,  0.]])
@@ -857,11 +819,9 @@ class Custom(Array):
         evalf = self.evalf
         partial_derivative = self.partial_derivative
         if getattr(self.evalf, '__nutils_hash__', None) is None:
-            warnings.deprecation(f'`{type(self).__name__}.evalf()` does not implement `nutils.types.nutils_hash()`. This will be mandatory in Nutils 10. Try using `nutils.types.hashable_function()`.')
-            evalf = types.hashable_function(f'{type(self).__name__}.evalf')(evalf)
+            raise ValueError(f'`{type(self).__name__}.evalf()` does not implement `nutils.types.nutils_hash()`')
         if getattr(self.partial_derivative, '__nutils_hash__', None) is None:
-            warnings.deprecation(f'`{type(self).__name__}.partial_derivative()` does not implement `nutils.types.nutils_hash()`. This will be mandatory in Nutils 10. Try using `nutils.types.hashable_function()`.')
-            partial_derivative = types.hashable_function(f'{type(self).__name__}.partial_derivative')(partial_derivative)
+            raise ValueError(f'`{type(self).__name__}.partial_derivative()` does not implement `nutils.types.nutils_hash()`')
         return _CustomEvaluable(
             type(self).__name__,
             evalf,
@@ -1560,7 +1520,7 @@ def opposite(__arg: IntoArray) -> Array:
 
     >>> from nutils import mesh, function
     >>> topo, geom = mesh.rectilinear([2])
-    >>> f = topo.basis('discont', 0).dot([1, 2])
+    >>> f = topo.basis('discont', degree=0).dot([1, 2])
 
     Evaluating this function at the interface gives (for this particular
     topology) the value at the side of the first element:
@@ -1611,7 +1571,7 @@ def mean(__arg: IntoArray) -> Array:
 
     >>> from nutils import mesh, function
     >>> topo, geom = mesh.rectilinear([2])
-    >>> f = topo.basis('discont', 0).dot([1, 2])
+    >>> f = topo.basis('discont', degree=0).dot([1, 2])
 
     Evaluating the mean of this function at the interface gives:
 
@@ -1647,7 +1607,7 @@ def jump(__arg: IntoArray) -> Array:
 
     >>> from nutils import mesh, function
     >>> topo, geom = mesh.rectilinear([2])
-    >>> f = topo.basis('discont', 0).dot([1, 2])
+    >>> f = topo.basis('discont', degree=0).dot([1, 2])
 
     Evaluating the jump of this function at the interface gives (for this
     particular topology):
@@ -1711,18 +1671,6 @@ def diagonalize(__arg: IntoArray, __axis: int = -1, __newaxis: int = -1) -> Arra
     transposed = _Transpose.to_end(arg, axis)
     diagonalized = _Wrapper(evaluable.Diagonalize, transposed, shape=(*transposed.shape, transposed.shape[-1]), dtype=transposed.dtype)
     return _Transpose.from_end(diagonalized, axis, newaxis)
-
-
-def outer(arg1, arg2=None, axis=0):
-    'outer product'
-
-    warnings.deprecation('function.outer is deprecated and will be repurposed in Nutils 10, please use alternatives like numpy.einsum instead')
-    if arg2 is None:
-        arg2 = arg1
-    elif arg1.ndim != arg2.ndim:
-        raise ValueError('arg1 and arg2 have different dimensions')
-    axis = numeric.normdim(arg1.ndim, axis)
-    return expand_dims(arg1, axis+1) * expand_dims(arg2, axis)
 
 
 def _append_axes(__array: IntoArray, __shape: Shape) -> Array:
@@ -2456,7 +2404,7 @@ def nsymgrad(arg: IntoArray, geom: IntoArray, /, ndims: int = 0, *, spaces: Opti
 
 
 @util.single_or_multiple
-def eval(funcs: evaluable.AsEvaluableArray, /, arguments=None, **kwargs: numpy.ndarray) -> Tuple[numpy.ndarray, ...]:
+def eval(funcs: evaluable.AsEvaluableArray, /, arguments={}) -> Tuple[numpy.ndarray, ...]:
     '''Evaluate one or several Array objects.
 
     Args
@@ -2470,16 +2418,6 @@ def eval(funcs: evaluable.AsEvaluableArray, /, arguments=None, **kwargs: numpy.n
     -------
     results : :class:`tuple` of arrays
     '''
-
-    if arguments is None:
-        if kwargs:
-            warnings.deprecation(
-                'providing evaluation arguments as keyword arguments is '
-                'deprecated, please use the "arguments" parameter instead',
-                stacklevel=3)
-        arguments = kwargs
-    elif kwargs:
-        raise ValueError('invalid argument {list(kwargs)[0]!r}')
 
     return evaluate(*funcs, arguments=arguments)
 
@@ -2512,45 +2450,9 @@ def as_csr(array):
     return values, rowptr, colidx
 
 
-def integral(func: IntoArray, sample) -> Array:
-    '''Integrate a function over a sample.
-
-    Args
-    ----
-    func : :class:`nutils.function.Array`
-        Integrand.
-    sample
-        The integration sample.
-    '''
-
-    warnings.deprecation("function.integral is deprecated and will be removed in Nutils 10, please use the sample's .integral method instead")
-    return sample.integral(func)
-
-
-def sample(func: IntoArray, sample) -> Array:
-    '''Evaluate a function in all sample points.
-
-    Args
-    ----
-    func : :class:`nutils.function.Array`
-        Integrand.
-    sample
-        The integration sample.
-    '''
-
-    warnings.deprecation("function.sample is deprecated and will be removed in Nutils 10, please use the sample's .bind method instead")
-    return sample.bind(func)
-
-
 def isarray(__arg: Any) -> bool:
     'Test if the argument is an instance of :class:`Array`.'
     return isinstance(__arg, Array)
-
-
-def rootcoords(space: str, __dim: int) -> Array:
-    'Return the root coordinates.'
-    warnings.deprecation('function.rootcoords is deprecated and will be removed in Nutils 10')
-    return _RootCoords(space, __dim)
 
 
 def transforms_index(space: str, transforms: Transforms) -> Array:

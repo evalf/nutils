@@ -1,4 +1,4 @@
-from nutils import evaluable, sparse, numeric, _util as util, types, sample, matrix, _pyast
+from nutils import evaluable, numeric, _util as util, types, sample, matrix, _pyast
 from nutils.testing import TestCase, parametrize
 import nutils_poly as poly
 import numpy
