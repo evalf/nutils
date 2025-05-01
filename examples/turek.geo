@@ -41,7 +41,7 @@ _() = BooleanFragments{ Surface{3,4,5}; Point{A,B}; Delete; }{};
 
 bnd_cylinder() = Abs(Boundary{ Surface{3}; });
 bnd_structure() = Abs(Boundary{ Surface{4}; });
-tmp = bnd_structure;
+tmp = bnd_structure();
 bnd_structure -= bnd_cylinder();
 bnd_cylinder -= tmp();
 bnd_fluid() = Abs(Boundary{ Surface{5}; });
