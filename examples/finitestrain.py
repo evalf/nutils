@@ -54,7 +54,7 @@ def main(nelems: int = 20,
     ns.u = domain.field('u', btype=btype, degree=degree, shape=[domain.ndims])
     ns.x_i = 'X_i + u_i'
     ns.ε_ij = '.5 (∇_j(u_i) + ∇_i(u_j))'
-    ns.energy = 'λ ε_ii ε_jj + 2 μ ε_ij ε_ij'
+    ns.energy = '.5 λ ε_ii ε_jj + μ ε_ij ε_ij'
 
     sqr = domain.boundary['left'].integral('u_k u_k dS' @ ns, degree=degree*2)
     sqr += domain.boundary['right'].integral('((u_0 - X_1 sin(2 angle) - cos(angle) + 1)^2 + (u_1 - X_1 (cos(2 angle) - 1) + sin(angle))^2) dS' @ ns, degree=degree*2)
