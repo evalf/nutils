@@ -97,13 +97,13 @@ class LowerArgs:
         return cls(points_shape, ())
 
     @classmethod
-    def for_space(cls, space: str, transforms: Tuple[Transforms, ...], index: evaluable.Array, coordinates: evaluable.Array) -> 'LowerArgs':
+    def for_space(cls, space: str, transforms: Tuple[Transforms, ...], index: evaluable.Array, coordinates: Optional[evaluable.Array] = None) -> 'LowerArgs':
         if index.dtype != int or index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
         args = LowerArg(space, transforms[0], index, coordinates),
         if len(transforms) > 1:
             args += LowerArg('~' + space, transforms[-1], index, coordinates),
-        return cls(coordinates.shape[:-1], args)
+        return cls(() if coordinates is None else coordinates.shape[:-1], args)
 
     def __post_init__(self):
         assert isinstance(self.points_shape, tuple) and all(map(evaluable._isindex, self.points_shape))
