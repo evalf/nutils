@@ -6820,12 +6820,6 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
             _pyast.If(first_run, main, main_rerun),
         ])
 
-    if compile_parallel:
-        main = _pyast.Block([
-            _pyast.Assign(_pyast.Variable('lock'), _pyast.Variable('multiprocessing').get_attr('Lock').call()),
-            main,
-        ])
-
     if stats == 'log':
         main = _pyast.Block([
             _pyast.Assign(_pyast.Variable('stats'), _pyast.Variable('collections').get_attr('defaultdict').call(_pyast.Variable('Stats'))),
@@ -6955,7 +6949,7 @@ class _BlockTreeBuilder:
         self._evaluable_block_map = evaluable_block_map
         self._evaluable_deps = evaluable_deps
         self._origin = origin
-        self._shared_arrays = set()
+        self._shared_arrays = {}
         self._new_eid = map('e{}'.format, new_index).__next__
         self.new_var = lambda: _pyast.Variable('v{}'.format(next(new_index)))
 
@@ -7021,12 +7015,16 @@ class _BlockTreeBuilder:
             # `array` might initiate an inplace add inside a loop, in which
             # case `out` must be a shared memory array or we'll only see
             # updates to `out` from the parent process.
-            self._shared_arrays.add(out)
+            assert out not in self._shared_arrays
+            lock = self.get_lock_for_evaluable(array)
+            self._shared_arrays[out] = lock
+            self._blocks[0,].append(_pyast.Assign(lock, _pyast.Variable('multiprocessing').get_attr('Lock').call()))
             py_alloc = _pyast.Variable('parallel').get_attr('shempty')
         else:
             py_alloc = _pyast.Variable('numpy').get_attr('empty')
         alloc_block = self.get_block_for_evaluable(array, block_id=alloc_block_id, comment='alloc')
-        alloc_block.assign_to(out, py_alloc.call(shape, dtype=_pyast.Variable(array.dtype.__name__)))
+        # we bypass alloc_block.assign_to because the instantiation of a new shempty array does not require a lock
+        alloc_block._block.append(_pyast.Assign(out, py_alloc.call(shape, dtype=_pyast.Variable(array.dtype.__name__))))
         return out, out_block_id
 
     def add_constant(self, value) -> _pyast.Variable:
@@ -7086,6 +7084,10 @@ class _BlockTreeBuilder:
         # somewhere else.
         return _pyast.Variable('v{}'.format(self._get_evaluable_index(evaluable)))
 
+    def get_lock_for_evaluable(self, evaluable: Evaluable) -> _pyast.Variable:
+        # Returns the lock `lock{id}` where `id` is the unique index of `evaluable`.
+        return _pyast.Variable('lock{}'.format(self._get_evaluable_index(evaluable)))
+
     def _get_evaluable_index(self, evaluable: Evaluable) -> int:
         # Assigns a unique index to `evaluable` if not already assigned and
         # returns the index.
@@ -7129,18 +7131,18 @@ class _BlockBuilder:
         # Returns true if any of the arguments references variables that
         # require a lock.
         variables = frozenset().union(*(arg.variables for arg in args), *(arg.variables for arg in kwargs.values()))
-        return not self._parent._shared_arrays.isdisjoint(variables)
+        return list(filter(None, map(self._parent._shared_arrays.get, variables)))
 
     def _block_for(self, /, *args, **kwargs):
         # If any of the arguments references variables that require a lock,
         # return a new block that is enclosed in a `with lock` block. Otherwise
         # simply return our block.
-        if self._needs_lock(*args, **kwargs):
-            block = _pyast.Block()
-            self._block.append(_pyast.With(_pyast.Variable('lock'), block))
-            return block
-        else:
-            return self._block
+        block = self._block
+        for lock in self._needs_lock(*args, **kwargs):
+            with_block = _pyast.Block()
+            block.append(_pyast.With(lock, with_block))
+            block = with_block
+        return block
 
     def exec(self, expression: _pyast.Expression):
         # Appends the statement `{expression}`. Returns nothing.
