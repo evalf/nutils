@@ -119,14 +119,16 @@ def assemble_block_csr(blocks):
     values = []
     rowptr = [0]
     colidx = []
+    dtype = blocks[0][0][0].dtype
     for row in blocks:
         nrows = len(row[0][1]) - 1
         block_data = []
         col_offset = 0
         for block_values, block_rowptr, block_colidx, block_ncols in row:
             assert len(block_rowptr) - 1 == nrows, 'sparse blocks have inconsistent row sizes'
+            assert block_values.dtype == dtype, 'blocks must all have the same dtype'
             if len(block_values):
-                block_data.append((numpy.asarray(block_values), numpy.asarray(block_rowptr), numpy.add(block_colidx, col_offset)))
+                block_data.append((block_values, block_rowptr, block_colidx + col_offset))
             col_offset += block_ncols
         assert col_offset == ncols, 'sparse blocks have inconsistent column sizes'
         ptr = rowptr[-1]
@@ -143,6 +145,9 @@ def assemble_block_csr(blocks):
                     colidx.append(block_colidx[i:j])
                     ptr += j - i
                 rowptr.append(ptr)
+    if not values:
+        # Required shortcut because numpy.concatenate cannot deal with empty lists
+        return empty((len(rowptr)-1, ncols), dtype)
     return assemble_csr(numpy.concatenate(values), numpy.array(rowptr), numpy.concatenate(colidx), ncols)
 
 
@@ -151,9 +156,9 @@ def fromsparse(data, inplace=False):
     return assemble_coo(values, rowidx, nrows, colidx, ncols)
 
 
-def empty(shape):
+def empty(shape, dtype=float):
     nrows, ncols = shape
-    return assemble_csr(numpy.zeros(0, dtype=float), numpy.zeros(nrows+1, dtype=int), numpy.zeros(0, dtype=int), ncols)
+    return assemble_csr(numpy.zeros(0, dtype=dtype), numpy.zeros(nrows+1, dtype=int), numpy.zeros(0, dtype=int), ncols)
 
 
 def diag(d):
