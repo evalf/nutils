@@ -1249,7 +1249,18 @@ def optimize(target, functional: evaluable.asarray, *, tol: float = 0., argument
     linargs = _strip(kwargs, 'lin')
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-    system = System(functional, *_split_trial_test(target))
+    trial, test = _split_trial_test(target)
+    args = function.arguments_for(functional)
+    rm = {i for i, t in enumerate(trial) if t not in args}
+    if rm:
+        if not droptol:
+            raise ValueError(f'target {", ".join(trial[i] for i in rm)} does not occur in integrand; consider setting droptol>0')
+        trial = [t for i, t in enumerate(trial) if i not in rm]
+        if test is not None:
+            test = [t for i, t in enumerate(test) if i not in rm]
+    if not trial:
+        return {}
+    system = System(functional, trial, test)
     if droptol is not None:
         return system.solve_constraints(arguments=arguments, constrain=constrain or {}, linargs=linargs, droptol=droptol)
     method = Direct(**linargs) if system.is_linear \
