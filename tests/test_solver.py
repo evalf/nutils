@@ -271,9 +271,13 @@ class optimize(TestCase):
         numpy.testing.assert_almost_equal(dofs, .75)
 
     def test_unknowntarget(self):
-        err = self.domain.integral('(sqrt(1 - u) - .5)^2' @ self.ns, degree=2)
-        with self.assertRaises(KeyError):
+        err = self.domain.integral('(u - .5)^2' @ self.ns, degree=2)
+        with self.assertRaises(ValueError):
             dofs = solver.optimize(['dofs', 'other'], err, tol=1e-10)
+        dofs = solver.optimize(['dofs', 'other'], err, tol=1e-10, droptol=1e-10)
+        self.assertEqual(list(dofs), ['dofs'])
+        dofs = solver.optimize(['other'], err, tol=1e-10, droptol=1e-10)
+        self.assertEqual(dofs, {})
         with self.assertRaises(KeyError):
             dofs = solver.optimize('other', err, tol=1e-10, droptol=1e-10)
 
