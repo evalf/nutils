@@ -2069,6 +2069,8 @@ def grad(arg: IntoArray, geom: IntoArray, /, ndims: int = 0, *, spaces: Optional
     geom = Array.cast(geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
+    if arg.dtype in (int, bool):
+        return zeros(arg.shape + geom.shape, float)
     if spaces is None:
         spaces = geom.spaces
     else:
