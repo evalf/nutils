@@ -465,7 +465,8 @@ def verify_sparse_chunks(func):
             assert len(chunk) == 1
             values, = chunk
             assert values.shape == ()
-        return chunks
+        context = self.asciitree()
+        return tuple((*[AssertPositive(index, context) for index in indices], values) for *indices, values in chunks)
     return _assparse
 
 
@@ -792,6 +793,38 @@ class AssertEqual(Array):
 
     def _compile_expression(self, a, b):
         return _pyast.Variable('evaluable').get_attr('AssertEqual').get_attr('evalf').call(a, b)
+
+
+class AssertPositive(Array):
+    'Confirm positivity at runtime'
+
+    a: Array
+    context: str
+
+    @property
+    def dtype(self):
+        return self.a.dtype
+
+    @cached_property
+    def shape(self):
+        return self.a.shape
+
+    def _intbounds_impl(self):
+        return self.a._intbounds_impl()
+
+    @property
+    def dependencies(self):
+        return self.a,
+
+    @staticmethod
+    def evalf(a, context):
+        if a.size:
+            amin = numpy.min(a)
+            assert amin >= 0, (context, amin)
+        return a
+
+    def _compile_expression(self, a):
+        return _pyast.Variable('evaluable').get_attr('AssertPositive').get_attr('evalf').call(a, _pyast.LiteralStr(self.context))
 
 
 class Orthonormal(Array):
