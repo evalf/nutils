@@ -3395,6 +3395,7 @@ class Inflate(Array):
         assert isinstance(self.dofmap, Array), f'dofmap={self.dofmap!r}'
         assert _isindex(self.length), f'length={self.length!r}'
         assert not _any_certainly_different(self.func.shape[self.func.ndim-self.dofmap.ndim:], self.dofmap.shape), f'func.shape={self.func.shape!r}, dofmap.shape={self.dofmap.shape!r}'
+        assert not isinstance(self.dofmap, Constant) or numpy.all(self.dofmap.value >= 0)
 
     @property
     def dependencies(self):
