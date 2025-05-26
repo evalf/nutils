@@ -5769,6 +5769,7 @@ class Monomial(Array):
         assert all(isinstance(index, Array) and index.dtype == int and not _any_certainly_different(index.shape, self.values.shape) for indices in self.indices for index in indices), (self.values.shape, self.indices)
         assert all(len(indices) == arg.ndim for arg, indices in zip(self.args, self.indices)), (len(self.indices), self.args)
         assert all(power == 1 or power > 1 and self.powers[i+1] == power - 1 and self.args[i+1] == self.args[i] for i, power in enumerate(self.powers)), self.powers
+        assert all(not isinstance(index, Constant) or numpy.all(index.value >= 0) for indices in self.indices for index in indices), (self.values.shape, self.indices)
 
     def _simplified(self):
         if not self.args:
@@ -5896,6 +5897,7 @@ def factor(array):
             values = values[nz]
             indices = [index[nz] for index in indices]
 
+        assert all((index >= 0).all() for index in indices), m_coeffs[m_args.index(args)]
         log.info(f'{len(values):,} coefficients for {shape or "scalar"} array ({100*len(values)/numpy.prod(shape):.1f}% full)')
 
         if not len(values):
@@ -7095,7 +7097,8 @@ class _BlockTreeBuilder:
         else:
             py_alloc = _pyast.Variable('numpy').get_attr('empty')
         alloc_block = self.get_block_for_evaluable(array, block_id=alloc_block_id, comment='alloc')
-        alloc_block.assign_to(out, py_alloc.call(shape, dtype=_pyast.Variable(array.dtype.__name__)))
+        dtype = {bool: 'bool', int: 'int64', float: 'float64', complex: 'complex128'}[array.dtype]
+        alloc_block.assign_to(out, py_alloc.call(shape, dtype=_pyast.LiteralStr(dtype)))
         return out, out_block_id
 
     def add_constant(self, value) -> _pyast.Variable:
