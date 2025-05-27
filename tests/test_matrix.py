@@ -65,10 +65,26 @@ class construction(testing.TestCase):
         self.assertEqual(ncols, 3)
 
     def test_assemble_block_csr(self):
-        A00 = [10., 20., 30.], [0, 2, 3], [0, 1, 0], 2 # 2x2
-        A01 = [], [0, 0, 0], [], 2 # 2x2
-        A10 = [40., 60.], [0, 1, 2], [0, 0], 1 # 2x1
-        A11 = [50.], [0, 1, 1], [2], 3 # 2x3
+        A00 = (
+            numpy.array([10., 20., 30.], dtype=float),
+            numpy.array([0, 2, 3], dtype=int),
+            numpy.array([0, 1, 0], dtype=int),
+            2) # 2x2
+        A01 = (
+            numpy.array([], dtype=float),
+            numpy.array([0, 0, 0], dtype=int),
+            numpy.array([], dtype=int),
+            2) # 2x2
+        A10 = (
+            numpy.array([40., 60.], dtype=float),
+            numpy.array([0, 1, 2], dtype=int),
+            numpy.array([0, 0], dtype=int),
+            1) # 2x1
+        A11 = (
+            numpy.array([50.], dtype=float),
+            numpy.array([0, 1, 1], dtype=int),
+            numpy.array([2], dtype=int),
+            3) # 2x3
         values, rowptr, colidx, ncols = matrix.assemble_block_csr([[A00, A01], [A10, A11]])
         self.assertEqual(values.tolist(), [10., 20., 30., 40., 50., 60.])
         self.assertEqual(rowptr.tolist(), [0, 2, 3, 5, 6])
