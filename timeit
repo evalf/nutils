@@ -1,0 +1,34 @@
+#! /bin/sh
+
+if [ -z "$1" -o "$1" = "-h" ]; then
+    echo "USAGE: $0 SCRIPT [ARG]..."
+    echo
+    echo "EXAMPLES:"
+    echo
+    echo "    $0 examples/turek.py"
+    echo "    $0 examples/drivencavity.py nelems=64"
+    exit 0
+fi
+
+script="$1"
+shift 1
+func=main
+case "$script" in
+    examples/turek.py)
+        context="timestep 1/2000 > solve > iter 2 > assemble_jacobian_residual > loop 1 100%"
+        ;;
+    examples/drivencavity.py)
+        context="navier-stokes > solve > iter 2 > assemble_jacobian_residual > loop 0 100%"
+        ;;
+    *)
+        echo "ERROR: unknown script: $1"
+        exit 1
+        ;;
+esac
+
+for nprocs in 1 2 3 4 6 8 12; do
+    echo -n "$nprocs "
+    NUTILS_NPROCS=$nprocs python3 -u treelogduration.py "$script" "$func" "$@" \
+        2>/dev/null \
+        | grep -Pom1 "(?<=^$context \\[duration: ).*(?=\\]$)"
+done
