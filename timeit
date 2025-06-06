@@ -15,10 +15,10 @@ shift 1
 func=main
 case "$script" in
     examples/turek.py)
-        context="timestep 1/2000 > solve > iter 2 > assemble_jacobian_residual > loop 1 100%"
+        context="timestep 1/2000 > solve > iter 2 > assemble_jacobian_residual > loop 1"
         ;;
     examples/drivencavity.py)
-        context="navier-stokes > solve > iter 2 > assemble_jacobian_residual > loop 0 100%"
+        context="navier-stokes > solve > iter 2 > assemble_jacobian_residual > loop 0"
         ;;
     *)
         echo "ERROR: unknown script: $1"
@@ -26,7 +26,7 @@ case "$script" in
         ;;
 esac
 
-for nprocs in 1 2 3 4 6 8 12; do
+for nprocs in 1 2 3 4 6 8 12 16 24; do
     echo -n "$nprocs "
     NUTILS_NPROCS=$nprocs python3 -u treelogduration.py "$script" "$func" "$@" \
         2>/dev/null \

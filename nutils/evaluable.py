@@ -6782,6 +6782,7 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
         else:
             iter_context = _pyast.Variable('treelog').get_attr('iter').get_attr('percentage').call(loop_name, _pyast.Variable('range').call(py_length))
         loop_block = _pyast.With(iter_context, as_=py_range, body=loop_block, omit_if_body_is_empty=True)
+        loop_block = _pyast.With(_pyast.Variable('treelog').get_attr('context').call(loop_name), body=loop_block)
         blocks[loop_id].append(loop_block)
         blocks[loop_id].append(blocks.pop((*loop_id[:-1], loop_id[-1] + 1)))
     main = blocks.pop((0,))
