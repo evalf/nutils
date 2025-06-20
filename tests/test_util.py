@@ -1,5 +1,6 @@
-from nutils import _util as util, warnings
+from nutils import _util as util, warnings, types
 from nutils.testing import TestCase, parametrize, requires
+import unittest
 import tempfile
 import pathlib
 import os
@@ -11,6 +12,7 @@ import datetime
 import numpy
 import sys
 import contextlib
+import traceback
 
 
 class pairwise(TestCase):
@@ -620,3 +622,33 @@ class abstract_property(TestCase):
         a = A()
         with self.assertRaisesRegex(NotImplementedError, 'class A fails to implement x'):
             a.x
+
+
+class function(TestCase):
+
+    def test_simple(self):
+        script = 'def add_two(i):\n    return i + 2\n'
+        f = util.function(script)
+        self.assertEqual(f(10), 12)
+        self.assertEqual(types.nutils_hash(f).hex(), '2ba76f18ab468b61f4e275ca2411e929c56d8ee4')
+
+    def test_globals(self):
+        script = 'def add_x(i):\n    return i + x\n'
+        f = util.function(script, {'x': 5})
+        self.assertEqual(f(10), 15)
+        self.assertEqual(types.nutils_hash(f).hex(), 'ee57bb15246d8f9d5b128c3d3ab9d7083e87a35f')
+
+    @unittest.skipIf((sys.version_info.major, sys.version_info.minor) < (3, 11), "not testing old (<3.11) traceback format")
+    def test_backtrace(self):
+        script = 'def fail(i):\n    1/0\n'
+        f = util.function(script)
+        with self.assertRaises(ZeroDivisionError):
+            try:
+                f(1)
+            finally:
+                exc = traceback.format_exc()
+        self.assertEqual(exc.splitlines()[-4:], [
+            '  File "function_766434099fa555f8be2c55c579ce78dc2ba11c6d", line 2, in fail',
+            '    1/0',
+            '    ~^~', 'ZeroDivisionError: division by zero',
+        ])

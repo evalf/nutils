@@ -52,8 +52,6 @@ import contextlib
 import subprocess
 import os
 import multiprocessing
-import hashlib
-import linecache
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
@@ -6837,22 +6835,10 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
     lines.append('return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]) + '\n')
     script = '\n    '.join(lines)
 
-    script_hash = hashlib.sha1(script.encode('utf-8')).digest()
-
-    name = f'compiled_{script_hash.hex()}'
-
     if debug_flags.compile:
         print(script)
 
-    # Make sure we can see `script` in tracebacks and `pdb`.
-    # From: https://stackoverflow.com/a/39625821
-    linecache.cache[name] = (len(script), None, [line+'\n' for line in script.splitlines()], name)
-
-    # Compile.
-    eval(builtins.compile(script, name, 'exec'), globals)
-    compiled = globals['compiled']
-    compiled.__nutils_hash__ = script_hash
-    return compiled
+    return util.function(script, globals)
 
 
 def _define_loop_block_structure(targets: typing.Tuple[Evaluable, ...]) -> typing.Tuple[Evaluable, ...]:
