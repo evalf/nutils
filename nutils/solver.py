@@ -264,6 +264,10 @@ class System:
     def __nutils_hash__(self):
         return types.nutils_hash(('System', self.trials, self.__value if self.is_symmetric else self.__block_residual))
 
+    def __reduce__(self):
+        initargs = self.__value if self.is_symmetric else self.__block_residual, self.trials
+        return System, initargs
+
     def deconstruct(self, arguments, constrain):
         arguments = arguments.copy()
         xparts = []
