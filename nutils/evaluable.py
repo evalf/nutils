@@ -54,7 +54,6 @@ import os
 import multiprocessing
 import hashlib
 import linecache
-from io import StringIO
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
@@ -6833,12 +6832,11 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
             _pyast.Exec(_pyast.Variable('log_stats').call(_pyast.Variable('ret_tuple'), _pyast.Variable('stats'))),
         ])
 
-    script = StringIO()
-    print('def compiled(a):', file=script)
-    for line in main.lines:
-        print('    ' + line, file=script)
-    print('    return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]), file=script)
-    script = script.getvalue()
+    lines = ['def compiled(a):']
+    lines.extend(main.lines)
+    lines.append('return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]) + '\n')
+    script = '\n    '.join(lines)
+
     script_hash = hashlib.sha1(script.encode('utf-8')).digest()
 
     name = f'compiled_{script_hash.hex()}'
