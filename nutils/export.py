@@ -218,8 +218,8 @@ def vtk(name, cells, points, /, **kwargs):
 
     Args
     ----
-    name : :class:`str`
-      Destination file name (without vtk extension).
+    name : :class:`str` or file object
+      Destination file name (without vtk extension) or file object.
     tri : :class:`int` array
       Triangulation.
     x : :class:`float` array
@@ -270,8 +270,14 @@ def vtk(name, cells, points, /, **kwargs):
     t_cells[:, 0] = nverts
     t_cells[:, 1:] = cells
 
-    name_vtk = name + '.vtk'
-    with log.userfile(name_vtk, 'wb') as vtk:
+    if isinstance(name, str):
+        opener = log.userfile(name + '.vtk', 'wb')
+    elif hasattr(name, 'write'):
+        opener = contextlib.nullcontext(name)
+    else:
+        raise ValueError(f'cannot write vtk data to {name!r}')
+
+    with opener as vtk:
         vtk.write(b'# vtk DataFile Version 3.0\nvtk output\nBINARY\nDATASET UNSTRUCTURED_GRID\n')
         vtk.write('POINTS {} {}\n'.format(npoints, vtkdtype[points.dtype]).encode('ascii'))
         points.tofile(vtk)
