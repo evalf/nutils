@@ -178,16 +178,24 @@ class vtk(testing.TestCase):
             yield b'\n'
 
     def test_data(self):
-        with tempfile.TemporaryDirectory() as outdir, treelog.set(treelog.DataLog(outdir)):
-            kwargs = {}
-            if self.p is not None:
-                kwargs['p'] = self.p
-            if self.c is not None:
-                kwargs['c'] = self.c
-            export.vtk('test', self.tri, self.x, **kwargs)
-            with open(os.path.join(outdir, 'test.vtk'), 'rb') as f:
+        kwargs = {}
+        if self.p is not None:
+            kwargs['p'] = self.p
+        if self.c is not None:
+            kwargs['c'] = self.c
+        expect = b''.join(self.data)
+        with self.subTest('treelog'):
+            with tempfile.TemporaryDirectory() as outdir, treelog.set(treelog.DataLog(outdir)):
+                export.vtk('test', self.tri, self.x, **kwargs)
+                with open(os.path.join(outdir, 'test.vtk'), 'rb') as f:
+                    data = f.read()
+            self.assertEqual(data, expect)
+        with self.subTest('file'):
+            with tempfile.TemporaryFile() as f:
+                export.vtk(f, self.tri, self.x, **kwargs)
+                f.seek(0)
                 data = f.read()
-        self.assertEqual(data, b''.join(self.data))
+            self.assertEqual(data, expect)
 
 
 vtk(ndims=1, xtype='i4')

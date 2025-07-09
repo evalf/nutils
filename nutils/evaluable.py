@@ -492,6 +492,10 @@ class Array(Evaluable):
     def ndim(self):
         return len(self.shape)
 
+    @property
+    def ast_dtype(self):
+        return _pyast.LiteralStr({bool: 'bool', int: 'int64', float: 'float64', complex: 'complex128'}[self.dtype])
+
     def __getitem__(self, item):
         if not isinstance(item, tuple):
             item = item,
@@ -2902,7 +2906,7 @@ class Cast(Pointwise):
         return self.arg,
 
     def _compile_expression(self, arg):
-        return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=_pyast.Variable(self.dtype.__name__))
+        return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=self.ast_dtype)
 
     def _simplified(self):
         if iszero(self.arg):
@@ -3186,12 +3190,7 @@ class Eig(Evaluable):
 
     def _compile_expression(self, array):
         evalf = _pyast.Variable('evaluable').get_attr('Eig').get_attr('evalf')
-        return evalf.call(
-            array,
-            _pyast.LiteralBool(self.symmetric),
-            _pyast.Variable(self._w_dtype.__name__),
-            _pyast.Variable(self._vt_dtype.__name__),
-        )
+        return evalf.call(array, _pyast.LiteralBool(self.symmetric), self[0].ast_dtype, self[1].ast_dtype)
 
 
 class ArrayFromTuple(Array):
@@ -3248,7 +3247,7 @@ class Singular(Array):
         return numpy.array(numpy.nan, dtype)
 
     def _compile_expression(self):
-        return _pyast.Variable('evaluable').get_attr('Singular').get_attr('evalf').call(_pyast.Variable(self.dtype.__name__))
+        return _pyast.Variable('evaluable').get_attr('Singular').get_attr('evalf').call(self.ast_dtype)
 
 
 class Zeros(Array):
@@ -3266,7 +3265,7 @@ class Zeros(Array):
         return Zeros((), self.dtype), ()
 
     def _compile_expression(self, *shape):
-        return _pyast.Variable('numpy').get_attr('zeros').call(_pyast.Tuple(shape), dtype=_pyast.Variable(self.dtype.__name__))
+        return _pyast.Variable('numpy').get_attr('zeros').call(_pyast.Tuple(shape), dtype=self.ast_dtype)
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self.ndim:
@@ -3918,7 +3917,7 @@ class Argument(DerivativeTargetBase):
         shape = builder.compile(self.shape)
         out = builder.get_variable_for_evaluable(self)
         block = builder.get_block_for_evaluable(self)
-        block.assign_to(out, _pyast.Variable('numpy').get_attr('asarray').call(builder.get_argument(self.name), dtype=_pyast.Variable(self.dtype.__name__)))
+        block.assign_to(out, _pyast.Variable('numpy').get_attr('asarray').call(builder.get_argument(self.name), dtype=self.ast_dtype))
         block.if_(_pyast.BinOp(shape, '!=', out.get_attr('shape'))).raise_(
             _pyast.Variable('ValueError').call(
                 _pyast.LiteralStr('argument {!r} has the wrong shape: expected {}, got {}').get_attr('format').call(
@@ -7007,7 +7006,7 @@ class _BlockTreeBuilder:
         else:
             py_alloc = _pyast.Variable('numpy').get_attr('empty')
         alloc_block = self.get_block_for_evaluable(array, block_id=alloc_block_id, comment='alloc')
-        alloc_block.assign_to(out, py_alloc.call(shape, dtype=_pyast.Variable(array.dtype.__name__)))
+        alloc_block.assign_to(out, py_alloc.call(shape, dtype=array.ast_dtype))
         return out, out_block_id
 
     def add_constant(self, value) -> _pyast.Variable:

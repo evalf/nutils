@@ -210,15 +210,15 @@ def loadlib(name):
     if sys.platform == 'linux':
         libsubdir = 'lib'
         libname = f'lib{name}.so'
-        versioned = f'lib{name}.so.(\d+)'
+        versioned = f'lib{name}.so.(\\d+)'
     elif sys.platform == 'darwin':
         libsubdir = 'lib'
         libname = f'lib{name}.dylib'
-        versioned = f'lib{name}.(\d+).dylib'
+        versioned = f'lib{name}.(\\d+).dylib'
     elif sys.platform == 'win32':
         libsubdir = r'Library\bin'
         libname = f'{name}.dll'
-        versioned = f'{name}.(\d+).dll'
+        versioned = f'{name}.(\\d+).dll'
     else:
         return
 
