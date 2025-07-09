@@ -7135,7 +7135,12 @@ class _BlockBuilder:
 
     def assign_to(self, lhs: _pyast.Expression, rhs: _pyast.Expression) -> _pyast.Variable:
         # Appends the statement `{lhs} = {rhs}` and returns `lhs`.
-        self._block_for(lhs, rhs).append(_pyast.Assign(lhs, rhs))
+        if isinstance(lhs, _pyast.Variable):
+            # Assignments to variables (not sliced) never need locks.
+            block = self._block_for(rhs)
+        else:
+            block = self._block_for(lhs, rhs)
+        block.append(_pyast.Assign(lhs, rhs))
         return lhs
 
     def eval(self, expression: _pyast.Expression) -> _pyast.Variable:
