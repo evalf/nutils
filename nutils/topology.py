@@ -471,7 +471,7 @@ class Topology:
                 bfun = onto * fun
             elif len(onto.shape) == 2:
                 Afun = numpy.einsum('ik,jk', onto, onto)
-                bfun = function.sum(onto * fun, -1)
+                bfun = numpy.sum(onto * fun, -1)
                 if fun2.ndim:
                     fun2 = fun2.sum(-1)
             else:
@@ -500,8 +500,8 @@ class Topology:
                 ufun = onto * fun
                 afun = onto
             elif len(onto.shape) == 2:
-                ufun = function.sum(onto * fun, axis=-1)
-                afun = function.norm2(onto)
+                ufun = numpy.sum(onto * fun, axis=-1)
+                afun = numpy.linalg.norm(onto, axis=-1)
             else:
                 raise Exception
             J = function.J(geometry)
