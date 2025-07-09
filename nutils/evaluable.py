@@ -52,9 +52,6 @@ import contextlib
 import subprocess
 import os
 import multiprocessing
-import hashlib
-import linecache
-from io import StringIO
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
@@ -6820,12 +6817,6 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
             _pyast.If(first_run, main, main_rerun),
         ])
 
-    if compile_parallel:
-        main = _pyast.Block([
-            _pyast.Assign(_pyast.Variable('lock'), _pyast.Variable('multiprocessing').get_attr('Lock').call()),
-            main,
-        ])
-
     if stats == 'log':
         main = _pyast.Block([
             _pyast.Assign(_pyast.Variable('stats'), _pyast.Variable('collections').get_attr('defaultdict').call(_pyast.Variable('Stats'))),
@@ -6833,28 +6824,15 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
             _pyast.Exec(_pyast.Variable('log_stats').call(_pyast.Variable('ret_tuple'), _pyast.Variable('stats'))),
         ])
 
-    script = StringIO()
-    print('def compiled(a):', file=script)
-    for line in main.lines:
-        print('    ' + line, file=script)
-    print('    return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]), file=script)
-    script = script.getvalue()
-    script_hash = hashlib.sha1(script.encode('utf-8')).digest()
-
-    name = f'compiled_{script_hash.hex()}'
+    lines = ['def compiled(a):']
+    lines.extend(main.lines)
+    lines.append('return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]) + '\n')
+    script = '\n    '.join(lines)
 
     if debug_flags.compile:
         print(script)
 
-    # Make sure we can see `script` in tracebacks and `pdb`.
-    # From: https://stackoverflow.com/a/39625821
-    linecache.cache[name] = (len(script), None, [line+'\n' for line in script.splitlines()], name)
-
-    # Compile.
-    eval(builtins.compile(script, name, 'exec'), globals)
-    compiled = globals['compiled']
-    compiled.__nutils_hash__ = script_hash
-    return compiled
+    return util.function(script, globals)
 
 
 def _define_loop_block_structure(targets: typing.Tuple[Evaluable, ...]) -> typing.Tuple[Evaluable, ...]:
@@ -6955,7 +6933,7 @@ class _BlockTreeBuilder:
         self._evaluable_block_map = evaluable_block_map
         self._evaluable_deps = evaluable_deps
         self._origin = origin
-        self._shared_arrays = set()
+        self._shared_arrays = {}
         self._new_eid = map('e{}'.format, new_index).__next__
         self.new_var = lambda: _pyast.Variable('v{}'.format(next(new_index)))
 
@@ -7021,7 +6999,10 @@ class _BlockTreeBuilder:
             # `array` might initiate an inplace add inside a loop, in which
             # case `out` must be a shared memory array or we'll only see
             # updates to `out` from the parent process.
-            self._shared_arrays.add(out)
+            assert out not in self._shared_arrays
+            lock = self.get_lock_for_evaluable(array)
+            self._shared_arrays[out] = lock
+            self._blocks[0,].append(_pyast.Assign(lock, _pyast.Variable('multiprocessing').get_attr('Lock').call()))
             py_alloc = _pyast.Variable('parallel').get_attr('shempty')
         else:
             py_alloc = _pyast.Variable('numpy').get_attr('empty')
@@ -7086,6 +7067,10 @@ class _BlockTreeBuilder:
         # somewhere else.
         return _pyast.Variable('v{}'.format(self._get_evaluable_index(evaluable)))
 
+    def get_lock_for_evaluable(self, evaluable: Evaluable) -> _pyast.Variable:
+        # Returns the lock `lock{id}` where `id` is the unique index of `evaluable`.
+        return _pyast.Variable('lock{}'.format(self._get_evaluable_index(evaluable)))
+
     def _get_evaluable_index(self, evaluable: Evaluable) -> int:
         # Assigns a unique index to `evaluable` if not already assigned and
         # returns the index.
@@ -7125,22 +7110,24 @@ class _BlockBuilder:
         self._block = block
         self.new_var = parent.new_var
 
-    def _needs_lock(self, /, *args, **kwargs):
-        # Returns true if any of the arguments references variables that
-        # require a lock.
-        variables = frozenset().union(*(arg.variables for arg in args), *(arg.variables for arg in kwargs.values()))
-        return not self._parent._shared_arrays.isdisjoint(variables)
+    def _needs_lock(self, condition):
+        # Returns true if condition references variables that require a lock.
+        return any(var in self._parent._shared_arrays for var in condition.variables)
+
+    def _iter_locks(self, /, *args, **kwargs):
+        variables = dict.fromkeys(var for args_ in (args, kwargs.values()) for arg in args_ for var in arg.variables) # stable union
+        return filter(None, map(self._parent._shared_arrays.get, variables))
 
     def _block_for(self, /, *args, **kwargs):
         # If any of the arguments references variables that require a lock,
         # return a new block that is enclosed in a `with lock` block. Otherwise
         # simply return our block.
-        if self._needs_lock(*args, **kwargs):
-            block = _pyast.Block()
-            self._block.append(_pyast.With(_pyast.Variable('lock'), block))
-            return block
-        else:
-            return self._block
+        block = self._block
+        for lock in self._iter_locks(*args, **kwargs):
+            with_block = _pyast.Block()
+            block.append(_pyast.With(lock, with_block))
+            block = with_block
+        return block
 
     def exec(self, expression: _pyast.Expression):
         # Appends the statement `{expression}`. Returns nothing.
@@ -7148,7 +7135,12 @@ class _BlockBuilder:
 
     def assign_to(self, lhs: _pyast.Expression, rhs: _pyast.Expression) -> _pyast.Variable:
         # Appends the statement `{lhs} = {rhs}` and returns `lhs`.
-        self._block_for(lhs, rhs).append(_pyast.Assign(lhs, rhs))
+        if isinstance(lhs, _pyast.Variable):
+            # Assignments to variables (not sliced) never need locks.
+            block = self._block_for(rhs)
+        else:
+            block = self._block_for(lhs, rhs)
+        block.append(_pyast.Assign(lhs, rhs))
         return lhs
 
     def eval(self, expression: _pyast.Expression) -> _pyast.Variable:

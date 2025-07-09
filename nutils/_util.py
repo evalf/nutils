@@ -21,6 +21,8 @@ import treelog
 import datetime
 import site
 import re
+import linecache
+import hashlib
 from typing import Iterable, Sequence, Tuple
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
@@ -1204,6 +1206,23 @@ class abstract_property:
         self.name = name
     def __get__(self, obj, objtype=None):
         raise NotImplementedError(f'class {obj.__class__.__name__} fails to implement {self.name}')
+
+
+def function(script, globals={}):
+    '''Compile script and return function object.'''
+
+    h = hashlib.sha1(script.encode('utf-8')).digest()
+    filename = 'function_' + h.hex()
+    locals = {}
+    eval(compile(script, filename, 'exec'), globals.copy(), locals)
+    func, = locals.values()
+    func.__nutils_hash__ = h
+
+    # Make sure we can see the script in tracebacks and pdb.
+    # From: https://stackoverflow.com/a/39625821
+    linecache.cache[filename] = len(script), None, script.splitlines(keepends=True), filename
+
+    return func
 
 
 # vim:sw=4:sts=4:et
