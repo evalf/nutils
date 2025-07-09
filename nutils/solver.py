@@ -652,7 +652,7 @@ class Newton:
 
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
-        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, rtol=1e-3, symmetric=system.is_symmetric)
         while True:
             jac, res = system.assemble_jacobian_residual(arguments, x)
             yield system.construct(arguments, x), numpy.linalg.norm(res)
@@ -685,7 +685,7 @@ class ReuseNewton:
 
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
-        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, rtol=1e-3, symmetric=system.is_symmetric)
 
         res = system.assemble_residual(arguments, x)
         resnorm = numpy.linalg.norm(res)
@@ -745,7 +745,7 @@ class LinesearchNewton:
 
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
-        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, rtol=1e-3, symmetric=system.is_symmetric)
         jac, res = system.assemble_jacobian_residual(arguments, x)
         relax = self.relax0
         while True: # newton iterations
@@ -793,7 +793,7 @@ class Minimize:
             raise ValueError('problem is not symmetric')
         arguments, x = system.deconstruct(arguments, constrain)
         jac, res, val = system.assemble_jacobian_residual_value(arguments, x)
-        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, rtol=1e-3, symmetric=system.is_symmetric)
         relax = 0.
         while True:
             yield system.construct(arguments, x), numpy.linalg.norm(res)
@@ -920,7 +920,7 @@ class Pseudotime:
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
         free = numpy.concatenate([numpy.isnan(arguments[t]).ravel() for t in system.trials])
-        linargs = _copy_with_defaults(self.linargs, rtol=1-3)
+        linargs = _copy_with_defaults(self.linargs, rtol=1e-3)
         djac = matrix.assemble_block_csr(evaluable.eval_once([[evaluable.as_csr(evaluable._flat(evaluable.derivative(evaluable._flat(res), arg).simplified, 2)) for arg in system.trial_args] for res in self.inertia], arguments=arguments)).submatrix(free, free)
 
         first = _First()
