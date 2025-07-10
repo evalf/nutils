@@ -501,6 +501,10 @@ class Array(Evaluable):
     def ndim(self):
         return len(self.shape)
 
+    @property
+    def ast_dtype(self):
+        return _pyast.LiteralStr({bool: 'bool', int: 'int64', float: 'float64', complex: 'complex128'}[self.dtype])
+
     def __getitem__(self, item):
         if not isinstance(item, tuple):
             item = item,
@@ -2917,7 +2921,7 @@ class Cast(Pointwise):
         return self.arg,
 
     def _compile_expression(self, arg):
-        return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=_pyast.Variable(self.dtype.__name__))
+        return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=self.ast_dtype)
 
     def _simplified(self):
         if iszero(self.arg):
@@ -3201,12 +3205,7 @@ class Eig(Evaluable):
 
     def _compile_expression(self, array):
         evalf = _pyast.Variable('evaluable').get_attr('Eig').get_attr('evalf')
-        return evalf.call(
-            array,
-            _pyast.LiteralBool(self.symmetric),
-            _pyast.Variable(self._w_dtype.__name__),
-            _pyast.Variable(self._vt_dtype.__name__),
-        )
+        return evalf.call(array, _pyast.LiteralBool(self.symmetric), self[0].ast_dtype, self[1].ast_dtype)
 
 
 class ArrayFromTuple(Array):
@@ -3263,7 +3262,7 @@ class Singular(Array):
         return numpy.array(numpy.nan, dtype)
 
     def _compile_expression(self):
-        return _pyast.Variable('evaluable').get_attr('Singular').get_attr('evalf').call(_pyast.Variable(self.dtype.__name__))
+        return _pyast.Variable('evaluable').get_attr('Singular').get_attr('evalf').call(self.ast_dtype)
 
 
 class Zeros(Array):
@@ -3281,7 +3280,7 @@ class Zeros(Array):
         return Zeros((), self.dtype), ()
 
     def _compile_expression(self, *shape):
-        return _pyast.Variable('numpy').get_attr('zeros').call(_pyast.Tuple(shape), dtype=_pyast.Variable(self.dtype.__name__))
+        return _pyast.Variable('numpy').get_attr('zeros').call(_pyast.Tuple(shape), dtype=self.ast_dtype)
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self.ndim:
@@ -3933,7 +3932,7 @@ class Argument(DerivativeTargetBase):
         shape = builder.compile(self.shape)
         out = builder.get_variable_for_evaluable(self)
         block = builder.get_block_for_evaluable(self)
-        block.assign_to(out, _pyast.Variable('numpy').get_attr('asarray').call(builder.get_argument(self.name), dtype=_pyast.Variable(self.dtype.__name__)))
+        block.assign_to(out, _pyast.Variable('numpy').get_attr('asarray').call(builder.get_argument(self.name), dtype=self.ast_dtype))
         block.if_(_pyast.BinOp(shape, '!=', out.get_attr('shape'))).raise_(
             _pyast.Variable('ValueError').call(
                 _pyast.LiteralStr('argument {!r} has the wrong shape: expected {}, got {}').get_attr('format').call(
@@ -6855,12 +6854,6 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
             _pyast.If(first_run, main, main_rerun),
         ])
 
-    if compile_parallel:
-        main = _pyast.Block([
-            _pyast.Assign(_pyast.Variable('lock'), _pyast.Variable('multiprocessing').get_attr('Lock').call()),
-            main,
-        ])
-
     if stats == 'log':
         main = _pyast.Block([
             _pyast.Assign(_pyast.Variable('stats'), _pyast.Variable('collections').get_attr('defaultdict').call(_pyast.Variable('Stats'))),
@@ -6990,7 +6983,7 @@ class _BlockTreeBuilder:
         self._evaluable_block_map = evaluable_block_map
         self._evaluable_deps = evaluable_deps
         self._origin = origin
-        self._shared_arrays = set()
+        self._shared_arrays = {}
         self._new_eid = map('e{}'.format, new_index).__next__
         self.new_var = lambda: _pyast.Variable('v{}'.format(next(new_index)))
 
@@ -7056,12 +7049,15 @@ class _BlockTreeBuilder:
             # `array` might initiate an inplace add inside a loop, in which
             # case `out` must be a shared memory array or we'll only see
             # updates to `out` from the parent process.
-            self._shared_arrays.add(out)
+            assert out not in self._shared_arrays
+            lock = self.get_lock_for_evaluable(array)
+            self._shared_arrays[out] = lock
+            self._blocks[0,].append(_pyast.Assign(lock, _pyast.Variable('multiprocessing').get_attr('Lock').call()))
             py_alloc = _pyast.Variable('parallel').get_attr('shempty')
         else:
             py_alloc = _pyast.Variable('numpy').get_attr('empty')
         alloc_block = self.get_block_for_evaluable(array, block_id=alloc_block_id, comment='alloc')
-        alloc_block.assign_to(out, py_alloc.call(shape, dtype=_pyast.Variable(array.dtype.__name__)))
+        alloc_block.assign_to(out, py_alloc.call(shape, dtype=array.ast_dtype))
         return out, out_block_id
 
     def add_constant(self, value) -> _pyast.Variable:
@@ -7121,6 +7117,10 @@ class _BlockTreeBuilder:
         # somewhere else.
         return _pyast.Variable('v{}'.format(self._get_evaluable_index(evaluable)))
 
+    def get_lock_for_evaluable(self, evaluable: Evaluable) -> _pyast.Variable:
+        # Returns the lock `lock{id}` where `id` is the unique index of `evaluable`.
+        return _pyast.Variable('lock{}'.format(self._get_evaluable_index(evaluable)))
+
     def _get_evaluable_index(self, evaluable: Evaluable) -> int:
         # Assigns a unique index to `evaluable` if not already assigned and
         # returns the index.
@@ -7160,22 +7160,24 @@ class _BlockBuilder:
         self._block = block
         self.new_var = parent.new_var
 
-    def _needs_lock(self, /, *args, **kwargs):
-        # Returns true if any of the arguments references variables that
-        # require a lock.
-        variables = frozenset().union(*(arg.variables for arg in args), *(arg.variables for arg in kwargs.values()))
-        return not self._parent._shared_arrays.isdisjoint(variables)
+    def _needs_lock(self, condition):
+        # Returns true if condition references variables that require a lock.
+        return any(var in self._parent._shared_arrays for var in condition.variables)
+
+    def _iter_locks(self, /, *args, **kwargs):
+        variables = dict.fromkeys(var for args_ in (args, kwargs.values()) for arg in args_ for var in arg.variables) # stable union
+        return filter(None, map(self._parent._shared_arrays.get, variables))
 
     def _block_for(self, /, *args, **kwargs):
         # If any of the arguments references variables that require a lock,
         # return a new block that is enclosed in a `with lock` block. Otherwise
         # simply return our block.
-        if self._needs_lock(*args, **kwargs):
-            block = _pyast.Block()
-            self._block.append(_pyast.With(_pyast.Variable('lock'), block))
-            return block
-        else:
-            return self._block
+        block = self._block
+        for lock in self._iter_locks(*args, **kwargs):
+            with_block = _pyast.Block()
+            block.append(_pyast.With(lock, with_block))
+            block = with_block
+        return block
 
     def exec(self, expression: _pyast.Expression):
         # Appends the statement `{expression}`. Returns nothing.
@@ -7183,7 +7185,12 @@ class _BlockBuilder:
 
     def assign_to(self, lhs: _pyast.Expression, rhs: _pyast.Expression) -> _pyast.Variable:
         # Appends the statement `{lhs} = {rhs}` and returns `lhs`.
-        self._block_for(lhs, rhs).append(_pyast.Assign(lhs, rhs))
+        if isinstance(lhs, _pyast.Variable):
+            # Assignments to variables (not sliced) never need locks.
+            block = self._block_for(rhs)
+        else:
+            block = self._block_for(lhs, rhs)
+        block.append(_pyast.Assign(lhs, rhs))
         return lhs
 
     def eval(self, expression: _pyast.Expression) -> _pyast.Variable:

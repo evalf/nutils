@@ -5,6 +5,7 @@ import numpy
 import contextlib
 import tempfile
 import logging
+import pickle
 
 
 @contextlib.contextmanager
@@ -271,9 +272,13 @@ class optimize(TestCase):
         numpy.testing.assert_almost_equal(dofs, .75)
 
     def test_unknowntarget(self):
-        err = self.domain.integral('(sqrt(1 - u) - .5)^2' @ self.ns, degree=2)
-        with self.assertRaises(KeyError):
+        err = self.domain.integral('(u - .5)^2' @ self.ns, degree=2)
+        with self.assertRaises(ValueError):
             dofs = solver.optimize(['dofs', 'other'], err, tol=1e-10)
+        dofs = solver.optimize(['dofs', 'other'], err, tol=1e-10, droptol=1e-10)
+        self.assertEqual(list(dofs), ['dofs'])
+        dofs = solver.optimize(['other'], err, tol=1e-10, droptol=1e-10)
+        self.assertEqual(dofs, {})
         with self.assertRaises(KeyError):
             dofs = solver.optimize('other', err, tol=1e-10, droptol=1e-10)
 
@@ -335,6 +340,15 @@ class theta_time(TestCase):
 
 class System(TestCase):
 
+    def assertPickle(self, sys, args, res):
+        h = types.nutils_hash(sys)
+        s = pickle.dumps(sys)
+        sys_ = pickle.loads(s)
+        h_ = types.nutils_hash(sys_)
+        res_ = sys_.assemble_residual(arguments=args)
+        self.assertAllAlmostEqual(h, h_)
+        self.assertAllAlmostEqual(res, res_)
+
     def test_constant(self):
         domain, geom = mesh.rectilinear([9])
         u = function.field('u', domain.basis('std', degree=1))
@@ -355,6 +369,7 @@ class System(TestCase):
         mat_, vec_, val_ = sys.assemble(arguments=newargs)
         self.assertIs(mat_, mat)
         self.assertAllAlmostEqual(vec_, f.derivative('v').eval(newargs))
+        self.assertPickle(sys, args, vec)
 
     def test_constant_symmetric(self):
         domain, geom = mesh.rectilinear([9])
@@ -376,6 +391,7 @@ class System(TestCase):
         self.assertIs(mat_, mat)
         self.assertAllAlmostEqual(vec_, f.derivative('u').eval(newargs))
         self.assertAlmostEqual(val_, f.eval(newargs))
+        self.assertPickle(sys, args, vec)
 
     def test_constant_matrix(self):
         domain, geom = mesh.rectilinear([9])
@@ -398,6 +414,7 @@ class System(TestCase):
         mat_, vec_, val_ = sys.assemble(arguments=newargs)
         self.assertIs(mat_, mat)
         self.assertAllAlmostEqual(vec_, f.derivative('v').eval(newargs))
+        self.assertPickle(sys, args, vec)
 
     def test_linear(self):
         domain, geom = mesh.rectilinear([9])
@@ -416,6 +433,7 @@ class System(TestCase):
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
         self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
         self.assertAlmostEqual(val, None)
+        self.assertPickle(sys, args, vec)
 
     def test_nonlinear(self):
         domain, geom = mesh.rectilinear([9])
@@ -434,6 +452,7 @@ class System(TestCase):
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
         self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
         self.assertAlmostEqual(val, None)
+        self.assertPickle(sys, args, vec)
 
     def test_nonlinear_symmetric(self):
         domain, geom = mesh.rectilinear([9])
@@ -450,6 +469,7 @@ class System(TestCase):
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), args))
         self.assertAllAlmostEqual(vec, f.derivative('u').eval(args))
         self.assertAlmostEqual(val, f.eval(args))
+        self.assertPickle(sys, args, vec)
 
 
 class system_finitestrain(TestCase):

@@ -264,6 +264,10 @@ class System:
     def __nutils_hash__(self):
         return types.nutils_hash(('System', self.trials, self.__value if self.is_symmetric else self.__block_residual))
 
+    def __reduce__(self):
+        initargs = self.__value if self.is_symmetric else self.__block_residual, self.trials
+        return System, initargs
+
     def deconstruct(self, arguments, constrain):
         arguments = arguments.copy()
         xparts = []
@@ -648,7 +652,7 @@ class Newton:
 
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
-        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, rtol=1e-3, symmetric=system.is_symmetric)
         while True:
             jac, res = system.assemble_jacobian_residual(arguments, x)
             yield system.construct(arguments, x), numpy.linalg.norm(res)
@@ -681,7 +685,7 @@ class ReuseNewton:
 
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
-        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, rtol=1e-3, symmetric=system.is_symmetric)
 
         res = system.assemble_residual(arguments, x)
         resnorm = numpy.linalg.norm(res)
@@ -741,7 +745,7 @@ class LinesearchNewton:
 
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
-        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, rtol=1e-3, symmetric=system.is_symmetric)
         jac, res = system.assemble_jacobian_residual(arguments, x)
         relax = self.relax0
         while True: # newton iterations
@@ -789,7 +793,7 @@ class Minimize:
             raise ValueError('problem is not symmetric')
         arguments, x = system.deconstruct(arguments, constrain)
         jac, res, val = system.assemble_jacobian_residual_value(arguments, x)
-        linargs = _copy_with_defaults(self.linargs, rtol=1-3, symmetric=system.is_symmetric)
+        linargs = _copy_with_defaults(self.linargs, rtol=1e-3, symmetric=system.is_symmetric)
         relax = 0.
         while True:
             yield system.construct(arguments, x), numpy.linalg.norm(res)
@@ -916,7 +920,7 @@ class Pseudotime:
     def __call__(self, system, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}) -> System.MethodIter:
         arguments, x = system.deconstruct(arguments, constrain)
         free = numpy.concatenate([numpy.isnan(arguments[t]).ravel() for t in system.trials])
-        linargs = _copy_with_defaults(self.linargs, rtol=1-3)
+        linargs = _copy_with_defaults(self.linargs, rtol=1e-3)
         djac = matrix.assemble_block_csr(evaluable.eval_once([[evaluable.as_csr(evaluable._flat(evaluable.derivative(evaluable._flat(res), arg).simplified, 2)) for arg in system.trial_args] for res in self.inertia], arguments=arguments)).submatrix(free, free)
 
         first = _First()
@@ -1249,7 +1253,18 @@ def optimize(target, functional: evaluable.asarray, *, tol: float = 0., argument
     linargs = _strip(kwargs, 'lin')
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-    system = System(functional, *_split_trial_test(target))
+    trial, test = _split_trial_test(target)
+    args = function.arguments_for(functional)
+    rm = {i for i, t in enumerate(trial) if t not in args}
+    if rm:
+        if not droptol:
+            raise ValueError(f'target {", ".join(trial[i] for i in rm)} does not occur in integrand; consider setting droptol>0')
+        trial = [t for i, t in enumerate(trial) if i not in rm]
+        if test is not None:
+            test = [t for i, t in enumerate(test) if i not in rm]
+    if not trial:
+        return {}
+    system = System(functional, trial, test)
     if droptol is not None:
         return system.solve_constraints(arguments=arguments, constrain=constrain or {}, linargs=linargs, droptol=droptol)
     method = Direct(**linargs) if system.is_linear \
