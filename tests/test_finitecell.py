@@ -171,6 +171,27 @@ class specialcases_3d(TestCase):
             ref._ribs # check consistency of the new mosaic
             ref.check_edges(print=self.fail)
 
+    def test_shave(self):
+        baseref = element.getsimplex(1)**3
+        trimmed = baseref.trim(
+            levels = numpy.array([1, 0.5, 1, 1, 1, -0.05, 1, 1]),
+            maxrefine = 0,
+            ndivisions = 3,
+        )
+        #   1----1         1 -----1
+        # 1---1  |    2x   | \   /|
+        # | 1 |-0.05 ----> |  \ / |
+        # 1---0.5         0.5--X-(-0.05)
+        #
+        # Because of the low ndivisions, the intersection at [1, -0.05] is
+        # rounded to the end of the interval, whereas at [0.5, -0.05] it
+        # introduces a midpoint, resulting in a complete mosaic. At the highest
+        # (3D) level, this means there are no new faces introduced originating
+        # from new edges, so edge_transforms is equal to that of the baseref.
+        self.assertEqual(trimmed.edge_transforms, baseref.edge_transforms)
+        gauss = trimmed.getpoints('gauss', 1)
+        self.assertAlmostEqual(gauss.weights.sum(), 1., places=15)
+
 
 class setoperations(TestCase):
 
