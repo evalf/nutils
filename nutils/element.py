@@ -1021,7 +1021,7 @@ class MosaicReference(Reference):
         self.edge_vertices = tuple(edge_vertices)
         self.edge_refs = edge_refs + (getsimplex(baseref.ndims-1),) * len(orientation)
         self.edge_transforms = baseref.edge_transforms + tuple(transform.simplex(vertices, isflipped)
-          for vertices, isflipped in zip(self.vertices[numpy.array(edge_vertices[baseref.nedges:])], orientation))
+          for vertices, isflipped in zip(self.vertices[numpy.array(edge_vertices[baseref.nedges:], dtype=int)], orientation))
 
         super().__init__(baseref.ndims)
 
