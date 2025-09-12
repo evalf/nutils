@@ -319,7 +319,7 @@ class System:
         jacobian = self.__cache.get(key)
         if jacobian is None:
             if self.is_constant_matrix:
-                jacobian = evaluable.eval_once(self.__block_jacobian)
+                jacobian = matrix.assemble_block_csr(evaluable.eval_once(self.__block_jacobian))
                 self.__cache[key] = jacobian
             else:
                 eval_ = evaluable.compile(self.__block_jacobian)
