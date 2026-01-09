@@ -2075,6 +2075,9 @@ class TakeDiag(Array):
     def _intbounds_impl(self):
         return self.func._intbounds
 
+    def _argument_degree(self, argument):
+        return self.func.argument_degree(argument)
+
 
 class Take(Array):
 
