@@ -4,8 +4,7 @@ The util module provides a collection of general purpose methods.
 
 from . import numeric, warnings
 from .types import arraydata
-from ags import yaml
-import stringly
+from ags import load, ucsl, yaml
 import sys
 import os
 import numpy
@@ -368,9 +367,9 @@ def defaults_from_env(f):
     This decorator searches the environment for variables matching the pattern
     ``NUTILS_MYPARAM``, where ``myparam`` is a parameter of the decorated
     function. Only parameters with type annotation and a default value are
-    considered, and the string value is deserialized using `Stringly
-    <https://pypi.org/project/stringly/>`_. In case deserialization fails, a
-    warning is emitted and the original default is maintained.'''
+    considered, and the string value is deserialized `UCSL`. In case
+    deserialization fails, a warning is emitted and the original default is
+    maintained.'''
 
     sig = inspect.signature(f)
     params = []
@@ -379,7 +378,7 @@ def defaults_from_env(f):
         envname = f'NUTILS_{param.name.upper()}'
         if envname in os.environ and param.annotation != param.empty and param.default != param.empty:
             try:
-                v = stringly.loads(param.annotation, os.environ[envname])
+                v = ucsl.loads(os.environ[envname], param.annotation)
             except Exception as e:
                 warnings.warn(f'ignoring environment variable {envname}: {e}')
             else:
@@ -690,67 +689,64 @@ def _infer_type(param):
 def cli(f, *, argv=None):
     '''Call a function using command line arguments.'''
 
-    import textwrap
-
     progname, *args = argv or sys.argv
-    doc = stringly.util.DocString(f)
-    serializers = {}
-    booleans = set()
-    mandatory = set()
-
-    for param in inspect.signature(f).parameters.values():
-        T = _infer_type(param)
-        try:
-            s = stringly.serializer.get(T)
-        except Exception as e:
-            raise Exception(f'stringly cannot deserialize argument {param.name!r} of type {T}') from e
-        if param.kind not in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY):
-            raise Exception(f'argument {param.name!r} is positional-only')
-        if param.default is param.empty and param.name not in doc.defaults:
-            mandatory.add(param.name)
-        if T == bool:
-            booleans.add(param.name)
-        serializers[param.name] = s
-
-    usage = [f'USAGE: {progname}']
-    if doc.presets:
-        usage.append(f'[{"|".join(doc.presets)}]')
-    usage.extend(('{}' if arg in mandatory else '[{}]').format(f'{arg}={arg[0].upper()}') for arg in serializers)
-    usage = '\n'.join(textwrap.wrap(' '.join(usage), subsequent_indent='  '))
+    sig = inspect.signature(f)
 
     if '-h' in args or '--help' in args:
-        help = [usage]
-        if doc.text:
+        import textwrap
+        usage = f'USAGE: {progname} [path]'
+        for arg in sig.parameters:
+            usage += f' {arg}={arg[0].upper()}'
+        help = textwrap.wrap(usage, subsequent_indent='  ')
+        doc = inspect.getdoc(f)
+        if doc:
             help.append('')
-            help.append(inspect.cleandoc(doc.text))
-        if doc.argdocs:
-            help.append('')
-            for k, d in doc.argdocs.items():
-                if k in serializers:
-                    help.append(f'{k} (default: {doc.defaults[k]})' if k in doc.defaults else k)
-                    help.extend(textwrap.wrap(doc.argdocs[k], initial_indent='    ', subsequent_indent='    '))
+            help.append(doc)
         sys.exit('\n'.join(help))
 
-    kwargs = doc.defaults
-    if args and args[0] in doc.presets:
-        kwargs.update(doc.presets[args.pop(0)])
+    try:
+        from stringly.util import DocString
+    except ImportError:
+        stringly_presets = stringly_defaults = {}
+    else:
+        stringly_doc = DocString(f)
+        stringly_presets = stringly_doc.presets
+        stringly_defaults = stringly_doc.defaults
+
+    if args and '=' not in args[0]:
+        path, *args = args
+        if path in stringly_presets:
+            warnings.deprecation(
+                "Embedded presets are deprecated and will be removed in Nutils"
+                "11. Consider copying the 'arguments' output to a .yml file and"
+                "using that as a first argument instead.")
+            kwargs = stringly_presets[path]
+        else:
+            kwargs = load(path, sig).arguments
+    else:
+        if stringly_defaults:
+            warnings.deprecation(
+                "Embedded function defaults are deprecated and will be removed"
+                "in Nutils 11. Consider changing them into actual default values"
+                "of the Python function.")
+            kwargs = stringly_defaults
+        else:
+            kwargs = {}
+
     for arg in args:
         name, sep, value = arg.partition('=')
-        kwargs[name] = value if sep else 'yes' if name in booleans else None
-
-    for name, s in kwargs.items():
-        if name not in serializers:
-            sys.exit(f'{usage}\n\nError: invalid argument {name!r}')
-        if s is None:
-            sys.exit(f'{usage}\n\nError: argument {name!r} requires a value')
-        try:
-            value = serializers[name].loads(s)
-        except Exception as e:
-            sys.exit(f'{usage}\n\nError: invalid value {s!r} for {name}: {e}')
-        kwargs[name] = value
-
-    for name in mandatory.difference(kwargs):
-        sys.exit(f'{usage}\n\nError: missing argument {name}')
+        if name not in sig.parameters:
+            sys.exit(f"Error: invalid argument {name!r}")
+        T = _infer_type(sig.parameters[name])
+        if sep is None:
+            if T != bool:
+                sys.exit(f"Error: argument {name!r} requires a value")
+            kwargs[name] = True
+        else:
+            try:
+                kwargs[name] = ucsl.loads(value, T)
+            except Exception as e:
+                sys.exit(f"Error: invalid value {value!r} for {name}: {e}")
 
     return f(**kwargs)
 

@@ -38,7 +38,7 @@ class method(testing.TestCase):
         self.assertEqual(retval, 'received iarg=1 <int>, farg=1.0 <float>, sarg=1 <str>')
 
     def test_badarg(self):
-        retval = self._cli('bla')
+        retval = self._cli('iarg=1', 'bla')
         self.assertEndsWith(retval, "Error: invalid argument 'bla'")
 
     def test_badvalue(self):
