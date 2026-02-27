@@ -43,10 +43,9 @@ class run(method):
         return cli.run(self.main, argv=argv)
 
     usage = '''\
-USAGE: test.py \[iarg=I\] \[farg=F\] \[sarg=S\] \[pdb=P\] \[gracefulexit=G\]
-  \[outrootdir=O\] \[outrooturi=O\] \[scriptname=S\] \[outdir=O\] \[outuri=O\]
-  \[richoutput=R\] \[verbose=V\] \[matrix=M\] \[nprocs=N\] \[cache=C\]
-  \[cachedir=C\]
+USAGE: test.py \[path\] iarg=I farg=F sarg=S pdb=P gracefulexit=G
+  outrootdir=O outrooturi=O scriptname=S outdir=O outuri=O
+  richoutput=R verbose=V matrix=M nprocs=N cache=C cachedir=C
 
 Dummy function to test argument parsing.'''
 
@@ -65,10 +64,9 @@ class choose(method):
             self._cli(funcname='bla')
 
     usage = '''\
-USAGE: test.py main \[iarg=I\] \[farg=F\] \[sarg=S\] \[pdb=P\]
-  \[gracefulexit=G\] \[outrootdir=O\] \[outrooturi=O\] \[scriptname=S\]
-  \[outdir=O\] \[outuri=O\] \[richoutput=R\] \[verbose=V\] \[matrix=M\]
-  \[nprocs=N\] \[cache=C\] \[cachedir=C\]
+USAGE: test.py main \[path\] iarg=I farg=F sarg=S pdb=P gracefulexit=G
+  outrootdir=O outrooturi=O scriptname=S outdir=O outuri=O
+  richoutput=R verbose=V matrix=M nprocs=N cache=C cachedir=C
 
 Dummy function to test argument parsing.'''
 

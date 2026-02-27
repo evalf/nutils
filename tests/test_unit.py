@@ -1,5 +1,4 @@
 from nutils import testing, unit, types, warnings
-import stringly
 
 
 class Unit(testing.TestCase):
@@ -15,8 +14,6 @@ class Unit(testing.TestCase):
         U = type(u)
         self.assertEqual(u, v)
         self.assertEqual(self.U._parse(s).powers, powers)
-        self.assertEqual(stringly.dumps(U, u), s)
-        self.assertEqual(stringly.loads(U, s), u)
 
     def test_length(self):
         self.check('1m', 1, m=1)
@@ -44,21 +41,10 @@ class Unit(testing.TestCase):
     def test_bind(self):
         T = self.U['m']
         self.assertEqual(T.__name__, 'unit:m')
-        stringly.loads(T, '2in')
-        with self.assertRaises(ValueError):
-            stringly.loads(T, '2kg')
 
     def test_invalid(self):
         with self.assertRaises(ValueError):
             self.U('2foo')
-
-    def test_loads_dumps(self):
-        U = self.U['Pa*mm2']
-        for s in '123456789Pa*mm2', '12.34Pa*mm2', '0Pa*mm2', '0.000012345Pa*mm2':
-            v = stringly.loads(U, s)
-            self.assertEqual(s, stringly.dumps(U, v))
-        with self.assertRaises(ValueError):
-            stringly.dumps(U, 'foo')
 
 
 # vim:sw=2:sts=2:et
