@@ -4,6 +4,7 @@ import numpy
 import pickle
 import typing
 import unittest
+import ags.ucsl
 
 
 class Dimension(unittest.TestCase):
@@ -283,6 +284,13 @@ class Quantity(unittest.TestCase):
         self.assertEqual(numpy.shape(f), (2,))
         self.assertEqual(f[0], SI.Force('11N'))
         self.assertEqual(f[1], SI.Force('12N'))
+
+    def test_ags(self):
+        q = SI.Mass('2kg')
+        s = ags.ucsl.dumps(q, SI.Mass)
+        self.assertEqual(s, '2kg')
+        q_ = ags.ucsl.loads(s, SI.Mass)
+        self.assertEqual(q_, q)
 
 
 class Locate(unittest.TestCase):

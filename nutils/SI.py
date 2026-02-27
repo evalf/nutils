@@ -573,6 +573,16 @@ class Quantity(metaclass=Dimension):
             return NotImplemented
         return f(*args, **kwargs)
 
+    def __into_ags__(self) -> str:
+        try:
+            return self._parsed_from
+        except AttributeError:
+            raise NotImplementedError
+
+    @classmethod
+    def __from_ags__(cls, s: str):
+        return cls(s)
+
 
 class Units(dict):
 
