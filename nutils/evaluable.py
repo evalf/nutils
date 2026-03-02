@@ -5846,7 +5846,8 @@ def factor(array):
             values = values[nz]
             indices = [index[nz] for index in indices]
 
-        log.info(f'{len(values):,} coefficients for {shape or "scalar"} array ({100*len(values)/numpy.prod(shape):.1f}% full)')
+        shape_str = " x ".join(f"{i:,d}" for i in shape) or "scalar"
+        log.info(f'{len(values):,} coefficients for {shape_str} array ({100*len(values)/numpy.prod(shape):.1f}% full)')
 
         if not len(values):
             continue
