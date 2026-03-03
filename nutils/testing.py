@@ -29,37 +29,6 @@ class PrintHandler(logging.Handler):
         print(record.msg)
 
 
-def _require(category, test, *items):
-    missing = [item for item in items if not test(item)]
-    if missing:
-        for item in os.getenv(f'NUTILS_TESTING_REQUIRES', '').split():
-            prefix, name = item.split(':')
-            if category.startswith(prefix) and name in missing:
-                raise RuntimeError(f'{category} {required!r} is unexpectedly missing')
-        if len(missing) > 1:
-            category += 's'
-        missing = ', '.join(missing)
-        raise unittest.SkipTest(f'missing {category}: {missing}')
-
-
-def _test_decorator(test, *args):
-    try:
-        test(*args)
-    except unittest.SkipTest as e:
-        wrapper = unittest.skip(e)
-    except Exception as outer_exc:
-        inner_exc = outer_exc
-        def wrapper(f):
-            @functools.wraps(f)
-            def wrapped(self):
-                raise inner_exc
-            return wrapped
-    else:
-        def wrapper(f):
-            return f
-    return wrapper
-
-
 class _ParametrizedCollection(type):
 
     def __new__(mcls, name, bases, namespace, base):
@@ -263,10 +232,36 @@ class TestCase(unittest.TestCase):
         status.extend(s[i:i+80] for i in range(0, len(s), 80))
         self.fail('\n'.join(status))
 
-    require_module = functools.partial(_require, 'module', importlib.util.find_spec)
-    require_application = functools.partial(_require, 'application', shutil.which)
-    require_library = functools.partial(_require, 'library', util.loadlib)
+    def _require(self, category, test, *items):
+        missing = [item for item in items if not test(item)]
+        if missing:
+            for item in os.getenv(f'NUTILS_TESTING_REQUIRES', '').split():
+                prefix, name = item.split(':')
+                if category.startswith(prefix) and name in missing:
+                    raise RuntimeError(f'{category} {required!r} is unexpectedly missing')
+            if len(missing) > 1:
+                category += 's'
+            missing = ', '.join(missing)
+            self.skipTest(f'missing {category}: {missing}')
 
+    def require_module(self, *items):
+        self._require('module', importlib.util.find_spec, *items)
+
+    def require_application(self, *items):
+        self._require('application', shutil.which, *items)
+
+    def require_library(self, *items):
+        self._require('library', util.loadlib, *items)
+
+
+def _test_decorator(test, *args):
+    def wrapper(f):
+        @functools.wraps(f)
+        def wrapped(self):
+            test(self, *args)
+            f(self)
+        return wrapped
+    return wrapper
 
 # decorators
 requires = functools.partial(_test_decorator, TestCase.require_module)
