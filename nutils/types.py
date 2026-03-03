@@ -297,8 +297,12 @@ class DataClassMeta(abc.ABCMeta):
         params = []
         for base in bases:
             params.extend(base.__signature__.parameters.values())
+        if hasattr(inspect, 'get_annotations'):
+            annotations = inspect.get_annotations(cls)
+        else: # Python 3.9
+            annotations = namespace.get('__annotations__', {})
         params.extend(inspect.Parameter(name, inspect.Parameter.POSITIONAL_OR_KEYWORD, default=namespace.get(name, inspect.Parameter.empty), annotation=T)
-            for name, T in namespace.get('__annotations__', {}).items())
+            for name, T in annotations.items())
         cls.__signature__ = inspect.Signature(params)
         cls.__cache = weakref.WeakValueDictionary()
 
