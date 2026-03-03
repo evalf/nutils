@@ -7,7 +7,7 @@ authors = [
 requires-python = '>=3.9'
 dependencies = [
     "appdirs >=1,<2",
-    "numpy >=1.21,<3",
+    "numpy >=2.0.1,<3",
     "nutils-poly >=1,<2",
     "stringly",
     "treelog >=1,<2",
