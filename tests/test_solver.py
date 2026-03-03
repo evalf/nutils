@@ -489,6 +489,14 @@ class System(TestCase):
         self.assertAlmostEqual(val_, val)
         self.assertPickle(sys, args, vec)
 
+    def test_nonscalar(self):
+        domain, geom = mesh.rectilinear([9])
+        u = function.field('u', domain.basis('std', degree=1), shape=(2,))
+        v = function.field('v', domain.basis('std', degree=1), shape=(2,))
+        f = domain.integral(v[:,numpy.newaxis] * u[numpy.newaxis,:] * function.J(geom), degree=2)
+        with self.assertRaisesRegex(ValueError, 'System requires a scalar valued function argument'):
+            sys = solver.System(f, trial='u', test='v')
+
 
 class system_finitestrain(TestCase):
 
