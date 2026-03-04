@@ -484,7 +484,7 @@ def FSI2(elemsize=Length('4mm'), coarsening=10., timestep=Time('2ms'), gamma=.5,
     log.info('reference drag: 208.83N/m ± 73.75N/m ~ 0.26s')
     log.info('reference lift: 0.88N/m ± 234.2N/m ~ 0.5s')
 
-def FSI3(elemsize=Length('4mm'), coarsening=10., timestep=Time('2ms'), gamma=.5, beta=.25):
+def FSI3(elemsize=Length('4mm'), coarsening=10., timestep=Time('1ms'), gamma=.5, beta=.25):
     log.info('benchmark FSI3')
     main(
         Domain(elemsize=elemsize, coarsening=coarsening),
