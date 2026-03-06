@@ -361,14 +361,15 @@ class System(TestCase):
         self.assertEqual(sys.trials, ('u',))
         self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float)}
-        mat, vec, val = sys.assemble(arguments=args)
+        mat = sys.assemble_jacobian(arguments=args)
+        vec = sys.assemble_residual(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
         self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
-        self.assertAlmostEqual(val, None)
         newargs = {'u': numpy.ones(10)}
         mat_, vec_, val_ = sys.assemble(arguments=newargs)
         self.assertIs(mat_, mat)
         self.assertAllAlmostEqual(vec_, f.derivative('v').eval(newargs))
+        self.assertIs(val_, None)
         self.assertPickle(sys, args, vec)
 
     def test_constant_symmetric(self):
@@ -382,7 +383,9 @@ class System(TestCase):
         self.assertEqual(sys.trials, ('u',))
         self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float)}
-        mat, vec, val = sys.assemble(arguments=args)
+        mat = sys.assemble_jacobian(arguments=args)
+        vec = sys.assemble_residual(arguments=args)
+        val = sys.assemble_value(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), args))
         self.assertAllAlmostEqual(vec, f.derivative('u').eval(args))
         self.assertAlmostEqual(val, f.eval(args))
@@ -406,14 +409,15 @@ class System(TestCase):
         self.assertEqual(sys.trials, ('u',))
         self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
-        mat, vec, val = sys.assemble(arguments=args)
+        mat = sys.assemble_jacobian(arguments=args)
+        vec = sys.assemble_residual(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
         self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
-        self.assertAlmostEqual(val, None)
         newargs = {'u': numpy.ones(10), 't': -1}
         mat_, vec_, val_ = sys.assemble(arguments=newargs)
         self.assertIs(mat_, mat)
         self.assertAllAlmostEqual(vec_, f.derivative('v').eval(newargs))
+        self.assertIs(val_, None)
         self.assertPickle(sys, args, vec)
 
     def test_linear(self):
@@ -429,10 +433,14 @@ class System(TestCase):
         self.assertEqual(sys.trials, ('u',))
         self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
-        mat, vec, val = sys.assemble(arguments=args)
+        mat = sys.assemble_jacobian(arguments=args)
+        vec = sys.assemble_residual(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
         self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
-        self.assertAlmostEqual(val, None)
+        mat_, vec_, val_ = sys.assemble(arguments=args)
+        self.assertAllAlmostEqual(mat_.export('dense'), mat.export('dense'))
+        self.assertAllAlmostEqual(vec_, vec)
+        self.assertIs(val_, None)
         self.assertPickle(sys, args, vec)
 
     def test_nonlinear(self):
@@ -448,10 +456,14 @@ class System(TestCase):
         self.assertEqual(sys.trials, ('u',))
         self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float), 't': 5}
-        mat, vec, val = sys.assemble(arguments=args)
+        mat = sys.assemble_jacobian(arguments=args)
+        vec = sys.assemble_residual(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
         self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
-        self.assertAlmostEqual(val, None)
+        mat_, vec_, val_ = sys.assemble(arguments=args)
+        self.assertAllAlmostEqual(mat_.export('dense'), mat.export('dense'))
+        self.assertAllAlmostEqual(vec_, vec)
+        self.assertAlmostEqual(val_, None)
         self.assertPickle(sys, args, vec)
 
     def test_nonlinear_symmetric(self):
@@ -465,11 +477,25 @@ class System(TestCase):
         self.assertEqual(sys.trials, ('u',))
         self.assertEqual(sys.trial_shapes, ((10,),))
         args = {'u': numpy.arange(10, dtype=float)}
-        mat, vec, val = sys.assemble(arguments=args)
+        mat = sys.assemble_jacobian(arguments=args)
+        vec = sys.assemble_residual(arguments=args)
+        val = sys.assemble_value(arguments=args)
         self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), args))
         self.assertAllAlmostEqual(vec, f.derivative('u').eval(args))
         self.assertAlmostEqual(val, f.eval(args))
+        mat_, vec_, val_ = sys.assemble(arguments=args)
+        self.assertAllAlmostEqual(mat_.export('dense'), mat.export('dense'))
+        self.assertAllAlmostEqual(vec_, vec)
+        self.assertAlmostEqual(val_, val)
         self.assertPickle(sys, args, vec)
+
+    def test_nonscalar(self):
+        domain, geom = mesh.rectilinear([9])
+        u = function.field('u', domain.basis('std', degree=1), shape=(2,))
+        v = function.field('v', domain.basis('std', degree=1), shape=(2,))
+        f = domain.integral(v[:,numpy.newaxis] * u[numpy.newaxis,:] * function.J(geom), degree=2)
+        with self.assertRaisesRegex(ValueError, 'System requires a scalar valued function argument'):
+            sys = solver.System(f, trial='u', test='v')
 
 
 class system_finitestrain(TestCase):
