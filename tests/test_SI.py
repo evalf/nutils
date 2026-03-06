@@ -240,7 +240,7 @@ class Quantity(unittest.TestCase):
         self.assertEqual(s, 'velocity: 2.5m/s')
 
     def test_pickle(self):
-        v = SI.Velocity('2m/s')
+        v = SI.Velocity('2m/s') + SI.Velocity('5km/h')
         s = pickle.dumps(v)
         self.assertEqual(pickle.loads(s), v)
 

@@ -222,7 +222,7 @@ class Dimension(type):
         if isinstance(value, cls):
             return value
         if not isinstance(value, str):
-            raise ValueError(f'expected a str, got {type(value).__name__}')
+            return super().__call__(value)
         q = parse(value)
         expect = float if not cls.__powers else cls
         if type(q) != expect:
@@ -572,6 +572,9 @@ class Quantity(metaclass=Dimension):
         if f is None:
             return NotImplemented
         return f(*args, **kwargs)
+
+    def __reduce__(self) -> tuple[type[typing.Self], tuple[str]]:
+        return type(self), (getattr(self, "_parsed_from", self.__value),)
 
 
 class Units(dict):
