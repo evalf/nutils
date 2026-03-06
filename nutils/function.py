@@ -3679,8 +3679,11 @@ class __implementations__:
 
     @implements(numpy.stack)
     def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
-        aligned = broadcast_arrays(*typecast_arrays(*__arrays))
-        return util.sum(kronecker(array, axis, len(aligned), i) for i, array in enumerate(aligned))
+        arrays = typecast_arrays(*__arrays)
+        shape = arrays[0].shape
+        if any(a.shape != shape for a in arrays[1:]):
+            raise ValueError("all input arrays must have the same shape")
+        return util.sum(kronecker(array, axis, len(arrays), i) for i, array in enumerate(arrays))
 
     @implements(numpy.broadcast_to)
     def broadcast_to(array: IntoArray, shape: Shape) -> Array:
