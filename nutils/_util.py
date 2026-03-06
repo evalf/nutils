@@ -4,6 +4,7 @@ The util module provides a collection of general purpose methods.
 
 from . import numeric, warnings
 from .types import arraydata
+from ags import yaml
 import stringly
 import sys
 import os
@@ -491,15 +492,13 @@ def log_arguments(f):
 
     @functools.wraps(f)
     def log_arguments(*args, **kwargs):
-        bound = sig.bind(*args, **kwargs)
-        bound.apply_defaults()
         with treelog.context('arguments'):
-            for k, v in bound.arguments.items():
-                try:
-                    s = stringly.dumps(_infer_type(sig.parameters[k]), v)
-                except:
-                    s = str(v)
-                treelog.info(f'{k}={s}')
+            try:
+                bound = sig.bind(*args, **kwargs)
+                bound.apply_defaults()
+                treelog.info(yaml.dumps(bound, sig).rstrip())
+            except Exception as e:
+                treelog.error("failed to serialize arguments:", e)
         return f(*args, **kwargs)
 
     return log_arguments

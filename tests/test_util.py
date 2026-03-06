@@ -232,7 +232,18 @@ class in_context(TestCase):
 
 class log_arguments(TestCase):
 
-    def test(self):
+    def test_good(self):
+
+        @util.log_arguments
+        def f(foo: str, bar: int):
+            pass
+
+        with self.assertLogs('nutils') as cm:
+            f('x', 10)
+
+        self.assertEqual(cm.output, ['INFO:nutils:arguments > foo: x\nbar: 10'])
+
+    def test_bad(self):
 
         @util.log_arguments
         def f(foo, bar):
@@ -241,7 +252,7 @@ class log_arguments(TestCase):
         with self.assertLogs('nutils') as cm:
             f('x', 10)
 
-        self.assertEqual(cm.output, ['INFO:nutils:arguments > foo=x', 'INFO:nutils:arguments > bar=10'])
+        self.assertEqual(cm.output, ['ERROR:nutils:arguments > failed to serialize arguments: in .foo: cannot establish type for parameter foo'])
 
 
 class log_traceback(TestCase):
