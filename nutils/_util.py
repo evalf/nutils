@@ -462,7 +462,10 @@ def in_context(context):
 
         @functools.wraps(f)
         def in_context(*args, **kwargs):
-            with context(**{param.name: kwargs.pop(param.name) for param in params if param.name in kwargs}):
+            context_args = {param.name: kwargs.pop(param.name) for param in params if param.name in kwargs}
+            for arg in context_args:
+                warnings.deprecation(f"setting {param.name!r} via the command line is deprecated and will be removed in Nutils 11; please set the environment variable NUTILS_{param.name.upper()} instead")
+            with context(**context_args):
                 return f(*args, **kwargs)
 
         sig = inspect.signature(f)

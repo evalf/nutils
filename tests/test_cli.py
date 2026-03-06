@@ -1,4 +1,5 @@
 import tempfile
+import os
 from nutils import cli, testing
 from contextlib import redirect_stdout
 from io import StringIO
@@ -8,7 +9,16 @@ class method(testing.TestCase):
 
     def setUp(self):
         super().setUp()
-        self.outrootdir = self.enter_context(tempfile.TemporaryDirectory())
+        self._setenv('NUTILS_OUTROOTDIR', self.enter_context(tempfile.TemporaryDirectory()))
+        self._setenv('NUTILS_PDB', 'no')
+
+    def _setenv(self, key, value):
+        old_value = os.getenv(key)
+        if old_value is None:
+            self.addCleanup(os.unsetenv, key)
+        else:
+            self.addCleanup(os.putenv, key, old_value)
+        os.putenv(key, value)
 
     def main(
             self,
@@ -43,7 +53,7 @@ class method(testing.TestCase):
 class run(method):
 
     def _cli(self, *args):
-        argv = ['test.py', *args, 'pdb=no', 'outrootdir='+self.outrootdir]
+        argv = ['test.py', *args]
         return cli.run(self.main, argv=argv)
 
     usage = '''\
@@ -61,7 +71,7 @@ class choose(method):
         self.fail("wrong function")
 
     def _cli(self, *args, funcname='main'):
-        argv = ['test.py', funcname, *args, 'pdb=no', 'outrootdir='+self.outrootdir]
+        argv = ['test.py', funcname, *args]
         return cli.choose(self.main, self.other, argv=argv)
 
     def test_badchoice(self):
