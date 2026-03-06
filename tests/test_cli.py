@@ -1,4 +1,5 @@
 import tempfile
+import os
 from nutils import cli, testing
 
 
@@ -18,14 +19,23 @@ class method(testing.TestCase):
 
     def setUp(self):
         super().setUp()
-        self.outrootdir = self.enter_context(tempfile.TemporaryDirectory())
+        self._setenv('NUTILS_OUTROOTDIR', self.enter_context(tempfile.TemporaryDirectory()))
+        self._setenv('NUTILS_PDB', 'no')
         self.method = getattr(cli, self.__class__.__name__)
+
+    def _setenv(self, key, value):
+        old_value = os.getenv(key)
+        if old_value is None:
+            self.addCleanup(os.unsetenv, key)
+        else:
+            self.addCleanup(os.putenv, key, old_value)
+        os.putenv(key, value)
 
     def assertEndsWith(self, s, suffix):
         self.assertEqual(s[-len(suffix):], suffix)
 
     def _cli(self, *args, funcname='main'):
-        argv = ['test.py', *args, 'pdb=no', 'outrootdir='+self.outrootdir]
+        argv = ['test.py', *args]
         if self.method is cli.choose:
             argv.insert(1, funcname)
         try:
