@@ -4,7 +4,7 @@ The util module provides a collection of general purpose methods.
 
 from . import numeric, warnings
 from .types import arraydata
-from ags import yaml
+from ags import yaml, ucsl
 import stringly
 import sys
 import os
@@ -368,9 +368,12 @@ def defaults_from_env(f):
     This decorator searches the environment for variables matching the pattern
     ``NUTILS_MYPARAM``, where ``myparam`` is a parameter of the decorated
     function. Only parameters with type annotation and a default value are
-    considered, and the string value is deserialized using `Stringly
-    <https://pypi.org/project/stringly/>`_. In case deserialization fails, a
-    warning is emitted and the original default is maintained.'''
+    considered, and the string value is deserialized `UCSL`_. In case
+    deserialization fails, a warning is emitted and the original default is
+    maintained.
+
+    .. _`UCSL`: https://github.com/evalf/ags?tab=readme-ov-file#ucsl
+    '''
 
     sig = inspect.signature(f)
     params = []
@@ -379,7 +382,7 @@ def defaults_from_env(f):
         envname = f'NUTILS_{param.name.upper()}'
         if envname in os.environ and param.annotation != param.empty and param.default != param.empty:
             try:
-                v = stringly.loads(param.annotation, os.environ[envname])
+                v = ucsl.loads(os.environ[envname], param.annotation)
             except Exception as e:
                 warnings.warn(f'ignoring environment variable {envname}: {e}')
             else:
