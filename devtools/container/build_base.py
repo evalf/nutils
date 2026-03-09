@@ -14,7 +14,7 @@ else:
 
 log.info(f'building container base image with name `{image_name}`')
 
-with Container.new_from('debian:bookworm', network='host') as container:
+with Container.new_from('debian:trixie-slim', network='host') as container:
     container.run('sed', '-i', 's/^Components: .*$/Components: main contrib non-free/', '/etc/apt/sources.list.d/debian.sources')
     container.run('apt', 'update')
     # Package `libtbb12` is required when using Intel MKL with environment

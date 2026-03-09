@@ -230,6 +230,8 @@ class System:
             self.is_symmetric = False
         else:
             value = residual.as_evaluable_array
+            if value.ndim != 0:
+                raise ValueError('System requires a scalar valued function argument')
             self.dtype = value.dtype
             argobjects = {arg.name: arg for arg in value.arguments if isinstance(arg, evaluable.Argument)}
             tests = self.trials if test is None else tuple(test.split(',') if isinstance(test, str) else test)
@@ -319,7 +321,7 @@ class System:
         jacobian = self.__cache.get(key)
         if jacobian is None:
             if self.is_constant_matrix:
-                jacobian = evaluable.eval_once(self.__block_jacobian)
+                jacobian = matrix.assemble_block_csr(evaluable.eval_once(self.__block_jacobian))
                 self.__cache[key] = jacobian
             else:
                 eval_ = evaluable.compile(self.__block_jacobian)
