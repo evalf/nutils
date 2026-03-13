@@ -1,5 +1,7 @@
 import tempfile
 from nutils import cli, testing
+from contextlib import redirect_stdout
+from io import StringIO
 
 
 class method(testing.TestCase):
@@ -32,8 +34,10 @@ class method(testing.TestCase):
 
     def test_help(self):
         for arg in '-h', '--help':
-            with self.assertRaisesRegex(SystemExit, self.usage):
+            with self.assertRaises(SystemExit) as cm, redirect_stdout(StringIO()) as f:
                 self._cli(arg)
+            self.assertEqual(f.getvalue(), self.usage)
+        self.assertEqual(cm.exception.code, 0)
 
 
 class run(method):
@@ -43,11 +47,12 @@ class run(method):
         return cli.run(self.main, argv=argv)
 
     usage = '''\
-USAGE: test.py \[path\] iarg=I farg=F sarg=S pdb=P gracefulexit=G
+USAGE: test.py [path] iarg=I farg=F sarg=S pdb=P gracefulexit=G
   outrootdir=O outrooturi=O scriptname=S outdir=O outuri=O
   richoutput=R verbose=V matrix=M nprocs=N cache=C cachedir=C
 
-Dummy function to test argument parsing.'''
+Dummy function to test argument parsing.
+'''
 
 
 class choose(method):
@@ -64,11 +69,12 @@ class choose(method):
             self._cli(funcname='bla')
 
     usage = '''\
-USAGE: test.py main \[path\] iarg=I farg=F sarg=S pdb=P gracefulexit=G
+USAGE: test.py main [path] iarg=I farg=F sarg=S pdb=P gracefulexit=G
   outrootdir=O outrooturi=O scriptname=S outdir=O outuri=O
   richoutput=R verbose=V matrix=M nprocs=N cache=C cachedir=C
 
-Dummy function to test argument parsing.'''
+Dummy function to test argument parsing.
+'''
 
 
 del method # hide base class from unittest discovery

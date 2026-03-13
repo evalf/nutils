@@ -706,7 +706,8 @@ def cli(f, *, argv=None):
         if doc:
             help.append('')
             help.append(doc)
-        sys.exit('\n'.join(help))
+        print('\n'.join(help))
+        sys.exit(0)
 
     stringly_doc = stringly.util.DocString(f)
     stringly_presets = stringly_doc.presets
