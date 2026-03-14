@@ -4,13 +4,14 @@ readme = "README.md"
 authors = [
     { name = "Evalf", email = "info@evalf.com" },
 ]
-requires-python = '>=3.9'
+requires-python = '>=3.10'
 dependencies = [
     "appdirs >=1,<2",
     "numpy >=2.0.1,<3",
     "nutils-poly >=1,<2",
+    "ags[yaml] >=0.3,<0.4",
     "stringly",
-    "treelog >=1,<2",
+    "treelog >=2,<3",
 ]
 dynamic = ["description", "version"]
 classifiers = [

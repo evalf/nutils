@@ -49,7 +49,6 @@ jobs:
           - {name: "baseline", os: ubuntu-latest, python-version: "3.14", matrix-backend: numpy, nprocs: 1}
           - {name: "windows", os: windows-latest, python-version: "3.14", matrix-backend: numpy, nprocs: 1}
           - {name: "macos", os: macos-latest, python-version: "3.14", matrix-backend: numpy, nprocs: 1}
-          - {name: "python 3.9", os: ubuntu-latest, python-version: "3.9", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.10", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.11", os: ubuntu-latest, python-version: "3.11", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.12", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1}

@@ -208,31 +208,20 @@ class time(TestCase):
         self.assertEqual(str(util.elapsed()), '0:00')
 
 
-class in_context(TestCase):
-
-    def test(self):
-
-        x_value = None
-
-        @contextlib.contextmanager
-        def c(x: int):
-            nonlocal x_value
-            x_value = x
-            yield
-
-        @util.in_context(c)
-        def f(s: str):
-            return s
-
-        retval = f('test', x=10)
-
-        self.assertEqual(retval, 'test')
-        self.assertEqual(x_value, 10)
-
-
 class log_arguments(TestCase):
 
-    def test(self):
+    def test_good(self):
+
+        @util.log_arguments
+        def f(foo: str, bar: int):
+            pass
+
+        with self.assertLogs('nutils') as cm:
+            f('x', 10)
+
+        self.assertEqual(cm.output, ['INFO:nutils:arguments > foo: x\nbar: 10'])
+
+    def test_bad(self):
 
         @util.log_arguments
         def f(foo, bar):
@@ -241,7 +230,7 @@ class log_arguments(TestCase):
         with self.assertLogs('nutils') as cm:
             f('x', 10)
 
-        self.assertEqual(cm.output, ['INFO:nutils:arguments > foo=x', 'INFO:nutils:arguments > bar=10'])
+        self.assertEqual(cm.output, ['ERROR:nutils:arguments > failed to serialize arguments: in .foo: cannot establish type for parameter foo'])
 
 
 class log_traceback(TestCase):
