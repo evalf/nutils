@@ -1321,6 +1321,19 @@ class CommonBasis:
                     value = numpy.tile(value, (points.npoints, 1))
                 self.assertAllAlmostEqual(value, self.checkeval(ielem, points))
 
+    def test_pickle(self):
+        # touch all unpicklable cached properties
+        _arg_dofs = self.basis._arg_dofs
+        _arg_coeffs = self.basis._arg_coeffs
+        _arg_ndofs = self.basis._arg_ndofs
+        # try pickle, unpickle
+        s = pickle.dumps(self.basis)
+        basis = pickle.loads(s)
+        # confirm that all cached properties is still as they were
+        self.assertEqual(_arg_dofs, self.basis._arg_dofs)
+        self.assertEqual(_arg_coeffs, self.basis._arg_coeffs)
+        self.assertEqual(_arg_ndofs, self.basis._arg_ndofs)
+
 
 class PlainBasis(CommonBasis, TestCase):
 
