@@ -2736,6 +2736,13 @@ class Basis(Array):
         assert self._arg_coeffs_evaluable.ndim == 2
         assert not evaluable._certainly_different(self._arg_dofs_evaluable.shape[0], self._arg_coeffs_evaluable.shape[0])
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop('_arg_dofs', None)
+        state.pop('_arg_coeffs', None)
+        state.pop('_arg_ndofs', None)
+        return state
+
     @cached_property
     def _arg_dofs(self):
         return evaluable.compile(self._arg_dofs_evaluable)
