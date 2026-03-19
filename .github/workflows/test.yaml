@@ -76,8 +76,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Move nutils directory
-        run: mv nutils _nutils
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
@@ -170,8 +168,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Move nutils directory
-        run: mv nutils _nutils
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
