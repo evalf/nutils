@@ -125,7 +125,9 @@ import operator
 import typing
 import numpy
 from functools import partial, partialmethod, reduce
-from . import function, topology, sample
+from . import function, topology, sample, warnings
+
+warnings.deprecation("nutils.SI is deprecated and will be removed in Nutils 11; please use the externally installable nutils.units instead (pip install nutils-units)")
 
 
 class DimensionError(TypeError):
