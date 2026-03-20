@@ -6388,10 +6388,11 @@ def loop_sum(func, index):
     return LoopSum(index.loop_id, index.length, func, func.shape)
 
 
-def loop_concatenate(func, index):
-    func = asarray(func)
+def loop_concatenate(func, index, axis=-1):
     if not isinstance(index, _LoopIndex):
         raise TypeError(f'expected _LoopIndex, got {index!r}')
+    axis = numeric.normdim(func.ndim, axis)
+    func = Transpose.to_end(func, axis)
     chunk_size = func.shape[-1]
     if chunk_size.isconstant:
         chunk_sizes = InsertAxis(chunk_size, index.length)
@@ -6401,7 +6402,7 @@ def loop_concatenate(func, index):
     start = Take(offsets, index)
     stop = Take(offsets, index+1)
     concat_length = Take(offsets, index.length)
-    return LoopConcatenate(index.loop_id, index.length, func, start, stop, concat_length)
+    return Transpose.from_end(LoopConcatenate(index.loop_id, index.length, func, start, stop, concat_length), axis)
 
 
 @util.shallow_replace
