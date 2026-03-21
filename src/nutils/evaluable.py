@@ -6399,21 +6399,21 @@ def einsum(fmt, *args, **dims):
     by ``->`` and the axis labels of the return value. For example, the following
     swaps the axes of a matrix:
 
-    >>> a45 = ones(tuple(map(constant, [4,5]))) # 4x5 matrix
+    >>> a45 = constant(numpy.ones([4,5])) # 4x5 matrix
     >>> einsum('ij->ji', a45)
-    nutils.evaluable.Transpose<f:(5),(4)>
+    nutils.evaluable.Transpose<f:5,4>
 
     Axis labels that do not occur in the return value are summed. For example,
     the following performs a matrix-vector product:
 
-    >>> a5 = ones(tuple(map(constant, [5]))) # vector with length 5
+    >>> a5 = constant(numpy.ones([5])) # vector with length 5
     >>> einsum('ij,j->i', a45, a5)
     nutils.evaluable.Sum<f:4>
 
     The following contracts a third order tensor, a matrix, and a vector, and
     transposes the result:
 
-    >>> a234 = ones(tuple(map(constant, [2,3,4]))) # 2x3x4 tensor
+    >>> a234 = constant(numpy.ones([2,3,4])) # 2x3x4 tensor
     >>> einsum('ijk,kl,l->ji', a234, a45, a5)
     nutils.evaluable.Sum<f:3,2>
 
