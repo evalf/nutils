@@ -151,20 +151,34 @@ jobs:
         run: python -um devtools.gha.delete_coverage_artifacts
   test-examples:
     needs: build-python-package
-    name: 'Test examples ${{ matrix.os }}'
+    name: 'Test ${{ matrix.example }} on ${{ matrix.os }}'
     runs-on: ${{ matrix.os }}-latest
     strategy:
       matrix:
+        example:
+          - adaptivity
+          - burgers
+          - cahnhilliard
+          - coil
+          - cylinderflow
+          - drivencavity
+          - elasticity
+          - finitestrain
+          - laplace
+          - platewithhole
+          - poisson
+          - torsion
+          - turek
         os: [ubuntu, macos, windows]
       fail-fast: false
     env:
       _wheel: ${{ needs.build-python-package.outputs.wheel }}
-      NUTILS_MATRIX: scipy
       NUTILS_NPROCS: 1
       NUTILS_DEBUG: all
       OMP_NUM_THREADS: 1
       VECLIB_MAXIMUM_THREADS: 1
       PYTHONHASHSEED: 0
+      PYTHONUTF8: 1 # pending https://github.com/pypa/pip/pull/13862
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -178,19 +192,17 @@ jobs:
           name: python-package
           path: dist/
       - name: Install Gmsh
-        # install gmsh via pip on windows and macos and via apt on linux, as
-        # the latter version is dynamically linked and requires libgl etc.
-        run: |
-          ${{ matrix.os == 'ubuntu' && 'sudo apt install gmsh' || 'python -um pip install gmsh' }}
-          echo "NUTILS_TESTING_REQUIRES=$NUTILS_TESTING_REQUIRES app:gmsh" >> $GITHUB_ENV
+        if: ${{ matrix.os == 'ubuntu' }}
+        # install gmsh dependencies on ubuntu as the pip package is dynamically linked
+        run: sudo apt install libglu1-mesa
       - name: Install Nutils and dependencies
         id: install
         run: |
-          python -um pip install --upgrade --upgrade-strategy eager wheel
+          python -um pip install --upgrade --upgrade-strategy eager pip
           # Install Nutils from `dist` dir created in job `build-python-package`.
-          python -um pip install "$_wheel[import-gmsh,matrix-scipy,export-mpl]"
+          python -um pip install "$_wheel" --requirements-from-script examples/${{ matrix.example }}.py
       - name: Test
-        run: python -um unittest discover -b -q -t . -s examples
+        run: python -um unittest -bv examples.${{ matrix.example }}
   test-sphinx:
     name: Test building docs
     runs-on: ubuntu-latest
