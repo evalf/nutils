@@ -1,3 +1,8 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["nutils>=10a6", "nutils-units>=0.2", "matplotlib>=3"]
+# ///
+
 from nutils import mesh, function, numeric, export, testing
 from nutils.solver import System
 from nutils.expression_v2 import Namespace

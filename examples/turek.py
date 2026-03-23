@@ -1,3 +1,8 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["nutils>=10a6", "nutils-units>=0.2", "gmsh>=4", "meshio>=5", "matplotlib>=3"]
+# ///
+
 from nutils import cli, export, function, testing
 from nutils.mesh import gmsh
 from nutils.solver import System
