@@ -39,6 +39,9 @@ exists; otherwise it is considered a prefix.
 '''
 
 import re
+from . import warnings
+
+warnings.deprecation("nutils.unit is deprecated and will be removed in Nutils 11; please use the externally installable nutils.units instead (pip install nutils-units)")
 
 
 def create(_typename='unit', **units):

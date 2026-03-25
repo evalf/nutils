@@ -1,23 +1,37 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["nutils>=10a6", "nutils-units>=0.2", "matplotlib>=3"]
+# ///
+
 from nutils import mesh, function, numeric, export, testing
 from nutils.solver import System
 from nutils.expression_v2 import Namespace
-from nutils.SI import Length, Time, Density, Tension, Energy, Pressure, Velocity, parse
+try:
+    from nutils.units.typing import Length, Time, Density, Tension, Energy, Pressure, Velocity
+except ModuleNotFoundError as e:
+    if hasattr(e, 'add_note'):
+        e.add_note("Consider installing the units package via: pip install nutils-units")
+    raise
 import numpy
 import treelog as log
 
 
-def main(size: Length = parse('10cm'),
-         epsilon: Length = parse('1mm'),
-         mobility: Time/Density = parse('1mL*s/kg'),
-         stens: Tension = parse('50mN/m'),
-         wtensn: Tension = parse('30mN/m'),
-         wtensp: Tension = parse('20mN/m'),
+Mobility = Time / Density
+LED = Energy / Length # linear energy density
+
+
+def main(size: Length = Length('10cm'),
+         epsilon: Length = Length('1mm'),
+         mobility: Mobility = Mobility('1mL*s/kg'),
+         stens: Tension = Tension('50mN/m'),
+         wtensn: Tension = Tension('30mN/m'),
+         wtensp: Tension = Tension('20mN/m'),
          nelems: int = 0,
          etype: str = 'rectilinear',
          degree: int = 1,
-         timestep: Time = parse('.1s'),
-         tol: Energy/Length = parse('1nJ/m'),
-         endtime: Time = parse('1min'),
+         timestep: Time = Time('.1s'),
+         tol: LED = LED('1nJ/m'),
+         endtime: Time = Time('1min'),
          seed: int = 0,
          circle: bool = True,
          stable: bool = False,
@@ -207,14 +221,14 @@ def main(size: Length = parse('10cm'),
 class test(testing.TestCase):
 
     def test_initial(self):
-        args = main(epsilon=parse('5cm'), mobility=parse('1μL*s/kg'), nelems=3, degree=2, timestep=parse('1h'), endtime=parse('1h'), circle=False)
+        args = main(epsilon=Length('5cm'), mobility=Mobility('1μL*s/kg'), nelems=3, degree=2, timestep=Time('1h'), endtime=Time('1h'), circle=False)
         with self.subTest('concentration'):
             self.assertAlmostEqual64(args['φ0'], '''
                 eNoBYgCd/xM3LjTtNYs3MDcUyt41uc14zjo0LzKzNm812jFhNNMzwDYgzbMzV8o0yCM1rzWeypE3Tcnx
                 L07NzTa4NlMyETREyrPIGMxYMl82VDbjy1/M8clZyf3IRjday6XLmMl6NRnJMF4tqQ==''')
 
     def test_square(self):
-        args = main(epsilon=parse('5cm'), mobility=parse('1μL*s/kg'), nelems=3, degree=2, timestep=parse('1h'), endtime=parse('2h'), circle=False)
+        args = main(epsilon=Length('5cm'), mobility=Mobility('1μL*s/kg'), nelems=3, degree=2, timestep=Time('1h'), endtime=Time('2h'), circle=False)
         with self.subTest('concentration'):
             self.assertAlmostEqual64(args['φ'], '''
                 eNoBYgCd/y41EjX2NZ829DXcMxUz0jTANL41ajaNNZox/9EoNRY1LDUkNZAw1cqnysI1njWdNNkxMMuk
@@ -225,7 +239,7 @@ class test(testing.TestCase):
                 xlrGoziaOEA3os8VyJLHk8hlyTw2sDZXydPISMoPy5zGe8i7yzfIncgAzGLKwgYwXw==''')
 
     def test_multipatchcircle(self):
-        args = main(epsilon=parse('5cm'), mobility=parse('1μL*s/kg'), nelems=3, etype='multipatch', degree=2, timestep=parse('1h'), endtime=parse('2h'))
+        args = main(epsilon=Length('5cm'), mobility=Mobility('1μL*s/kg'), nelems=3, etype='multipatch', degree=2, timestep=Time('1h'), endtime=Time('2h'))
         with self.subTest('concentration'):
             self.assertAlmostEqual64(args['φ'], '''
                 eNoNz01IlFEUBmByEcVsWkiBoKHYoh9nvnvPOa5GcCE1gqNjDZOBBUM1iSYYEf2JEGZE0SoIokWMCCYk

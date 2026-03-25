@@ -1,7 +1,17 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["nutils>=10a6", "nutils-units>=0.2", "gmsh>=4", "meshio>=5", "matplotlib>=3"]
+# ///
+
 from nutils import cli, export, function, testing
 from nutils.mesh import gmsh
 from nutils.solver import System
-from nutils.SI import Length, Density, Viscosity, Velocity, Time, Pressure, Acceleration
+try:
+    from nutils.units.typing import Length, Density, Viscosity, Velocity, Time, Pressure, Acceleration
+except ModuleNotFoundError as e:
+    if hasattr(e, 'add_note'):
+        e.add_note("Consider installing the units package via: pip install nutils-units")
+    raise
 from nutils.expression_v2 import Namespace
 from collections import defaultdict, deque
 from dataclasses import dataclass
@@ -221,7 +231,7 @@ def main(domain: Domain = Domain(), solid: Optional[Solid] = Solid(), fluid: Opt
         if dynamic:
             ns.v, ns.a = dynamic.newmark_defo(ns.d)
         else:
-            ns.a = Acceleration.wrap(function.zeros((2,)))
+            ns.a = numpy.repeat(Acceleration.zero, 2)
 
         # Deformed geometry
         ns.x_i = 'xref_i + d_i'
@@ -260,8 +270,8 @@ def main(domain: Domain = Domain(), solid: Optional[Solid] = Solid(), fluid: Opt
     else: # fully rigid solid
 
         ns.x = ns.xref
-        ns.v = Velocity.wrap(function.zeros((2,)))
-        ns.a = Acceleration.wrap(function.zeros((2,)))
+        ns.v = numpy.repeat(Velocity.zero, 2)
+        ns.a = numpy.repeat(Acceleration.zero, 2)
 
     if fluid:
 
@@ -339,7 +349,7 @@ def main(domain: Domain = Domain(), solid: Optional[Solid] = Solid(), fluid: Opt
 
     DL = uxy = None # for unit tests only
 
-    for t in log.iter.fraction('timestep', dynamic.times) if dynamic else [Time.wrap(float('inf'))]:
+    for t in log.iter.fraction('timestep', dynamic.times) if dynamic else [Time.zero * float('inf')]:
 
         if dynamic:
             if solid:
