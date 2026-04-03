@@ -505,7 +505,7 @@ def log_arguments(f):
                 bound.apply_defaults()
                 treelog.info(yaml.dumps(bound, sig).rstrip())
             except Exception as e:
-                treelog.error("failed to serialize arguments:", e)
+                log_exception(e)
         return f(*args, **kwargs)
 
     return log_arguments
