@@ -385,7 +385,8 @@ def defaults_from_env(f):
             try:
                 v = ucsl.loads(os.environ[envname], param.annotation)
             except Exception as e:
-                warnings.warn(f'ignoring environment variable {envname}: {e}')
+                warnings.warn(f'ignoring environment variable {envname}')
+                log_exception(e)
             else:
                 param = param.replace(default=v)
                 changed = True
