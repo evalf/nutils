@@ -230,7 +230,10 @@ class log_arguments(TestCase):
         with self.assertLogs('nutils') as cm:
             f('x', 10)
 
-        self.assertEqual(cm.output, ['ERROR:nutils:arguments > failed to serialize arguments: in .foo: cannot establish type for parameter foo'])
+        if sys.version_info >= (3, 11):
+            self.assertEqual(cm.output, ['ERROR:nutils:arguments > TypeError: cannot establish type for parameter foo\nIn: .foo'])
+        else:
+            self.assertEqual(cm.output, ['ERROR:nutils:arguments > TypeError: cannot establish type for parameter foo'])
 
 
 class log_traceback(TestCase):
