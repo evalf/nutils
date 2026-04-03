@@ -679,7 +679,7 @@ def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptn
                 yield
         except Exception as e:
             with treelog.set(htmllog):
-                treelog.error(f'{e.__class__.__name__}: {e}')
+                log_exception(e)
             raise
         finally:
             treelog.info(f'log written to: {loguri}')
