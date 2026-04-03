@@ -24,6 +24,7 @@ import site
 import re
 import linecache
 import hashlib
+import traceback
 from typing import Iterable, Sequence, Tuple
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
@@ -525,6 +526,22 @@ def post_mortem(pdb: bool = False): # pragma: no cover
         raise
 
 
+def log_exception(e):
+    tbexc = traceback.TracebackException.from_exception(e)
+    prefix = ''
+    while True:
+        treelog.error(prefix + ''.join(tbexc.format_exception_only()).rstrip())
+        treelog.debug('Traceback (most recent call first):\n' + ''.join(reversed(tbexc.stack.format())).rstrip())
+        if tbexc.__cause__ is not None:
+            tbexc = tbexc.__cause__
+            prefix = '.. caused by '
+        elif tbexc.__context__ is not None and not tbexc.__suppress_context__:
+            tbexc = tbexc.__context__
+            prefix = '.. while handling '
+        else:
+            break
+
+
 @contextlib.contextmanager
 @defaults_from_env
 def log_traceback(gracefulexit: bool = True):
@@ -533,31 +550,15 @@ def log_traceback(gracefulexit: bool = True):
     Afterwards ``SystemExit`` is raised to avoid reprinting of the traceback by
     Python's default error handler.'''
 
-    import traceback
-
     if not gracefulexit:
         yield
         return
 
     try:
         yield
-    except SystemExit:
-        raise
-    except:
-        exc = traceback.TracebackException(*sys.exc_info())
-        prefix = ''
-        while True:
-            treelog.error(prefix + ''.join(exc.format_exception_only()).rstrip())
-            treelog.debug('Traceback (most recent call first):\n' + ''.join(reversed(exc.stack.format())).rstrip())
-            if exc.__cause__ is not None:
-                exc = exc.__cause__
-                prefix = '.. caused by '
-            elif exc.__context__ is not None and not exc.__suppress_context__:
-                exc = exc.__context__
-                prefix = '.. while handling '
-            else:
-                break
-        raise SystemExit(1)
+    except Exception as e:
+        log_exception(e)
+        raise SystemExit(1) from None
 
 
 @contextlib.contextmanager
