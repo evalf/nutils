@@ -9,7 +9,7 @@ dependencies = [
     "appdirs >=1,<2",
     "numpy >=2.0.1,<3",
     "nutils-poly >=1,<2",
-    "ags[yaml] >=0.3,<0.4",
+    "ags[yaml] >=0.4,<0.5",
     "stringly",
     "treelog >=2,<3",
 ]
