@@ -1,6 +1,6 @@
 import numpy
 import pickle
-from nutils import matrix, testing, warnings
+from nutils import matrix, testing
 
 
 class construction(testing.TestCase):

@@ -2,16 +2,12 @@
 The transform module.
 """
 
-from typing import Tuple, Dict
+from typing import Tuple
 from numbers import Integral
-from . import cache, numeric, _util as util, types
+from . import numeric, _util as util, types
 from functools import cached_property
 import nutils_poly as poly
 import numpy
-import collections
-import itertools
-import functools
-import operator
 _ = numpy.newaxis
 
 TransformChain = Tuple['TransformItem']

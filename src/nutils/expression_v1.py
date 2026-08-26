@@ -140,7 +140,7 @@ import numpy
 import operator
 import types as builtin_types
 from typing import Any, Callable, Dict, List, Mapping, Optional, overload, Tuple, Union
-from . import function, types, warnings
+from . import function, types
 
 
 # Convenience function to create a constant in ExpressionAST (details in

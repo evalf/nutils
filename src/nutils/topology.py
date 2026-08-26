@@ -21,10 +21,9 @@ from .elementseq import References
 from .pointsseq import PointsSequence
 from .sample import Sample
 
-from dataclasses import dataclass
 from functools import reduce
 from os import environ
-from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union, Sequence
+from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Tuple, Union, Sequence
 
 import itertools
 import numpy
@@ -2440,7 +2439,7 @@ class SimplexTopology(TransformChainsTopology):
     def __init__(self, space: str, simplices: numpy.ndarray, transforms: transformseq.Transforms, opposites: transformseq.Transforms):
         assert isinstance(space, str), f'space={space!r}'
         assert isinstance(simplices, numpy.ndarray), f'simplices={simplices!r}'
-        assert len(simplices), f'simplices is empty'
+        assert len(simplices), 'simplices is empty'
         assert simplices.shape == (len(transforms), transforms.fromdims+1)
         self.simplices = numpy.asarray(simplices)
         assert numpy.greater(self.simplices[:, 1:], self.simplices[:, :-1]).all(), 'nodes should be sorted'

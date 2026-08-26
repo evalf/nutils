@@ -1,6 +1,5 @@
 from .. import log
 import array
-import itertools
 import json
 import os
 from pathlib import Path

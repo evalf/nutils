@@ -6,7 +6,6 @@ import unittest
 import sys
 import types as builtin_types
 import operator
-import contextlib
 import treelog
 import functools
 import importlib.util
@@ -235,7 +234,7 @@ class TestCase(unittest.TestCase):
     def _require(self, category, test, *items):
         missing = [item for item in items if not test(item)]
         if missing:
-            for item in os.getenv(f'NUTILS_TESTING_REQUIRES', '').split():
+            for item in os.getenv('NUTILS_TESTING_REQUIRES', '').split():
                 prefix, name = item.split(':')
                 if category.startswith(prefix) and name in missing:
                     raise RuntimeError(f'{category} {required!r} is unexpectedly missing')
@@ -295,7 +294,7 @@ class FloatNeighborhoodOutputChecker(doctest.OutputChecker):
                     return False
                 got = got[len(part):]
             elif part.startswith('array('):
-                match = re.search('^array[(]([^()]*)[)]'.format(posnum=cls.posnum), got)
+                match = re.search('^array[(]([^()]*)[)]'.format(), got)
                 if not match:
                     return False
                 got, got_array = got[len(match.group(0)):], cls._parse_array(match.group(1))

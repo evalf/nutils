@@ -19,7 +19,9 @@ else:
     # operation for the SI module. The modification assumes that `find` relies
     # on the internal `_find_lineno` method.
 
-    import doctest, inspect, re
+    import doctest
+    import inspect
+    import re
 
     class DocTestFinder(doctest.DocTestFinder):
 

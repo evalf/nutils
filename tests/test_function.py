@@ -1,4 +1,4 @@
-from nutils import evaluable, function, mesh, numeric, types, points, transformseq, transform, element, warnings
+from nutils import evaluable, function, mesh, numeric, types, transformseq, element
 from nutils.testing import TestCase, parametrize
 import nutils_poly as poly
 import numpy

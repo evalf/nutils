@@ -4,7 +4,7 @@ if typing.TYPE_CHECKING:
 else:
     Protocol = object
 
-from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
+from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, FrozenSet
 from . import evaluable, numeric, _util as util, types, warnings, debug_flags
 from ._util import nutils_dispatch
 from functools import cached_property
@@ -15,7 +15,6 @@ import numpy
 import functools
 import operator
 import numbers
-import inspect
 import fractions
 import treelog
 import dataclasses
