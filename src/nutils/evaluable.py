@@ -2894,10 +2894,6 @@ class Cast(Pointwise):
     def dependencies(self):
         return self.arg,
 
-    @property
-    def dependencies(self):
-        return self.arg,
-
     def _compile_expression(self, arg):
         return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=self.ast_dtype)
 
@@ -5385,10 +5381,6 @@ class LoopConcatenate(Loop):
         if not self.func.ndim:
             raise ValueError('expected an array with at least one axis')
         super().__post_init__()
-
-    @cached_property
-    def shape(self):
-        return *self.func.shape[:-1], self.concat_length
 
     @property
     def init_args(self):
