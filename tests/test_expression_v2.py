@@ -1,8 +1,6 @@
-import functools
 import numpy
-import operator
 from nutils.testing import TestCase
-from nutils import expression_v2, function, mesh, sample, SI
+from nutils import expression_v2, function, mesh, SI
 
 
 class SerializedOps:

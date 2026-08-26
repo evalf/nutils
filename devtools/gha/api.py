@@ -1,7 +1,6 @@
 from http.client import HTTPSConnection
 import json
 import os
-import sys
 
 _token = os.environ.get('GITHUB_TOKEN')
 if not _token:

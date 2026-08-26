@@ -5,19 +5,15 @@ Module with general purpose types.
 import inspect
 import functools
 import hashlib
-import numbers
 import collections.abc
-import itertools
 import abc
-import sys
 import weakref
-import re
 import io
 import types
 import numpy
 import dataclasses
 from functools import cached_property
-from ctypes import byref, c_int, c_ssize_t, c_void_p, c_char_p, py_object, pythonapi, Structure, POINTER
+from ctypes import c_ssize_t, POINTER
 c_ssize_p = POINTER(c_ssize_t)
 
 

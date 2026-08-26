@@ -28,28 +28,18 @@ if typing.TYPE_CHECKING:
 else:
     Protocol = object
 
-from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, _pyast
+from . import debug_flags, _util as util, types, numeric, warnings, parallel, _pyast
 from functools import cached_property
-from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph, TupleNode
-from statistics import geometric_mean
+from ._graph import RegularNode, DuplicatedLeafNode, Subgraph, TupleNode
 import nutils_poly as poly
 import numpy
-import sys
 import itertools
 import functools
 import operator
-import inspect
-import numbers
 import builtins
-import re
-import types as builtin_types
-import abc
 import collections.abc
-import math
 import treelog as log
 import time
-import contextlib
-import subprocess
 import os
 import multiprocessing
 
@@ -2412,7 +2402,7 @@ class FloorDivide(Pointwise):
         if self.divisor.dtype != dtype:
             raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
         if dtype == bool:
-            raise ValueError(f'The boolean floor division is not supported.')
+            raise ValueError('The boolean floor division is not supported.')
         return dtype
 
     def _intbounds_impl(self):
@@ -2598,9 +2588,9 @@ class Mod(Pointwise):
         if self.divisor.dtype != dtype:
             raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
         if dtype == bool:
-            raise ValueError(f'The boolean floor division is not supported.')
+            raise ValueError('The boolean floor division is not supported.')
         if dtype == complex:
-            raise ValueError(f'The complex floor division is not supported.')
+            raise ValueError('The complex floor division is not supported.')
         return dtype
 
     def _intbounds_impl(self):
@@ -5829,7 +5819,7 @@ def factor(array):
                 assert n <= degree[arg]
                 queue.append(((*args, arg), derivative(func, arg) / float(n)))
 
-    log.info(f'constructing sparse polynomial', ' + '.join(' '.join([f'C{i+1}'] +
+    log.info('constructing sparse polynomial', ' + '.join(' '.join([f'C{i+1}'] +
         [f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()]) for i, args in enumerate(m_args)))
 
     # EVALUATION. We now form the polynomial, by accumulating evaluable

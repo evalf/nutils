@@ -1,15 +1,13 @@
-from nutils import element, mesh, topology, function, transformseq, evaluable, transform, _util as util
+from nutils import element, mesh, topology, function, transformseq, evaluable, _util as util
 from nutils.testing import TestCase, parametrize
 from nutils.elementseq import References
 import numpy
-import copy
 import sys
 import pickle
 import subprocess
 import base64
 import itertools
 import os
-import unittest
 
 
 def as_rounded_list(data):

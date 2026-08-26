@@ -1,4 +1,4 @@
-from nutils import topology, mesh, function, evaluable, element
+from nutils import topology, mesh, function, element
 from nutils.testing import TestCase, parametrize
 import treelog as log
 import numpy

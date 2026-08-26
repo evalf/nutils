@@ -1,17 +1,13 @@
 from nutils import _util as util, warnings, types
-from nutils.testing import TestCase, parametrize, requires
+from nutils.testing import TestCase
 import unittest
 import tempfile
 import pathlib
 import os
 import io
-import contextlib
-import inspect
 import treelog
 import datetime
-import numpy
 import sys
-import contextlib
 import traceback
 
 

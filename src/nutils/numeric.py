@@ -6,7 +6,6 @@ from . import types, warnings
 import numpy
 import numbers
 import builtins
-import collections.abc
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'  # indices for einsum
 

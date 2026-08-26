@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
-from io import TextIOBase
 import itertools
 from types import MappingProxyType
 import typing

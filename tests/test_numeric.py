@@ -346,7 +346,7 @@ class sanitize_einsum_subscripts(TestCase):
             raise
         else:
             if ret_orig is None:
-                self.fail(f'subscript is invalid, but sanitize_einsum_subscripts found no problem')
+                self.fail('subscript is invalid, but sanitize_einsum_subscripts found no problem')
             ret_parsed = numpy.einsum(','.join(sanitized[:-1]) + '->' + sanitized[-1], *args)
             self.assertAllEqual(ret_orig, ret_parsed)
             return sanitized

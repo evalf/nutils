@@ -1,13 +1,11 @@
 from nutils import types, transform
-from nutils.testing import TestCase, parametrize
+from nutils.testing import TestCase
 import nutils.transformseq
 import nutils.element
 import nutils.evaluable
 from nutils.elementseq import References
-import unittest
 import numpy
 import itertools
-import functools
 
 
 class Common:

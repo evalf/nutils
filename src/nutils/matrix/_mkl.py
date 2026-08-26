@@ -1,9 +1,7 @@
 from ._base import Matrix, MatrixError, BackendNotAvailable
 from .. import numeric, _util as util, warnings
-from contextlib import contextmanager
-from ctypes import c_int, byref, CDLL
+from ctypes import c_int, byref
 import treelog as log
-import os
 import numpy
 
 

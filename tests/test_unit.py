@@ -1,4 +1,4 @@
-from nutils import testing, unit, types, warnings
+from nutils import testing, unit
 
 
 class Unit(testing.TestCase):

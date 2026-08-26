@@ -87,7 +87,7 @@ else:
     class Protocol(metaclass=_Protocol):
         pass
 
-from typing import Callable, FrozenSet, Generic, Iterable, Iterator, List, Mapping, Optional, Sequence, Set, Tuple, TypeVar, Union
+from typing import Callable, FrozenSet, Generic, Iterable, Iterator, Mapping, Optional, Sequence, Tuple, TypeVar, Union
 import functools
 import numpy
 from . import function

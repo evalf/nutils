@@ -1,4 +1,4 @@
-from typing import Mapping, MutableMapping, Optional, Iterator, Iterable, Generator, Sequence, List, MutableSet, Callable, Tuple, Generic, TypeVar, Dict
+from typing import Mapping, MutableMapping, Optional, Iterator, Generator, Sequence, List, MutableSet, Callable, Tuple, Generic, TypeVar, Dict
 import typing
 import itertools
 import treelog
