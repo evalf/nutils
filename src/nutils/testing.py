@@ -237,7 +237,7 @@ class TestCase(unittest.TestCase):
             for item in os.getenv('NUTILS_TESTING_REQUIRES', '').split():
                 prefix, name = item.split(':')
                 if category.startswith(prefix) and name in missing:
-                    raise RuntimeError(f'{category} {required!r} is unexpectedly missing')
+                    raise RuntimeError(f'{category} {name!r} is unexpectedly missing')
             if len(missing) > 1:
                 category += 's'
             missing = ', '.join(missing)

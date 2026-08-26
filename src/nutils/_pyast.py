@@ -119,7 +119,7 @@ class Tuple(Expression):
     py_paren_expr = py_expr
 
     @property
-    def variables(self) -> frozenset[VariablVariable]:
+    def variables(self) -> frozenset[Variable]:
         return frozenset().union(*(item.variables for item in self.items))
 
 
