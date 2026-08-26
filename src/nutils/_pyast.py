@@ -47,7 +47,7 @@ def _isinstance(obj, cls):
     origin = typing.get_origin(cls)
     if origin == typing.Union:
         return any(_isinstance(obj, arg) for arg in typing.get_args(cls))
-    elif origin == tuple and typing.get_args(cls)[1:] == (...,):
+    elif origin is tuple and typing.get_args(cls)[1:] == (...,):
         return isinstance(obj, tuple) and all(_isinstance(item, typing.get_args(cls)[0]) for item in obj)
     elif cls is None:
         return obj is None

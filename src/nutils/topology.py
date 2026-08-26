@@ -1047,7 +1047,7 @@ if environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
 
         def __and__(self, other: Any) -> Topology:
             result = super().__and__(other)
-            if type(self) == type(other) and result is NotImplemented:
+            if type(self) is type(other) and result is NotImplemented:
                 raise SkipTest('`{}` does not implement `Topology.__and__`'.format(type(self).__qualname__))
             return result
 
@@ -1058,7 +1058,7 @@ if environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
             return result
 
         def __sub__(self, other: Any) -> Topology:
-            if type(self) == type(other):
+            if type(self) is type(other):
                 raise SkipTest('`{}` does not implement `Topology.__sub__`'.format(type(self).__qualname__))
             else:
                 return NotImplemented

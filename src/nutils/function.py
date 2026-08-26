@@ -219,7 +219,7 @@ if debug_flags.lower:
     def _debug_lower(self, args: LowerArgs) -> evaluable.Array:
         result = self._ArrayMeta__debug_lower_orig(args)
         assert isinstance(result, evaluable.Array)
-        offset = 0 if type(self) == _WithoutPoints else len(args.points_shape)
+        offset = 0 if type(self) is _WithoutPoints else len(args.points_shape)
         assert result.ndim == self.ndim + offset
         assert tuple(sh.__index__() for sh in result.shape[offset:]) == self.shape, 'shape mismatch'
         assert result.dtype == self.dtype, ('dtype mismatch', self.__class__)
