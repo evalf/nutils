@@ -355,7 +355,7 @@ class TensorEdge1(Updim):
 
     def __init__(self, trans1: Updim, ndims2: Integral):
         assert isinstance(trans1, Updim), f'trans1={trans1!r}'
-        assert isinstance(ndims2, Integral), f'trans2={trans2!r}'
+        assert isinstance(ndims2, Integral), f'ndims2={ndims2!r}'
         self.trans = trans1
         super().__init__(linear=numeric.blockdiag([trans1.linear, numpy.eye(ndims2)]), offset=numpy.concatenate([trans1.offset, numpy.zeros(ndims2)]), isflipped=trans1.isflipped)
 

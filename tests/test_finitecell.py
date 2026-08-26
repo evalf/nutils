@@ -18,7 +18,7 @@ class hierarchical(TestCase):
         # ref2    [  .  .  .  |  |  |  .  ]
         # trimmed [  .  .  .  |]
 
-    def test_untrimmed(self, makeplots=False):
+    def test_untrimmed(self):
         basis = self.ref2.basis('h-std', degree=1)
         self.assertEqual(basis.shape, (5,))
         x, y = self.ref2.sample('bezier', 2).eval([self.geom[0], basis])
@@ -28,11 +28,8 @@ class hierarchical(TestCase):
                 [0, 3, 2, 0, 4],
                 [0, 2, 4, 0, 0],
              [0, 0, 0, 4, 0]])[[0, 1, 1, 2, 2, 3, 3, 4]]) < 1e15).all())
-        if makeplots:
-            with plot.PyPlot('basis') as plt:
-                plt.plot(x, y)
 
-    def test_trimmed(self, makeplots=False):
+    def test_trimmed(self):
         levelset = 1.125 - self.geom[0]
         trimmed = self.ref0.trim(levelset, maxrefine=3).refined_by([1]).refined_by([1])
         trimbasis = trimmed.basis('h-std', degree=1)
@@ -41,9 +38,6 @@ class hierarchical(TestCase):
             [[8, 0, 0],
              [0, 8, 0],
              [0, 7, 4]])[[0, 1, 1, 2]]) < 1e15).all())
-        if makeplots:
-            with plot.PyPlot('basis') as plt:
-                plt.plot(x, y)
 
 
 @parametrize

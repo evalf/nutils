@@ -1004,7 +1004,7 @@ class _Basis(function.Array):
         # make sure this is the last axis of `space_coords`.
         if len(args.points_shape) not in where:
             space_coords = evaluable.InsertAxis(space_coords, aligned_space_coords.shape[-1])
-            where += len(points_shape),
+            where += len(args.points_shape),
         elif where[-1] != len(args.points_shape):
             space_coords = evaluable.Transpose(space_coords, numpy.argsort(where))
             where = tuple(sorted(where))

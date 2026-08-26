@@ -1131,21 +1131,6 @@ class _Opposite(Array):
         return self._arg.lower(args)
 
 
-class _RootCoords(Array):
-
-    def __init__(self, space: str, ndims: int) -> None:
-        self._space = space
-        super().__init__((ndims,), float, frozenset({space}), {})
-
-    def lower(self, args: LowerArgs) -> evaluable.Array:
-        inv_linear = evaluable.diagonalize(evaluable.ones(tuple(evaluable.constant(n) for n in self.shape)))
-        inv_linear = evaluable.prependaxes(inv_linear, args.points_shape)
-        arg = args[space]
-        tip_coords = evaluable.WithDerivative(arg.coordinates, _tip_derivative_target(self._space, tip_coords.shape[-1]), evaluable.Diagonalize(evaluable.ones(tip_coords.shape)))
-        coords = evaluable.TransformCoords(None, arg.transforms, arg.index, tip_coords)
-        return evaluable.WithDerivative(coords, _root_derivative_target(self._space, evaluable.constant(self.shape[0])), inv_linear)
-
-
 class _TransformsIndex(Array):
 
     def __init__(self, space: str, transforms: Transforms) -> None:
@@ -1884,7 +1869,7 @@ def _argument_to_array(d: Any, array: Array) -> Iterable[Tuple[Argument, Array]]
             arg = Argument(arg, *array.arguments[arg])
         elif not isinstance(arg, Argument):
             raise ValueError('Key must be string or argument')
-        elif arg.name not in arguments:
+        elif arg.name not in array.arguments:
             continue
         elif array.arguments[arg.name] != (arg.shape, arg.dtype):
             raise ValueError(f'Argument {arg.name!r} has wrong shape or dtype')

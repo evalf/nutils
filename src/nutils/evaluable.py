@@ -1843,7 +1843,7 @@ class Einsum(Array):
     out_idx: typing.Tuple[int, ...]
 
     def __post_init__(self):
-        assert isinstance(self.args, tuple) and all(isinstance(arg, Array) for arg in self.args), f'arg={arg!r}'
+        assert isinstance(self.args, tuple) and all(isinstance(arg, Array) for arg in self.args), f'args={self.args!r}'
         assert isinstance(self.args_idx, tuple) and all(isinstance(arg_idx, tuple) and all(isinstance(n, int) for n in arg_idx) for arg_idx in self.args_idx), f'args_idx={self.args_idx!r}'
         assert isinstance(self.out_idx, tuple) and all(isinstance(n, int) for n in self.out_idx) and len(self.out_idx) == len(set(self.out_idx)), f'out_idx={self.out_idx!r}'
         assert len(self.args_idx) == len(self.args) and all(len(idx) == arg.ndim for idx, arg in zip(self.args_idx, self.args)), f'len(args_idx)={len(self.args_idx)}, len(args)={len(self.args)}'
@@ -1857,7 +1857,7 @@ class Einsum(Array):
                 lengths[i] = length if n is None else assert_equal(length, n)
         try:
             self.shape = tuple(lengths[i] for i in self.out_idx)
-        except KeyError(e):
+        except KeyError as e:
             raise ValueError(f'Output axis {e} is not listed in any of the arguments.')
 
     @cached_property
@@ -2400,7 +2400,7 @@ class FloorDivide(Pointwise):
     def dtype(self):
         dtype = self.dividend.dtype
         if self.divisor.dtype != dtype:
-            raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
+            raise ValueError(f'All arguments must have the same dtype but got {self.dividend} and {self.divisor}.')
         if dtype == bool:
             raise ValueError('The boolean floor division is not supported.')
         return dtype
@@ -2586,7 +2586,7 @@ class Mod(Pointwise):
     def dtype(self):
         dtype = self.dividend.dtype
         if self.divisor.dtype != dtype:
-            raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
+            raise ValueError(f'All arguments must have the same dtype but got {self.dividend} and {self.divisor}.')
         if dtype == bool:
             raise ValueError('The boolean floor division is not supported.')
         if dtype == complex:
@@ -2726,7 +2726,7 @@ class LogicalNot(Pointwise):
     @cached_property
     def dtype(self):
         if self.x.dtype != bool:
-            raise ValueError(f'Expected a boolean but got {T}.')
+            raise ValueError(f'Expected a boolean but got {self.x.dtype.__name__}.')
         return bool
 
     def _simplified(self):
@@ -5164,8 +5164,8 @@ class Loop(Array):
     body_args = util.abstract_property()
 
     def __post_init__(self):
-        assert isinstance(self.loop_id, _LoopId), f'loop_id={loop_id!r}'
-        assert isinstance(self.length, Array), f'length={length!r}'
+        assert isinstance(self.loop_id, _LoopId), f'loop_id={self.loop_id!r}'
+        assert isinstance(self.length, Array), f'length={self.length!r}'
         if any(self.index in arg.arguments for arg in self.init_args):
             raise ValueError('the loop initialization arguments must not depend on the index')
 

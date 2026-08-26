@@ -151,11 +151,6 @@ def assemble_block_csr(blocks):
     return assemble_csr(numpy.concatenate(values), numpy.array(rowptr), numpy.concatenate(colidx), ncols)
 
 
-def fromsparse(data, inplace=False):
-    (rowidx, colidx), values, (nrows, ncols) = sparse.extract(sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True))
-    return assemble_coo(values, rowidx, nrows, colidx, ncols)
-
-
 def empty(shape, dtype=float):
     nrows, ncols = shape
     return assemble_csr(numpy.zeros(0, dtype=dtype), numpy.zeros(nrows+1, dtype=int), numpy.zeros(0, dtype=int), ncols)

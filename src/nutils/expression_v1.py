@@ -852,14 +852,9 @@ class _ExpressionParser:
             indices = self._consume() if self._next.type == 'indices' else None
             if target.type == 'geometry':
                 raise SyntaxError('the gradient syntax `dx_i:u` is no longer supported; use `d(u, x_i)` instead')
-            elif target.type == 'argument':
+            else:
                 assert target.data.startswith('?')
                 raise SyntaxError('the derivative syntax `d?a:u` is no longer supported; use `d(u, ?a)` instead')
-            func = self.parse_var(False)
-            if target.type == 'geometry':
-                return func.grad(indices.data if indices else '', geom, 'grad')
-            else:
-                return func.derivative(arg)
         elif not omitted_indices and self._next.type == 'eye':
             self._consume()
             indices = self._consume() if self._next.type == 'indices' else None
