@@ -15,21 +15,21 @@ class check(TestCase):
             assert self.ndims == 2
             nodes = numpy.linspace(-.25*numpy.pi, .25*numpy.pi, 3)
             self.domain, (xi, eta) = mesh.rectilinear([nodes, nodes])
-            self.geom = numpy.sqrt(2) * numpy.stack([function.sin(xi) * function.cos(eta), function.cos(xi) * function.sin(eta)])
+            self.geom = numpy.sqrt(2) * numpy.stack([numpy.sin(xi) * numpy.cos(eta), numpy.cos(xi) * numpy.sin(eta)])
             self.curv = 1
 
-    def zero(self):
+    def test_zero(self):
         zero = self.domain.boundary.integrate(self.geom.normal()*function.J(self.geom), ischeme='gauss9')
         numpy.testing.assert_almost_equal(zero, 0)
 
-    def volume(self):
+    def test_volume(self):
         volume = self.domain.integrate(function.J(self.geom), ischeme='gauss9')
         volumes = self.domain.boundary.integrate(self.geom * self.geom.normal() * function.J(self.geom), ischeme='gauss9')
         numpy.testing.assert_almost_equal(volume, volumes)
 
-    def interfaces(self):
-        funcsp = self.domain.discontfunc(degree=2)
-        f = (funcsp[:, _] * numpy.arange(funcsp.shape[0]*self.ndims).reshape(-1, self.ndims)).sum(0)
+    def test_interfaces(self):
+        funcsp = self.domain.basis("discont", degree=2)
+        f = (funcsp[:, numpy.newaxis] * numpy.arange(funcsp.shape[0]*self.ndims).reshape(-1, self.ndims)).sum(0)
         g = funcsp.dot(numpy.arange(funcsp.shape[0]))
 
         fg1 = self.domain.integrate((f * g.grad(self.geom)).sum(-1)*function.J(self.geom), ischeme='gauss9')
@@ -39,7 +39,7 @@ class check(TestCase):
 
         numpy.testing.assert_almost_equal(fg1, fg2)
 
-    def curvature(self):
+    def test_curvature(self):
         c = self.domain.boundary.sample('uniform', 1).eval(self.geom.curvature())
         numpy.testing.assert_almost_equal(c, self.curv)
 
