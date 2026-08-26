@@ -419,7 +419,6 @@ class IDDict(TestCase):
     def test_contains(self):
         self.assertIn(self.a, self.d)
         self.assertIn(self.b, self.d)
-        c = 'c'
         self.assertNotIn('c', self.d)
 
     def test_len(self):

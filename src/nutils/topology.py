@@ -435,7 +435,7 @@ class Topology:
         ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
         if edit is not None:
             warnings.deprecation('edit is deprecated and will be removed in Nutils 11')
-            funcs = edit(func)
+            func = edit(func)
         return self.sample(ischeme, degree).integral(func)
 
     def projection(self, fun: function.Array, onto: function.Array, geometry: function.Array, **kwargs) -> function.Array:
