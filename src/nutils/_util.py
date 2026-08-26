@@ -745,7 +745,7 @@ def cli(f, *, argv=None):
             sys.exit(f"Error: invalid argument {name!r}")
         T = _infer_type(sig.parameters[name])
         if sep is None:
-            if T != bool:
+            if T is not bool:
                 sys.exit(f"Error: argument {name!r} requires a value")
             kwargs[name] = True
         else:

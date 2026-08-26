@@ -1848,7 +1848,7 @@ class Einsum(Array):
         assert isinstance(self.out_idx, tuple) and all(isinstance(n, int) for n in self.out_idx) and len(self.out_idx) == len(set(self.out_idx)), f'out_idx={self.out_idx!r}'
         assert len(self.args_idx) == len(self.args) and all(len(idx) == arg.ndim for idx, arg in zip(self.args_idx, self.args)), f'len(args_idx)={len(self.args_idx)}, len(args)={len(self.args)}'
         dtype = self.args[0].dtype
-        if dtype == bool or any(arg.dtype != dtype for arg in self.args[1:]):
+        if dtype is bool or any(arg.dtype != dtype for arg in self.args[1:]):
             raise ValueError('Inconsistent or invalid dtypes.')
         lengths = {}
         for idx, arg in zip(self.args_idx, self.args):
@@ -2375,7 +2375,7 @@ class Negative(Holomorphic):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T == bool:
+        if T is bool:
             raise ValueError('boolean values cannot be negated')
         return T
 
@@ -2399,9 +2399,9 @@ class FloorDivide(Pointwise):
     @cached_property
     def dtype(self):
         dtype = self.dividend.dtype
-        if self.divisor.dtype != dtype:
+        if self.divisor.dtype is not dtype:
             raise ValueError(f'All arguments must have the same dtype but got {self.dividend} and {self.divisor}.')
-        if dtype == bool:
+        if dtype is bool:
             raise ValueError('The boolean floor division is not supported.')
         return dtype
 
@@ -2439,9 +2439,9 @@ class Absolute(Pointwise):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T == bool:
+        if T is bool:
             raise ValueError('The boolean absolute value is not implemented.')
-        return float if T == complex else T
+        return float if T is complex else T
 
     def _intbounds_impl(self):
         lower, upper = self.arg._intbounds
@@ -2585,11 +2585,11 @@ class Mod(Pointwise):
     @cached_property
     def dtype(self):
         dtype = self.dividend.dtype
-        if self.divisor.dtype != dtype:
+        if self.divisor.dtype is not dtype:
             raise ValueError(f'All arguments must have the same dtype but got {self.dividend} and {self.divisor}.')
-        if dtype == bool:
+        if dtype is bool:
             raise ValueError('The boolean floor division is not supported.')
-        if dtype == complex:
+        if dtype is complex:
             raise ValueError('The complex floor division is not supported.')
         return dtype
 
@@ -2649,11 +2649,11 @@ class Greater(Pointwise):
     @cached_property
     def dtype(self):
         dtype = self.x.dtype
-        if self.y.dtype != dtype:
+        if self.y.dtype is not dtype:
             raise ValueError('Cannot compare different dtypes.')
-        elif dtype == complex:
+        elif dtype is complex:
             raise ValueError('Complex numbers have no total order.')
-        elif dtype == bool:
+        elif dtype is bool:
             raise ValueError('Use logical operators to compare booleans.')
         return bool
 
@@ -2703,11 +2703,11 @@ class Less(Pointwise):
     @cached_property
     def dtype(self):
         dtype = self.x.dtype
-        if self.y.dtype != dtype:
+        if self.y.dtype is not dtype:
             raise ValueError('Cannot compare different dtypes.')
-        elif dtype == complex:
+        elif dtype is complex:
             raise ValueError('Complex numbers have no total order.')
-        elif dtype == bool:
+        elif dtype is bool:
             raise ValueError('Use logical operators to compare booleans.')
         return bool
 
@@ -2753,7 +2753,7 @@ class Minimum(Pointwise):
     def dtype(self):
         T1 = self.x.dtype
         T2 = self.y.dtype
-        if T1 == complex or T2 == complex:
+        if T1 is complex or T2 is complex:
             raise ValueError('Complex numbers have no total order.')
         return float if float in (T1, T2) else int if int in (T1, T2) else bool
 
@@ -2791,7 +2791,7 @@ class Maximum(Pointwise):
     def dtype(self):
         T1 = self.x.dtype
         T2 = self.y.dtype
-        if T1 == complex or T2 == complex:
+        if T1 is complex or T2 is complex:
             raise ValueError('Complex numbers have no total order.')
         return float if float in (T1, T2) else int if int in (T1, T2) else bool
 
@@ -2825,7 +2825,7 @@ class Conjugate(Pointwise):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != complex:
+        if T is not complex:
             raise ValueError(f'Conjugate is not defined for arguments of type {T}')
         return complex
 
@@ -2850,7 +2850,7 @@ class Real(Pointwise):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != complex:
+        if T is not complex:
             raise ValueError(f'Real is not defined for arguments of type {T}')
         return float
 
@@ -2875,7 +2875,7 @@ class Imag(Pointwise):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != complex:
+        if T is not complex:
             raise ValueError(f'Real is not defined for arguments of type {T}')
         return float
 
@@ -2922,7 +2922,7 @@ class BoolToInt(Cast):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != bool:
+        if T is not bool:
             raise TypeError(f'Expected an array with dtype bool but got {T.__name__}.')
         return int
 
@@ -2932,7 +2932,7 @@ class IntToFloat(Cast):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != int:
+        if T is not int:
             raise TypeError(f'Expected an array with dtype int but got {T.__name__}.')
         return float
 
@@ -2963,7 +2963,7 @@ class FloatToComplex(Cast):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != float:
+        if T is not float:
             raise TypeError(f'Expected an array with dtype float but got {T.__name__}.')
         return complex
 
@@ -2998,13 +2998,13 @@ class FloatToComplex(Cast):
 
 def astype(arg, dtype):
     arg = asarray(arg)
-    if arg.dtype == bool and dtype != bool:
+    if arg.dtype is bool and dtype is not bool:
         arg = BoolToInt(arg)
-    if arg.dtype == int and dtype != int:
+    if arg.dtype is int and dtype is not int:
         arg = IntToFloat(arg)
-    if arg.dtype == float and dtype != float:
+    if arg.dtype is float and dtype is not float:
         arg = FloatToComplex(arg)
-    if arg.dtype != dtype:
+    if arg.dtype is not dtype:
         raise TypeError('Downcasting is forbidden.')
     return arg
 
