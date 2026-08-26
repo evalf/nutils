@@ -1054,7 +1054,6 @@ class _ExpressionParser:
             value = self.parse_var(omitted_indices)
 
         while True:
-            stop = self._next.pos
             if self._next_non_whitespace.type in (')', ']', '}', '>', 'EOF', '+', '-', '/', '|', ','):
                 break
             self._consume_assert_whitespace()
@@ -1205,7 +1204,6 @@ class _ExpressionParser:
                 tokens.append(_Token('eye', m_eye, pos))
                 pos += len(m_eye)
                 continue
-            m_normal = _string_startswith(self.expression, self.normal_symbols, start=pos)
             if m_variable:
                 tokens.append(_Token('variable', m_variable, pos))
                 pos += len(m_variable)

@@ -60,7 +60,6 @@ class Domain:
         bezier = topo.sample('bezier', 2)
         bezier_structure = topo['fluid'].boundary['structure'].sample('bezier', 3)
         bezier_cylinder = topo['fluid'].boundary['cylinder'].sample('bezier', 3)
-        A = topo.points['A'].sample('gauss', 1).eval(geom)
         with export.mplfigure('mesh.jpg', dpi=150) as fig:
             ax = fig.add_subplot(111)
             export.triplot(ax, bezier.eval(geom), hull=bezier.hull)

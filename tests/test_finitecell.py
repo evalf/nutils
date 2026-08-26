@@ -207,7 +207,6 @@ class setoperations(TestCase):
         self.left = topleft - self.top
 
     def test_boundary(self):
-        Lexact = 1+numpy.sqrt(2)
         for name, dom in ('left', self.left), ('top', self.top), ('right', self.right), ('bottom', self.bottom):
             with self.subTest(name):
                 L = dom.boundary.integrate(function.J(self.geom), ischeme='gauss1')
@@ -332,24 +331,24 @@ class leveltopo(TestCase):
         self.assertEqual(tuple(trimtopoA.opposites), tuple(trimtopoB.opposites))
 
     def test_uniformfail(self):
+        domain2 = self.domain1.refined
+        basis = self.domain0.basis('std', degree=1)
+        level = basis.dot((numpy.arange(len(basis)) % 2)-.5)
         with self.assertRaises(Exception):
-            domain2 = self.domain1.refined
-            basis = self.domain0.basis('std', degree=1)
-            level = basis.dot((numpy.arange(len(basis)) % 2)-.5)
-            trimtopo = self.domain0.trim(level, maxrefine=1, leveltopo=domain2)
+            self.domain0.trim(level, maxrefine=1, leveltopo=domain2)
 
     def test_hierarchical(self):
         domain2 = self.domain1.refined_by([0])
         basis = domain2.basis('h-std', degree=1)
         level = basis.dot((numpy.arange(len(basis)) % 2)-.5)
-        trimtopo = self.domain0.trim(level, maxrefine=2, leveltopo=domain2)
+        self.domain0.trim(level, maxrefine=2, leveltopo=domain2)
 
     def test_hierarchicalfail(self):
+        domain2 = self.domain1.refined_by([0])
+        basis = domain2.basis('h-std', degree=1)
+        level = basis.dot((numpy.arange(len(basis)) % 2)-.5)
         with self.assertRaises(Exception):
-            domain2 = self.domain1.refined_by([0])
-            basis = domain2.basis('h-std', degree=1)
-            level = basis.dot((numpy.arange(len(basis)) % 2)-.5)
-            trimtopo = self.domain0.trim(level, maxrefine=1, leveltopo=domain2)
+            self.domain0.trim(level, maxrefine=1, leveltopo=domain2)
 
 
 class trim_conforming(TestCase):

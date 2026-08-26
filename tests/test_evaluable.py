@@ -1213,7 +1213,7 @@ class Einsum(TestCase):
         arg1 = numpy.arange(6).reshape(2, 3)
         arg2 = numpy.arange(6).reshape(3, 2)
         with self.assertRaisesRegex(ValueError, 'shapes do not match for axis i0'):
-            ret = evaluable.einsum('ij,ik->jk', evaluable.constant(arg1), evaluable.constant(arg2))
+            evaluable.einsum('ij,ik->jk', evaluable.constant(arg1), evaluable.constant(arg2))
 
     def test_wrong_group_dimension(self):
         arg = numpy.arange(6)

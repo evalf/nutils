@@ -3994,7 +3994,6 @@ class Ravel(Array):
     @cached_property
     def _inflations(self):
         inflations = []
-        stride = self.func.shape[-1]
         n = None
         for axis, old_parts in self.func._inflations:
             if axis == self.ndim - 1 and n is None:
@@ -6838,7 +6837,6 @@ def _define_loop_block_structure(targets: typing.Tuple[Evaluable, ...]) -> typin
     queue = util.IDSet()
     for target in unique_targets:
         queue.update(target._loops)
-    nloops = len(queue)
 
     def collect(indices):
         # Find all adjacent loops and form groups of loops that have the same
