@@ -9,7 +9,6 @@ the ``export`` method.
 from .. import _util as util, warnings, numeric
 import numpy
 import importlib
-import os
 
 from ._base import Matrix, MatrixError, BackendNotAvailable, ToleranceNotReached
 for cls in Matrix, MatrixError, BackendNotAvailable, ToleranceNotReached:
