@@ -1765,7 +1765,7 @@ def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
     s = __s
     axis = __axis
     n = array.shape[axis]
-    if s.step == None or s.step == 1:
+    if s.step is None or s.step == 1:
         start = 0 if s.start is None else s.start if s.start >= 0 else s.start + n
         stop = n if s.stop is None else s.stop if s.stop >= 0 else s.stop + n
         if start == 0 and stop == n:

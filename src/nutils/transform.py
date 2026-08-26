@@ -42,7 +42,7 @@ def canonical(chain):
 
 
 def iscanonical(chain):
-    return all(b.swapdown(a) == None for a, b in util.pairwise(chain))
+    return all(b.swapdown(a) is None for a, b in util.pairwise(chain))
 
 
 def uppermost(chain):
