@@ -2449,12 +2449,14 @@ def transforms_coords(space: str, transforms: Transforms) -> Array:
     return _TransformsCoords(space, transforms)
 
 
+@nutils_dispatch
 def piecewise(level: IntoArray, intervals: Sequence[IntoArray], *funcs: IntoArray) -> Array:
     'piecewise'
     level = Array.cast(level)
     return util.sum((level > interval).astype(int) for interval in intervals).choose(funcs)
 
 
+@nutils_dispatch
 def partition(f: IntoArray, *levels: float) -> Sequence[Array]:
     '''Create a partition of unity for a scalar function f.
 
@@ -2499,6 +2501,7 @@ def partition(f: IntoArray, *levels: float) -> Sequence[Array]:
     return [.5 - .5 * signs[0]] + [.5 * (a - b) for a, b in zip(signs[:-1], signs[1:])] + [.5 + .5 * signs[-1]]
 
 
+@nutils_dispatch
 def heaviside(f: IntoArray):
     '''Create a heaviside step-function based on a scalar function f.
 
@@ -2527,6 +2530,7 @@ def heaviside(f: IntoArray):
     return Array.cast(numpy.sign(f) * .5 + .5)
 
 
+@nutils_dispatch
 def chain(_funcs: Sequence[IntoArray]) -> Sequence[Array]:
     'chain'
 
@@ -2537,6 +2541,7 @@ def chain(_funcs: Sequence[IntoArray]) -> Sequence[Array]:
             for i, func in enumerate(funcs)]
 
 
+@nutils_dispatch
 def vectorize(args: Sequence[IntoArray]) -> Array:
     '''
     Combine scalar-valued bases into a vector-valued basis.
@@ -2554,24 +2559,29 @@ def vectorize(args: Sequence[IntoArray]) -> Array:
     return numpy.concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
 
 
+@nutils_dispatch
 def add_T(__arg: IntoArray, axes: Tuple[int, int] = (-2, -1)) -> Array:
     'add transposed'
     arg = Array.cast(__arg)
     return numpy.swapaxes(arg, *axes) + arg
 
 
+@nutils_dispatch
 def trignormal(_angle: IntoArray) -> Array:
     return Array.cast(numpy.stack([numpy.cos(_angle), numpy.sin(_angle)], axis=-1))
 
 
+@nutils_dispatch
 def trigtangent(_angle: IntoArray) -> Array:
     return Array.cast(numpy.stack([-numpy.sin(_angle), numpy.cos(_angle)], axis=-1))
 
 
+@nutils_dispatch
 def rotmat(__arg: IntoArray) -> Array:
     return Array.cast(numpy.stack([trignormal(__arg), trigtangent(__arg)], 0))
 
 
+@nutils_dispatch
 def dotarg(*args, **kwargs):
     '''Alias for :func:`field`.'''
 
