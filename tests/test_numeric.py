@@ -186,7 +186,7 @@ class istype(TestCase):
         self.assertFalse(numeric.isboolarray(numpy.array([1])))
         self.assertFalse(numeric.isboolarray(True))
 
-    def test_isboolarray(self):
+    def test_isintarray(self):
         self.assertTrue(numeric.isintarray(numpy.array(1)))
         self.assertTrue(numeric.isintarray(numpy.array([1])))
         self.assertTrue(numeric.isintarray(types.frozenarray([1])))
