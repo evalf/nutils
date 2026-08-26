@@ -547,8 +547,11 @@ class replace(TestCase):
             else:
                 return self
 
-    class Ten(Base): pass
-    class Intermediate(Base): pass
+    class Ten(Base):
+        pass
+
+    class Intermediate(Base):
+        pass
 
     @staticmethod
     @util.shallow_replace
