@@ -50,10 +50,14 @@ else:
                         break
 
             # Find the line number for functions & methods.
-            if inspect.ismethod(obj): obj = obj.__func__
-            if inspect.isfunction(obj): obj = obj.__code__
-            if inspect.istraceback(obj): obj = obj.tb_frame
-            if inspect.isframe(obj): obj = obj.f_code
+            if inspect.ismethod(obj):
+                obj = obj.__func__
+            if inspect.isfunction(obj):
+                obj = obj.__code__
+            if inspect.istraceback(obj):
+                obj = obj.tb_frame
+            if inspect.isframe(obj):
+                obj = obj.f_code
             if inspect.iscode(obj):
                 lineno = getattr(obj, 'co_firstlineno', None)-1
 

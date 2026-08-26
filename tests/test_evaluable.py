@@ -1385,9 +1385,12 @@ class factor(TestCase):
             self.assertEqual(func.argument_degree(self.barg), b)
 
         testing_grid = [{}]
-        if t: testing_grid = [dict(d, t=t) for d in testing_grid for t in [0., 1., -5.]]
-        if v: testing_grid = [dict(d, v=v) for d in testing_grid for v in [numpy.zeros(6), numpy.ones(6), numpy.arange(6, dtype=float)]]
-        if b: testing_grid = [dict(d, b=b) for d in testing_grid for b in [numpy.zeros((6,2)), numpy.ones((6,2)), numpy.arange(12, dtype=float).reshape(6,2)]]
+        if t:
+            testing_grid = [dict(d, t=t) for d in testing_grid for t in [0., 1., -5.]]
+        if v:
+            testing_grid = [dict(d, v=v) for d in testing_grid for v in [numpy.zeros(6), numpy.ones(6), numpy.arange(6, dtype=float)]]
+        if b:
+            testing_grid = [dict(d, b=b) for d in testing_grid for b in [numpy.zeros((6,2)), numpy.ones((6,2)), numpy.arange(12, dtype=float).reshape(6,2)]]
 
         for deriv_args in [[self.targ] * i + [self.varg] * j + [self.barg] * k for i in range(t+1) for j in range(v+1) for k in range(b+1)]:
             with self.subTest('f/' + ''.join(arg.name for arg in deriv_args)):
