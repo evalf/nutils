@@ -1221,6 +1221,30 @@ class Einsum(TestCase):
             evaluable.einsum('Aij->ijA', evaluable.constant(arg), A=-1)
 
 
+class Choose(TestCase):
+
+    def test_allequal(self):
+        index = evaluable.Argument("index", (), int)
+        arg = evaluable.Argument("arg", (), float)
+        v = evaluable.choose(index, arg, arg, arg).simplified
+        self.assertEqual(v, arg)
+
+    def test_binary(self):
+        index = evaluable.Argument("index", (), int)
+        arg = evaluable.Argument("arg", (), float)
+        v1 = evaluable.choose(index, arg, evaluable.constant(2.0) * arg)
+        v2 = evaluable.choose(index, arg**evaluable.constant(2.0), evaluable.constant(1.0) - arg)
+        for op in "add", "mul":
+            with self.subTest(op):
+                op = getattr(operator, op)
+                v = op(v1, v2).simplified
+                self.assertIsInstance(v, evaluable.Choose)
+                val = evaluable.eval_once(v, arguments={'index': 0, 'arg': 5.})
+                self.assertEqual(val, op(5, 5**2))
+                val = evaluable.eval_once(v, arguments={'index': 1, 'arg': 7.})
+                self.assertEqual(val, op(2*7, (1-7)))
+
+
 @parametrize
 class AsType(TestCase):
 

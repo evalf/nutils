@@ -4746,6 +4746,10 @@ class Choose(Array):
         if isinstance(other, Choose) and self.index == other.index and len(self.choices) == len(other.choices):
             return Choose(self.index, tuple(c1 * c2 for c1, c2 in zip(self.choices, other.choices)))
 
+    def _add(self, other):
+        if isinstance(other, Choose) and self.index == other.index and len(self.choices) == len(other.choices):
+            return Choose(self.index, tuple(c1 + c2 for c1, c2 in zip(self.choices, other.choices)))
+
     def _get(self, i, item):
         return Choose(get(self.index, i, item), tuple(get(choice, i, item) for choice in self.choices))
 
