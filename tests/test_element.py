@@ -1,6 +1,7 @@
 from nutils import element, _util as util, types
 from nutils.testing import TestCase, parametrize
-import numpy, math
+import numpy
+import math
 
 
 @parametrize

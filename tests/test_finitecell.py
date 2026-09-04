@@ -1,4 +1,4 @@
-from nutils import topology, mesh, function, evaluable, element
+from nutils import topology, mesh, function, element
 from nutils.testing import TestCase, parametrize
 import treelog as log
 import numpy
@@ -18,7 +18,7 @@ class hierarchical(TestCase):
         # ref2    [  .  .  .  |  |  |  .  ]
         # trimmed [  .  .  .  |]
 
-    def test_untrimmed(self, makeplots=False):
+    def test_untrimmed(self):
         basis = self.ref2.basis('h-std', degree=1)
         self.assertEqual(basis.shape, (5,))
         x, y = self.ref2.sample('bezier', 2).eval([self.geom[0], basis])
@@ -28,11 +28,8 @@ class hierarchical(TestCase):
                 [0, 3, 2, 0, 4],
                 [0, 2, 4, 0, 0],
              [0, 0, 0, 4, 0]])[[0, 1, 1, 2, 2, 3, 3, 4]]) < 1e15).all())
-        if makeplots:
-            with plot.PyPlot('basis') as plt:
-                plt.plot(x, y)
 
-    def test_trimmed(self, makeplots=False):
+    def test_trimmed(self):
         levelset = 1.125 - self.geom[0]
         trimmed = self.ref0.trim(levelset, maxrefine=3).refined_by([1]).refined_by([1])
         trimbasis = trimmed.basis('h-std', degree=1)
@@ -41,9 +38,6 @@ class hierarchical(TestCase):
             [[8, 0, 0],
              [0, 8, 0],
              [0, 7, 4]])[[0, 1, 1, 2]]) < 1e15).all())
-        if makeplots:
-            with plot.PyPlot('basis') as plt:
-                plt.plot(x, y)
 
 
 @parametrize
@@ -207,7 +201,6 @@ class setoperations(TestCase):
         self.left = topleft - self.top
 
     def test_boundary(self):
-        Lexact = 1+numpy.sqrt(2)
         for name, dom in ('left', self.left), ('top', self.top), ('right', self.right), ('bottom', self.bottom):
             with self.subTest(name):
                 L = dom.boundary.integrate(function.J(self.geom), ischeme='gauss1')
@@ -332,24 +325,24 @@ class leveltopo(TestCase):
         self.assertEqual(tuple(trimtopoA.opposites), tuple(trimtopoB.opposites))
 
     def test_uniformfail(self):
+        domain2 = self.domain1.refined
+        basis = self.domain0.basis('std', degree=1)
+        level = basis.dot((numpy.arange(len(basis)) % 2)-.5)
         with self.assertRaises(Exception):
-            domain2 = self.domain1.refined
-            basis = self.domain0.basis('std', degree=1)
-            level = basis.dot((numpy.arange(len(basis)) % 2)-.5)
-            trimtopo = self.domain0.trim(level, maxrefine=1, leveltopo=domain2)
+            self.domain0.trim(level, maxrefine=1, leveltopo=domain2)
 
     def test_hierarchical(self):
         domain2 = self.domain1.refined_by([0])
         basis = domain2.basis('h-std', degree=1)
         level = basis.dot((numpy.arange(len(basis)) % 2)-.5)
-        trimtopo = self.domain0.trim(level, maxrefine=2, leveltopo=domain2)
+        self.domain0.trim(level, maxrefine=2, leveltopo=domain2)
 
     def test_hierarchicalfail(self):
+        domain2 = self.domain1.refined_by([0])
+        basis = domain2.basis('h-std', degree=1)
+        level = basis.dot((numpy.arange(len(basis)) % 2)-.5)
         with self.assertRaises(Exception):
-            domain2 = self.domain1.refined_by([0])
-            basis = domain2.basis('h-std', degree=1)
-            level = basis.dot((numpy.arange(len(basis)) % 2)-.5)
-            trimtopo = self.domain0.trim(level, maxrefine=1, leveltopo=domain2)
+            self.domain0.trim(level, maxrefine=1, leveltopo=domain2)
 
 
 class trim_conforming(TestCase):

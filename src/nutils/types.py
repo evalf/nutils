@@ -5,19 +5,15 @@ Module with general purpose types.
 import inspect
 import functools
 import hashlib
-import numbers
 import collections.abc
-import itertools
 import abc
-import sys
 import weakref
-import re
 import io
 import types
 import numpy
 import dataclasses
 from functools import cached_property
-from ctypes import byref, c_int, c_ssize_t, c_void_p, c_char_p, py_object, pythonapi, Structure, POINTER
+from ctypes import c_ssize_t, POINTER
 c_ssize_p = POINTER(c_ssize_t)
 
 
@@ -686,7 +682,7 @@ class attributes:
         self.__dict__.update(args)
 
     def __eq__(self, other):
-        return type(other) == type(self) and other.__dict__ == self.__dict__
+        return type(other) is type(self) and other.__dict__ == self.__dict__
 
     def __repr__(self):
         return 'attributes({})'.format(', '.join(map('{0[0]}={0[1]!r}'.format, sorted(self.__dict__.items()))))

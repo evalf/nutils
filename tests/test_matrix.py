@@ -1,6 +1,6 @@
 import numpy
 import pickle
-from nutils import matrix, testing, warnings
+from nutils import matrix, testing
 
 
 class construction(testing.TestCase):
@@ -257,7 +257,7 @@ class backend(testing.TestCase):
         rhs = numpy.ones(self.n)
         for args in self.solve_args:
             with self.subTest(args.get('solver', 'direct')), self.assertRaises(matrix.MatrixError):
-                lhs = singularmatrix.solve(rhs, **dict(args, atol=.1))
+                singularmatrix.solve(rhs, **dict(args, atol=.1))
 
     def test_solve_repeated(self):
         rhs = numpy.arange(self.matrix.shape[0])

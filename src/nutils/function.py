@@ -4,7 +4,7 @@ if typing.TYPE_CHECKING:
 else:
     Protocol = object
 
-from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
+from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, FrozenSet
 from . import evaluable, numeric, _util as util, types, warnings, debug_flags
 from ._util import nutils_dispatch
 from functools import cached_property
@@ -15,7 +15,6 @@ import numpy
 import functools
 import operator
 import numbers
-import inspect
 import fractions
 import treelog
 import dataclasses
@@ -220,7 +219,7 @@ if debug_flags.lower:
     def _debug_lower(self, args: LowerArgs) -> evaluable.Array:
         result = self._ArrayMeta__debug_lower_orig(args)
         assert isinstance(result, evaluable.Array)
-        offset = 0 if type(self) == _WithoutPoints else len(args.points_shape)
+        offset = 0 if type(self) is _WithoutPoints else len(args.points_shape)
         assert result.ndim == self.ndim + offset
         assert tuple(sh.__index__() for sh in result.shape[offset:]) == self.shape, 'shape mismatch'
         assert result.dtype == self.dtype, ('dtype mismatch', self.__class__)
@@ -1132,21 +1131,6 @@ class _Opposite(Array):
         return self._arg.lower(args)
 
 
-class _RootCoords(Array):
-
-    def __init__(self, space: str, ndims: int) -> None:
-        self._space = space
-        super().__init__((ndims,), float, frozenset({space}), {})
-
-    def lower(self, args: LowerArgs) -> evaluable.Array:
-        inv_linear = evaluable.diagonalize(evaluable.ones(tuple(evaluable.constant(n) for n in self.shape)))
-        inv_linear = evaluable.prependaxes(inv_linear, args.points_shape)
-        arg = args[space]
-        tip_coords = evaluable.WithDerivative(arg.coordinates, _tip_derivative_target(self._space, tip_coords.shape[-1]), evaluable.Diagonalize(evaluable.ones(tip_coords.shape)))
-        coords = evaluable.TransformCoords(None, arg.transforms, arg.index, tip_coords)
-        return evaluable.WithDerivative(coords, _root_derivative_target(self._space, evaluable.constant(self.shape[0])), inv_linear)
-
-
 class _TransformsIndex(Array):
 
     def __init__(self, space: str, transforms: Transforms) -> None:
@@ -1781,7 +1765,7 @@ def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
     s = __s
     axis = __axis
     n = array.shape[axis]
-    if s.step == None or s.step == 1:
+    if s.step is None or s.step == 1:
         start = 0 if s.start is None else s.start if s.start >= 0 else s.start + n
         stop = n if s.stop is None else s.stop if s.stop >= 0 else s.stop + n
         if start == 0 and stop == n:
@@ -1885,7 +1869,7 @@ def _argument_to_array(d: Any, array: Array) -> Iterable[Tuple[Argument, Array]]
             arg = Argument(arg, *array.arguments[arg])
         elif not isinstance(arg, Argument):
             raise ValueError('Key must be string or argument')
-        elif arg.name not in arguments:
+        elif arg.name not in array.arguments:
             continue
         elif array.arguments[arg.name] != (arg.shape, arg.dtype):
             raise ValueError(f'Argument {arg.name!r} has wrong shape or dtype')
@@ -2465,12 +2449,14 @@ def transforms_coords(space: str, transforms: Transforms) -> Array:
     return _TransformsCoords(space, transforms)
 
 
+@nutils_dispatch
 def piecewise(level: IntoArray, intervals: Sequence[IntoArray], *funcs: IntoArray) -> Array:
     'piecewise'
     level = Array.cast(level)
     return util.sum((level > interval).astype(int) for interval in intervals).choose(funcs)
 
 
+@nutils_dispatch
 def partition(f: IntoArray, *levels: float) -> Sequence[Array]:
     '''Create a partition of unity for a scalar function f.
 
@@ -2515,6 +2501,7 @@ def partition(f: IntoArray, *levels: float) -> Sequence[Array]:
     return [.5 - .5 * signs[0]] + [.5 * (a - b) for a, b in zip(signs[:-1], signs[1:])] + [.5 + .5 * signs[-1]]
 
 
+@nutils_dispatch
 def heaviside(f: IntoArray):
     '''Create a heaviside step-function based on a scalar function f.
 
@@ -2543,6 +2530,7 @@ def heaviside(f: IntoArray):
     return Array.cast(numpy.sign(f) * .5 + .5)
 
 
+@nutils_dispatch
 def chain(_funcs: Sequence[IntoArray]) -> Sequence[Array]:
     'chain'
 
@@ -2553,6 +2541,7 @@ def chain(_funcs: Sequence[IntoArray]) -> Sequence[Array]:
             for i, func in enumerate(funcs)]
 
 
+@nutils_dispatch
 def vectorize(args: Sequence[IntoArray]) -> Array:
     '''
     Combine scalar-valued bases into a vector-valued basis.
@@ -2570,24 +2559,29 @@ def vectorize(args: Sequence[IntoArray]) -> Array:
     return numpy.concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
 
 
+@nutils_dispatch
 def add_T(__arg: IntoArray, axes: Tuple[int, int] = (-2, -1)) -> Array:
     'add transposed'
     arg = Array.cast(__arg)
     return numpy.swapaxes(arg, *axes) + arg
 
 
+@nutils_dispatch
 def trignormal(_angle: IntoArray) -> Array:
     return Array.cast(numpy.stack([numpy.cos(_angle), numpy.sin(_angle)], axis=-1))
 
 
+@nutils_dispatch
 def trigtangent(_angle: IntoArray) -> Array:
     return Array.cast(numpy.stack([-numpy.sin(_angle), numpy.cos(_angle)], axis=-1))
 
 
+@nutils_dispatch
 def rotmat(__arg: IntoArray) -> Array:
     return Array.cast(numpy.stack([trignormal(__arg), trigtangent(__arg)], 0))
 
 
+@nutils_dispatch
 def dotarg(*args, **kwargs):
     '''Alias for :func:`field`.'''
 
@@ -3645,7 +3639,7 @@ class __implementations__:
     @implements(numpy.choose)
     def choose(a, choices):
         a, *choices = broadcast_arrays(a, *typecast_arrays(*choices))
-        return _Wrapper(evaluable.Choose, a, numpy.stack(choices, -1), shape=a.shape, dtype=choices[0].dtype)
+        return _Wrapper(evaluable.choose, a, *choices, shape=a.shape, dtype=choices[0].dtype)
 
     @implements(numpy.linalg.norm)
     def norm(x, ord=None, axis=None):
@@ -3683,18 +3677,6 @@ class __implementations__:
         if a.ndim < 2 or a.shape[-2] != a.shape[-1]:
             raise ValueError('Last 2 dimensions of the array must be square')
         return _Wrapper(evaluable.Inverse, a, shape=a.shape, dtype=complex if a.dtype == complex else float)
-
-    @implements(numpy.ndim)
-    def ndim(a):
-        return a.ndim
-
-    @implements(numpy.size)
-    def size(a):
-        return a.size
-
-    @implements(numpy.shape)
-    def shape(a):
-        return a.shape
 
     @implements(numpy.diagonal)
     def diagonal(a, offset=0, axis1=0, axis2=1):

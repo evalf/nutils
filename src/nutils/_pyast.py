@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
-from io import TextIOBase
 import itertools
 from types import MappingProxyType
 import typing
@@ -48,7 +47,7 @@ def _isinstance(obj, cls):
     origin = typing.get_origin(cls)
     if origin == typing.Union:
         return any(_isinstance(obj, arg) for arg in typing.get_args(cls))
-    elif origin == tuple and typing.get_args(cls)[1:] == (...,):
+    elif origin is tuple and typing.get_args(cls)[1:] == (...,):
         return isinstance(obj, tuple) and all(_isinstance(item, typing.get_args(cls)[0]) for item in obj)
     elif cls is None:
         return obj is None
@@ -120,7 +119,7 @@ class Tuple(Expression):
     py_paren_expr = py_expr
 
     @property
-    def variables(self) -> frozenset[VariablVariable]:
+    def variables(self) -> frozenset[Variable]:
         return frozenset().union(*(item.variables for item in self.items))
 
 

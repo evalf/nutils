@@ -2,16 +2,12 @@
 The transform module.
 """
 
-from typing import Tuple, Dict
+from typing import Tuple
 from numbers import Integral
-from . import cache, numeric, _util as util, types
+from . import numeric, _util as util, types
 from functools import cached_property
 import nutils_poly as poly
 import numpy
-import collections
-import itertools
-import functools
-import operator
 _ = numpy.newaxis
 
 TransformChain = Tuple['TransformItem']
@@ -46,7 +42,7 @@ def canonical(chain):
 
 
 def iscanonical(chain):
-    return all(b.swapdown(a) == None for a, b in util.pairwise(chain))
+    return all(b.swapdown(a) is None for a, b in util.pairwise(chain))
 
 
 def uppermost(chain):
@@ -254,7 +250,7 @@ class Updim(Matrix):
 
     @property
     def flipped(self):
-        assert type(self) == Updim
+        assert type(self) is Updim
         return Updim(*self._affine, not self.isflipped)
 
     def swapdown(self, other):
@@ -284,7 +280,7 @@ class SimplexEdge(Updim):
 
     @property
     def flipped(self):
-        assert type(self) == SimplexEdge
+        assert type(self) is SimplexEdge
         return SimplexEdge(self.todims, self.iedge, not self.inverted)
 
     def swapup(self, other):
@@ -351,7 +347,7 @@ class ScaledUpdim(Updim):
 
     @property
     def flipped(self):
-        assert type(self) == ScaledUpdim
+        assert type(self) is ScaledUpdim
         return ScaledUpdim(self.trans1, self.trans2.flipped)
 
 
@@ -359,7 +355,7 @@ class TensorEdge1(Updim):
 
     def __init__(self, trans1: Updim, ndims2: Integral):
         assert isinstance(trans1, Updim), f'trans1={trans1!r}'
-        assert isinstance(ndims2, Integral), f'trans2={trans2!r}'
+        assert isinstance(ndims2, Integral), f'ndims2={ndims2!r}'
         self.trans = trans1
         super().__init__(linear=numeric.blockdiag([trans1.linear, numpy.eye(ndims2)]), offset=numpy.concatenate([trans1.offset, numpy.zeros(ndims2)]), isflipped=trans1.isflipped)
 
@@ -388,7 +384,7 @@ class TensorEdge1(Updim):
 
     @property
     def flipped(self):
-        assert type(self) == TensorEdge1
+        assert type(self) is TensorEdge1
         return TensorEdge1(self.trans.flipped, self.fromdims-self.trans.fromdims)
 
 
@@ -425,7 +421,7 @@ class TensorEdge2(Updim):
 
     @property
     def flipped(self):
-        assert type(self) == TensorEdge2
+        assert type(self) is TensorEdge2
         return TensorEdge2(self.fromdims-self.trans.fromdims, self.trans.flipped)
 
 

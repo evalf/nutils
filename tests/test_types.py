@@ -1,9 +1,7 @@
 from nutils.testing import TestCase, parametrize
 import nutils.types
-import inspect
 import pickle
 import itertools
-import ctypes
 import tempfile
 import os
 import numpy

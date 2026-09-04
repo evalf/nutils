@@ -28,28 +28,18 @@ if typing.TYPE_CHECKING:
 else:
     Protocol = object
 
-from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, _pyast
+from . import debug_flags, _util as util, types, numeric, warnings, parallel, _pyast
 from functools import cached_property
-from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph, TupleNode
-from statistics import geometric_mean
+from ._graph import RegularNode, DuplicatedLeafNode, Subgraph, TupleNode
 import nutils_poly as poly
 import numpy
-import sys
 import itertools
 import functools
 import operator
-import inspect
-import numbers
 import builtins
-import re
-import types as builtin_types
-import abc
 import collections.abc
-import math
 import treelog as log
 import time
-import contextlib
-import subprocess
 import os
 import multiprocessing
 
@@ -574,7 +564,7 @@ class Array(Evaluable):
     dot = dot
     swapaxes = swapaxes
     transpose = transpose
-    choose = lambda self, choices: Choose(self, stack(choices, -1))
+    choose = lambda self, choices: Choose(self, tuple(choices))
     conjugate = conjugate
 
     @property
@@ -1853,12 +1843,12 @@ class Einsum(Array):
     out_idx: typing.Tuple[int, ...]
 
     def __post_init__(self):
-        assert isinstance(self.args, tuple) and all(isinstance(arg, Array) for arg in self.args), f'arg={arg!r}'
+        assert isinstance(self.args, tuple) and all(isinstance(arg, Array) for arg in self.args), f'args={self.args!r}'
         assert isinstance(self.args_idx, tuple) and all(isinstance(arg_idx, tuple) and all(isinstance(n, int) for n in arg_idx) for arg_idx in self.args_idx), f'args_idx={self.args_idx!r}'
         assert isinstance(self.out_idx, tuple) and all(isinstance(n, int) for n in self.out_idx) and len(self.out_idx) == len(set(self.out_idx)), f'out_idx={self.out_idx!r}'
         assert len(self.args_idx) == len(self.args) and all(len(idx) == arg.ndim for idx, arg in zip(self.args_idx, self.args)), f'len(args_idx)={len(self.args_idx)}, len(args)={len(self.args)}'
         dtype = self.args[0].dtype
-        if dtype == bool or any(arg.dtype != dtype for arg in self.args[1:]):
+        if dtype is bool or any(arg.dtype != dtype for arg in self.args[1:]):
             raise ValueError('Inconsistent or invalid dtypes.')
         lengths = {}
         for idx, arg in zip(self.args_idx, self.args):
@@ -1867,7 +1857,7 @@ class Einsum(Array):
                 lengths[i] = length if n is None else assert_equal(length, n)
         try:
             self.shape = tuple(lengths[i] for i in self.out_idx)
-        except KeyError(e):
+        except KeyError as e:
             raise ValueError(f'Output axis {e} is not listed in any of the arguments.')
 
     @cached_property
@@ -2385,7 +2375,7 @@ class Negative(Holomorphic):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T == bool:
+        if T is bool:
             raise ValueError('boolean values cannot be negated')
         return T
 
@@ -2409,10 +2399,10 @@ class FloorDivide(Pointwise):
     @cached_property
     def dtype(self):
         dtype = self.dividend.dtype
-        if self.divisor.dtype != dtype:
-            raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
-        if dtype == bool:
-            raise ValueError(f'The boolean floor division is not supported.')
+        if self.divisor.dtype is not dtype:
+            raise ValueError(f'All arguments must have the same dtype but got {self.dividend} and {self.divisor}.')
+        if dtype is bool:
+            raise ValueError('The boolean floor division is not supported.')
         return dtype
 
     def _intbounds_impl(self):
@@ -2449,9 +2439,9 @@ class Absolute(Pointwise):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T == bool:
+        if T is bool:
             raise ValueError('The boolean absolute value is not implemented.')
-        return float if T == complex else T
+        return float if T is complex else T
 
     def _intbounds_impl(self):
         lower, upper = self.arg._intbounds
@@ -2595,12 +2585,12 @@ class Mod(Pointwise):
     @cached_property
     def dtype(self):
         dtype = self.dividend.dtype
-        if self.divisor.dtype != dtype:
-            raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
-        if dtype == bool:
-            raise ValueError(f'The boolean floor division is not supported.')
-        if dtype == complex:
-            raise ValueError(f'The complex floor division is not supported.')
+        if self.divisor.dtype is not dtype:
+            raise ValueError(f'All arguments must have the same dtype but got {self.dividend} and {self.divisor}.')
+        if dtype is bool:
+            raise ValueError('The boolean floor division is not supported.')
+        if dtype is complex:
+            raise ValueError('The complex floor division is not supported.')
         return dtype
 
     def _intbounds_impl(self):
@@ -2659,11 +2649,11 @@ class Greater(Pointwise):
     @cached_property
     def dtype(self):
         dtype = self.x.dtype
-        if self.y.dtype != dtype:
+        if self.y.dtype is not dtype:
             raise ValueError('Cannot compare different dtypes.')
-        elif dtype == complex:
+        elif dtype is complex:
             raise ValueError('Complex numbers have no total order.')
-        elif dtype == bool:
+        elif dtype is bool:
             raise ValueError('Use logical operators to compare booleans.')
         return bool
 
@@ -2713,11 +2703,11 @@ class Less(Pointwise):
     @cached_property
     def dtype(self):
         dtype = self.x.dtype
-        if self.y.dtype != dtype:
+        if self.y.dtype is not dtype:
             raise ValueError('Cannot compare different dtypes.')
-        elif dtype == complex:
+        elif dtype is complex:
             raise ValueError('Complex numbers have no total order.')
-        elif dtype == bool:
+        elif dtype is bool:
             raise ValueError('Use logical operators to compare booleans.')
         return bool
 
@@ -2736,7 +2726,7 @@ class LogicalNot(Pointwise):
     @cached_property
     def dtype(self):
         if self.x.dtype != bool:
-            raise ValueError(f'Expected a boolean but got {T}.')
+            raise ValueError(f'Expected a boolean but got {self.x.dtype.__name__}.')
         return bool
 
     def _simplified(self):
@@ -2763,7 +2753,7 @@ class Minimum(Pointwise):
     def dtype(self):
         T1 = self.x.dtype
         T2 = self.y.dtype
-        if T1 == complex or T2 == complex:
+        if T1 is complex or T2 is complex:
             raise ValueError('Complex numbers have no total order.')
         return float if float in (T1, T2) else int if int in (T1, T2) else bool
 
@@ -2801,7 +2791,7 @@ class Maximum(Pointwise):
     def dtype(self):
         T1 = self.x.dtype
         T2 = self.y.dtype
-        if T1 == complex or T2 == complex:
+        if T1 is complex or T2 is complex:
             raise ValueError('Complex numbers have no total order.')
         return float if float in (T1, T2) else int if int in (T1, T2) else bool
 
@@ -2835,7 +2825,7 @@ class Conjugate(Pointwise):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != complex:
+        if T is not complex:
             raise ValueError(f'Conjugate is not defined for arguments of type {T}')
         return complex
 
@@ -2860,7 +2850,7 @@ class Real(Pointwise):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != complex:
+        if T is not complex:
             raise ValueError(f'Real is not defined for arguments of type {T}')
         return float
 
@@ -2885,7 +2875,7 @@ class Imag(Pointwise):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != complex:
+        if T is not complex:
             raise ValueError(f'Real is not defined for arguments of type {T}')
         return float
 
@@ -2899,10 +2889,6 @@ class Imag(Pointwise):
 class Cast(Pointwise):
 
     arg: Array
-
-    @property
-    def dependencies(self):
-        return self.arg,
 
     @property
     def dependencies(self):
@@ -2936,7 +2922,7 @@ class BoolToInt(Cast):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != bool:
+        if T is not bool:
             raise TypeError(f'Expected an array with dtype bool but got {T.__name__}.')
         return int
 
@@ -2946,7 +2932,7 @@ class IntToFloat(Cast):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != int:
+        if T is not int:
             raise TypeError(f'Expected an array with dtype int but got {T.__name__}.')
         return float
 
@@ -2977,7 +2963,7 @@ class FloatToComplex(Cast):
     @cached_property
     def dtype(self):
         T = self.arg.dtype
-        if T != float:
+        if T is not float:
             raise TypeError(f'Expected an array with dtype float but got {T.__name__}.')
         return complex
 
@@ -3012,13 +2998,13 @@ class FloatToComplex(Cast):
 
 def astype(arg, dtype):
     arg = asarray(arg)
-    if arg.dtype == bool and dtype != bool:
+    if arg.dtype is bool and dtype is not bool:
         arg = BoolToInt(arg)
-    if arg.dtype == int and dtype != int:
+    if arg.dtype is int and dtype is not int:
         arg = IntToFloat(arg)
-    if arg.dtype == float and dtype != float:
+    if arg.dtype is float and dtype is not float:
         arg = FloatToComplex(arg)
-    if arg.dtype != dtype:
+    if arg.dtype is not dtype:
         raise TypeError('Downcasting is forbidden.')
     return arg
 
@@ -4008,7 +3994,6 @@ class Ravel(Array):
     @cached_property
     def _inflations(self):
         inflations = []
-        stride = self.func.shape[-1]
         n = None
         for axis, old_parts in self.func._inflations:
             if axis == self.ndim - 1 and n is None:
@@ -4725,64 +4710,66 @@ class Choose(Array):
     '''Function equivalent of :func:`numpy.choose`.'''
 
     index: Array
-    choices: Array
+    choices: tuple[Array, ...]
 
     def __post_init__(self):
         assert isinstance(self.index, Array) and self.index.dtype == int, f'index={self.index!r}'
-        assert isinstance(self.choices, Array), f'choices={self.choices!r}'
-        assert not _any_certainly_different(self.choices.shape[:-1], self.index.shape)
+        assert isinstance(self.choices, tuple) and all(isinstance(choice, Array) and not _any_certainly_different(choice.shape, self.index.shape) for choice in self.choices), f'choices={self.choices!r}'
+        assert all(choice.dtype == self.choices[0].dtype for choice in self.choices[1:])
 
     @property
     def dependencies(self):
-        return self.index, self.choices
+        return self.index, *self.choices
 
     @cached_property
     def dtype(self):
-        return self.choices.dtype
+        return self.choices[0].dtype
 
     @cached_property
     def shape(self):
         return self.index.shape
 
-    def _compile_expression(self, index, choices):
-        choices = _pyast.Variable('numpy').get_attr('moveaxis').call(choices, _pyast.LiteralInt(-1), _pyast.LiteralInt(0))
-        return _pyast.Variable('numpy').get_attr('choose').call(index, choices)
+    def _compile_expression(self, index, *choices):
+        return _pyast.Variable('numpy').get_attr('choose').call(index, _pyast.Tuple(choices))
 
     def _derivative(self, var, seen):
-        return Choose(appendaxes(self.index, var.shape), Transpose.to_end(derivative(self.choices, var, seen), self.ndim))
+        return Choose(appendaxes(self.index, var.shape), tuple(derivative(choice, var, seen) for choice in self.choices))
 
     def _simplified(self):
-        choices, where = unalign(self.choices)
-        if self.ndim not in where:
-            return align(choices, where, self.shape)
-        index, choices, where = unalign(self.index, self.choices, naxes=self.ndim)
+        if all(_certainly_equal(choice, self.choices[0]) for choice in self.choices[1:]):
+            return self.choices[0]
+        index, *choices, where = unalign(self.index, *self.choices)
         if len(where) < self.ndim:
-            return align(Choose(index, choices), where, self.shape)
+            return align(Choose(index, tuple(choices)), where, self.shape)
 
     def _multiply(self, other):
-        if isinstance(other, Choose) and self.index == other.index:
-            return Choose(self.index, self.choices * other.choices)
+        if isinstance(other, Choose) and self.index == other.index and len(self.choices) == len(other.choices):
+            return Choose(self.index, tuple(c1 * c2 for c1, c2 in zip(self.choices, other.choices)))
+
+    def _add(self, other):
+        if isinstance(other, Choose) and self.index == other.index and len(self.choices) == len(other.choices):
+            return Choose(self.index, tuple(c1 + c2 for c1, c2 in zip(self.choices, other.choices)))
 
     def _get(self, i, item):
-        return Choose(get(self.index, i, item), get(self.choices, i, item))
+        return Choose(get(self.index, i, item), tuple(get(choice, i, item) for choice in self.choices))
 
     def _sum(self, axis):
         unaligned, where = unalign(self.index)
         if axis not in where:
             index = align(unaligned, [i-(i > axis) for i in where], self.shape[:axis]+self.shape[axis+1:])
-            return Choose(index, sum(self.choices, axis))
+            return Choose(index, tuple(sum(choice, axis) for choice in self.choices))
 
     def _take(self, index, axis):
-        return Choose(_take(self.index, index, axis), _take(self.choices, index, axis))
+        return Choose(_take(self.index, index, axis), tuple(_take(choice, index, axis) for choice in self.choices))
 
     def _takediag(self, axis, rmaxis):
-        return Choose(takediag(self.index, axis, rmaxis), takediag(self.choices, axis, rmaxis))
+        return Choose(takediag(self.index, axis, rmaxis), tuple(takediag(choice, axis, rmaxis) for choice in self.choices))
 
     def _product(self):
         unaligned, where = unalign(self.index)
         if self.ndim-1 not in where:
             index = align(unaligned, where, self.shape[:-1])
-            return Choose(index, product(self.choices, self.ndim-1))
+            return Choose(index, tuple(product(choice, self.ndim-1) for choice in self.choices))
 
 
 class NormDim(Array):
@@ -5179,8 +5166,8 @@ class Loop(Array):
     body_args = util.abstract_property()
 
     def __post_init__(self):
-        assert isinstance(self.loop_id, _LoopId), f'loop_id={loop_id!r}'
-        assert isinstance(self.length, Array), f'length={length!r}'
+        assert isinstance(self.loop_id, _LoopId), f'loop_id={self.loop_id!r}'
+        assert isinstance(self.length, Array), f'length={self.length!r}'
         if any(self.index in arg.arguments for arg in self.init_args):
             raise ValueError('the loop initialization arguments must not depend on the index')
 
@@ -5395,10 +5382,6 @@ class LoopConcatenate(Loop):
         if not self.func.ndim:
             raise ValueError('expected an array with at least one axis')
         super().__post_init__()
-
-    @cached_property
-    def shape(self):
-        return *self.func.shape[:-1], self.concat_length
 
     @property
     def init_args(self):
@@ -5829,7 +5812,7 @@ def factor(array):
                 assert n <= degree[arg]
                 queue.append(((*args, arg), derivative(func, arg) / float(n)))
 
-    log.info(f'constructing sparse polynomial', ' + '.join(' '.join([f'C{i+1}'] +
+    log.info('constructing sparse polynomial', ' + '.join(' '.join([f'C{i+1}'] +
         [f'{arg.name}^{n}' if n > 1 else arg.name for arg, n in collections.Counter(args).items()]) for i, args in enumerate(m_args)))
 
     # EVALUATION. We now form the polynomial, by accumulating evaluable
@@ -6160,6 +6143,10 @@ def repeat(arg, length, axis):
     return insertaxis(get(arg, axis, constant(0)), axis, length)
 
 
+def choose(index, *choices):
+    return Choose(index, choices)
+
+
 def get(arg, iax, item):
     if numeric.isint(item):
         if numeric.isint(arg.shape[iax]):
@@ -6254,7 +6241,7 @@ def _takeslice(arg: Array, s: slice, axis: int):
     assert isinstance(s, slice), f's={s!r}'
     assert isinstance(axis, int), f'axis={axis!r}'
     n = arg.shape[axis]
-    if s.step == None or s.step == 1:
+    if s.step is None or s.step == 1:
         start = 0 if s.start is None else s.start if s.start >= 0 else s.start + n
         stop = n if s.stop is None else s.stop if s.stop >= 0 else s.stop + n
         if start == 0 and stop == n:
@@ -6418,21 +6405,21 @@ def einsum(fmt, *args, **dims):
     by ``->`` and the axis labels of the return value. For example, the following
     swaps the axes of a matrix:
 
-    >>> a45 = ones(tuple(map(constant, [4,5]))) # 4x5 matrix
+    >>> a45 = constant(numpy.ones([4,5])) # 4x5 matrix
     >>> einsum('ij->ji', a45)
-    nutils.evaluable.Transpose<f:(5),(4)>
+    nutils.evaluable.Transpose<f:5,4>
 
     Axis labels that do not occur in the return value are summed. For example,
     the following performs a matrix-vector product:
 
-    >>> a5 = ones(tuple(map(constant, [5]))) # vector with length 5
+    >>> a5 = constant(numpy.ones([5])) # vector with length 5
     >>> einsum('ij,j->i', a45, a5)
     nutils.evaluable.Sum<f:4>
 
     The following contracts a third order tensor, a matrix, and a vector, and
     transposes the result:
 
-    >>> a234 = ones(tuple(map(constant, [2,3,4]))) # 2x3x4 tensor
+    >>> a234 = constant(numpy.ones([2,3,4])) # 2x3x4 tensor
     >>> einsum('ijk,kl,l->ji', a234, a45, a5)
     nutils.evaluable.Sum<f:3,2>
 
@@ -6856,7 +6843,6 @@ def _define_loop_block_structure(targets: typing.Tuple[Evaluable, ...]) -> typin
     queue = util.IDSet()
     for target in unique_targets:
         queue.update(target._loops)
-    nloops = len(queue)
 
     def collect(indices):
         # Find all adjacent loops and form groups of loops that have the same
