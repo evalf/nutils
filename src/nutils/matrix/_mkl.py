@@ -1,9 +1,7 @@
 from ._base import Matrix, MatrixError, BackendNotAvailable
 from .. import numeric, _util as util, warnings
-from contextlib import contextmanager
-from ctypes import c_int, byref, CDLL
+from ctypes import c_int, c_double, c_void_p, byref, sizeof, cast, POINTER, Structure
 import treelog as log
-import os
 import numpy
 
 
@@ -87,6 +85,272 @@ class Pardiso:
             warnings.warn('Pardiso failed to release its internal memory')
 
 
+# The following defines two matrix types: HandleMatrix, which maintains an MKL
+# sparse matrix handle, and MKLMatrix, which maintains the CSR data triplet.
+#
+# Reasons for MKLMatrix:
+#
+#     MKL does not appear to support 0 x n or n x 0 matrices. The MKLMatrix is
+#     therefore the more generic object that is able to serve edge cases.
+#     Furthermore, Pardiso requires a CSR triplet, not an MKL matrix handle.
+#     Even the newer Direct Sparse Solver API, which uses handles to refer to
+#     data, uses a _different_ handle with no conversion between the two
+#     provided. And since it is very common for a MKLMatrix to be created just
+#     to forward its CSR data to Pardiso, the creation of a matrix handle would
+#     be unnecessary overhead.
+#
+# Reasons for HandleMatrix:
+#
+#     The Inspector-Executor sparse BLAS routines require that MKL maintains
+#     its own array data which therefore needs to be explicitly destroyed.
+#     While we could use a context for this, destroying the handle after every
+#     operation, this leaves the problem of export, which returns pointer to
+#     MKL managed memory that needs to be kept alive with the arrays. For this
+#     reason the HandleMatrix uses a destructor to release memory, and any
+#     exported arrays carry the matrix instance in their .base attribute.
+#
+# While it is technically possible to fold one matrix into the other (using a
+# lazily cached handle, conditional destructor, etc.) the distinctness of the
+# above considerations make for cleaner code when kept separate.
+
+
+sparse_matrix_t = c_void_p
+
+
+class MatrixDescr(Structure):
+    _fields_ = [("type", c_int), ("mode", c_int), ("diag", c_int)]
+
+
+class MKL_Complex16(Structure):
+    _fields_ = [("real", c_double), ("imag", c_double)]
+
+
+SPARSE_INDEX_BASE_ONE = c_int(1)
+SPARSE_OPERATION_NON_TRANSPOSE = c_int(10)
+SPARSE_OPERATION_CONJUGATE_TRANSPOSE = c_int(12)
+SPARSE_MATRIX_TYPE_GENERAL = c_int(20)
+SPARSE_LAYOUT_ROW_MAJOR = c_int(101) # NOTE: this used to be 60 until (probably) MKL 2019 Update 4
+
+
+class MklType:
+    def __init__(self, kind, numpy_dtype, c_zero, c_one):
+        self.kind = kind
+        self.numpy_dtype = numpy_dtype
+        self.c_zero = c_zero
+        self.c_one = c_one
+
+    def __str__(self):
+        return self.kind
+
+
+D_FLOAT64 = MklType(
+    kind="d",
+    numpy_dtype=numpy.dtype("float64"),
+    c_zero=c_double(0.0),
+    c_one=c_double(1.0),
+)
+
+D_COMPLEX128 = MklType(
+    kind="z",
+    numpy_dtype=numpy.dtype("complex128"),
+    c_zero=MKL_Complex16(0.0, 0.0),
+    c_one=MKL_Complex16(1.0, 0.0),
+)
+
+
+class HandleMatrix:
+    """Interface to MKL's `Sparse BLAS Routines`_.
+
+    .. _Sparse BLAS Routines: https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/2026-0/inspector-executor-sparse-blas-routines.html
+    """
+
+    @classmethod
+    def create(cls, rowptr, colidx, values, ncols):
+        handle = sparse_matrix_t(0)
+        # https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/2026-0/mkl-sparse-create-csr.html
+        if values.dtype == numpy.float64:
+            dtype = D_FLOAT64
+        elif values.dtype == numpy.complex128:
+            dtype = D_COMPLEX128
+        else:
+            raise ValueError(f"unsupported data type {values.dtype}")
+        f = getattr(libmkl, f"mkl_sparse_{dtype}_create_csr")
+        nrows = len(rowptr) - 1
+        ncols = ncols.__index__()
+        status = f(
+            byref(handle),
+            SPARSE_INDEX_BASE_ONE,
+            c_int(nrows),
+            c_int(ncols),
+            rowptr[:-1].ctypes,
+            rowptr[1:].ctypes,
+            colidx.ctypes,
+            values.ctypes,
+        )
+        if status != 0:
+            raise RuntimeError(f"MKL sparse create csr failed with error code {status}")
+        m = cls(handle, nrows, ncols, dtype)
+        m._keep_alive = rowptr, colidx, values
+        return m
+
+    def __init__(self, handle, nrows, ncols, dtype):
+        assert isinstance(handle, sparse_matrix_t)
+        assert isinstance(nrows, int) and nrows > 0
+        assert isinstance(ncols, int) and ncols > 0
+        assert isinstance(dtype, MklType)
+        self._handle = handle
+        self._nrows = nrows
+        self._ncols = ncols
+        self._dtype = dtype
+
+    def __del__(self):
+        libmkl.mkl_sparse_destroy(self._handle)
+
+    def export(self):
+        """Generate rowptr, colidx and values arrays."""
+
+        out_base = c_int(0)
+        out_rows = c_int(0)
+        out_cols = c_int(0)
+        p_rows_start = POINTER(c_int)()
+        p_rows_end = POINTER(c_int)()
+        p_col_indx = POINTER(c_int)()
+        p_values = POINTER(c_double)()
+        # https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/2026-0/mkl-sparse-export-csr.html
+        f = getattr(libmkl, f"mkl_sparse_{self._dtype}_export_csr")
+        status = f(
+            self._handle,
+            byref(out_base),
+            byref(out_rows),
+            byref(out_cols),
+            byref(p_rows_start),
+            byref(p_rows_end),
+            byref(p_col_indx),
+            byref(p_values),
+        )
+        if status != 0:
+            raise RuntimeError(f"MKL sparse export csr failed with error code {status}")
+        assert out_rows.value == self._nrows
+        assert out_cols.value == self._ncols
+        assert p_rows_start[0] == 1
+        assert out_base.value == 1
+        assert cast(p_rows_end, c_void_p).value == cast(
+            p_rows_start, c_void_p
+        ).value + sizeof(c_int)
+        nnz = p_rows_end[self._nrows - 1] - 1
+
+        # The __array_interface__ approach below achieves that all three arrays
+        # have self as their .base attribute, so that the referenced memory
+        # will not be deallocated until all arrays are garbage collected.
+
+        # 1. rowptr
+        self.__array_interface__ = {
+            "data": (cast(p_rows_start, c_void_p).value, False),
+            "typestr": numpy.dtype("int32").str,
+            "shape": (self._nrows + 1,),
+            "version": 3,
+        }
+        yield numpy.asarray(self)
+
+        # 2. colidx
+        self.__array_interface__ = {
+            "data": (cast(p_col_indx, c_void_p).value, False),
+            "typestr": numpy.dtype("int32").str,
+            "shape": (nnz,),
+            "version": 3,
+        }
+        yield numpy.asarray(self)
+
+        # 3. values
+        self.__array_interface__ = {
+            "data": (cast(p_values, c_void_p).value, False),
+            "typestr": self._dtype.numpy_dtype.str,
+            "shape": (nnz,),
+            "version": 3,
+        }
+        yield numpy.asarray(self)
+
+        del self.__array_interface__
+
+    def transpose(self):
+        handle = sparse_matrix_t(0)
+        # https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/2026-0/mkl-sparse-convert-csr.html
+        libmkl.mkl_sparse_convert_csr(
+            self._handle, SPARSE_OPERATION_CONJUGATE_TRANSPOSE, byref(handle)
+        )
+        return HandleMatrix(handle, self._ncols, self._nrows, self._dtype)
+
+    def __add__(self, other):
+        assert isinstance(other, HandleMatrix)
+        assert other._dtype is self._dtype
+        assert other._nrows == self._nrows
+        assert other._ncols == self._ncols
+        handle = sparse_matrix_t(0)
+        f = getattr(libmkl, f"mkl_sparse_{self._dtype}_add")
+        status = f(
+            SPARSE_OPERATION_NON_TRANSPOSE,
+            self._handle,
+            self._dtype.c_one,
+            other._handle,
+            byref(handle),
+        )
+        if status != 0:
+            raise RuntimeError(f"MKL sparse add failed with error code {status}")
+        # Make column indices increasing
+        status = libmkl.mkl_sparse_order(handle)
+        if status != 0:
+            raise RuntimeError(f"MKL sparse order failed with error code {status}")
+        return HandleMatrix(handle, self._nrows, self._ncols, self._dtype)
+
+    def __matmul__(self, other):
+        if not isinstance(other, numpy.ndarray):
+            raise TypeError
+        if other.shape[0] != self._ncols:
+            raise MatrixError(
+                f"cannot multiply {self._nrows}x{self._ncols} matrix with array of length {other.shape[0]}"
+            )
+        x = numpy.ascontiguousarray(other, dtype=self._dtype.numpy_dtype)
+        if x.size == 0:
+            return x.copy()
+        y = numpy.empty((self._nrows, *x.shape[1:]), dtype=self._dtype.numpy_dtype)
+        descr = MatrixDescr(SPARSE_MATRIX_TYPE_GENERAL, 0, 0)
+        nvecs = x.size // x.shape[0]
+        if nvecs == 1:
+            # https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/2026-0/mkl-sparse-mv.html
+            f = getattr(libmkl, f"mkl_sparse_{self._dtype}_mv")
+            status = f(
+                SPARSE_OPERATION_NON_TRANSPOSE,
+                self._dtype.c_one,
+                self._handle,
+                descr,
+                x.ctypes,
+                self._dtype.c_zero,
+                y.ctypes,
+            )
+            if status != 0:
+                raise RuntimeError(f"MKL sparse mv failed with error code {status}")
+        else:
+            # https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/2026-0/mkl-sparse-mm.html
+            f = getattr(libmkl, f"mkl_sparse_{self._dtype}_mm")
+            n = c_int(nvecs)
+            status = f(
+                SPARSE_OPERATION_NON_TRANSPOSE,
+                self._dtype.c_one,
+                self._handle,
+                descr,
+                SPARSE_LAYOUT_ROW_MAJOR,
+                x.ctypes,
+                n,
+                n,
+                self._dtype.c_zero,
+                y.ctypes,
+                n,
+            )
+            if status != 0:
+                raise RuntimeError(f"MKL sparse mm failed with error code {status}")
+        return y
+
+
 class MKLMatrix(Matrix):
     '''matrix implementation based on sorted coo data'''
 
@@ -97,9 +361,8 @@ class MKLMatrix(Matrix):
         self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
         super().__init__((len(rowptr)-1, ncols), self.data.dtype)
 
-    def mkl_(self, name, *args):
-        attr = 'mkl_' + dict(f='d', c='z')[self.dtype.kind] + name
-        return getattr(libmkl, attr)(*args)
+    def _as_handle_matrix(self):
+        return HandleMatrix.create(self.rowptr, self.colidx, self.data, self.shape[1])
 
     def convert(self, mat):
         if not isinstance(mat, Matrix):
@@ -112,26 +375,11 @@ class MKLMatrix(Matrix):
         return MKLMatrix(data.astype(self.dtype, copy=False), rowptr+1, colidx+1, self.shape[1])
 
     def __add__(self, other):
-        other = self.convert(other)
-        assert self.shape == other.shape and self.dtype == other.dtype
-        request = c_int(1)
-        info = c_int()
-        rowptr = numpy.empty(self.shape[0]+1, dtype=numpy.int32)
-        one = numpy.array(1, dtype=self.dtype)
-        args = ["N", byref(request), byref(c_int(0)),
-                byref(c_int(self.shape[0])), byref(c_int(self.shape[1])),
-                self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, one.ctypes,
-                other.data.ctypes, other.colidx.ctypes, other.rowptr.ctypes,
-                None, None, rowptr.ctypes, None, byref(info)]
-        self.mkl_('csradd', *args)
-        assert info.value == 0
-        colidx = numpy.empty(rowptr[-1]-1, dtype=numpy.int32)
-        data = numpy.empty(rowptr[-1]-1, dtype=self.dtype)
-        request.value = 2
-        args[12:14] = data.ctypes, colidx.ctypes
-        self.mkl_('csradd', *args)
-        assert info.value == 0
-        return MKLMatrix(data, rowptr, colidx, self.shape[1])
+        if not all(self.shape):
+            return self
+        m = self._as_handle_matrix() + self.convert(other)._as_handle_matrix()
+        rowptr, colidx, values = m.export()
+        return MKLMatrix(values, rowptr, colidx, self.shape[1])
 
     def __mul__(self, other):
         if not numeric.isnumber(other):
@@ -139,43 +387,22 @@ class MKLMatrix(Matrix):
         return MKLMatrix(self.data * other, self.rowptr, self.colidx, self.shape[1])
 
     def __matmul__(self, other):
-        if not isinstance(other, numpy.ndarray):
-            raise TypeError
-        if other.shape[0] != self.shape[1]:
-            raise MatrixError(f'cannot multiply {self.shape[0]}x{self.shape[1]} matrix with array of length {other.shape[0]}')
-        x = numpy.ascontiguousarray(other.T, dtype=self.dtype)
-        y = numpy.empty(x.shape[:-1] + self.shape[:1], dtype=self.dtype)
-        if other.ndim == 1:
-            self.mkl_('csrgemv', 'N', byref(c_int(self.shape[0])),
-                      self.data.ctypes, self.rowptr.ctypes, self.colidx.ctypes, x.ctypes, y.ctypes)
-        else:
-            zero = numpy.array(0, dtype=self.dtype)
-            one = numpy.array(1, dtype=self.dtype)
-            self.mkl_('csrmm', 'N', byref(c_int(self.shape[0])),
-                      byref(c_int(other.size//other.shape[0])),
-                      byref(c_int(self.shape[1])), one.ctypes, 'GXXFXX',
-                      self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, self.rowptr[1:].ctypes,
-                      x.ctypes, byref(c_int(other.shape[0])), zero.ctypes,
-                      y.ctypes, byref(c_int(other.shape[0])))
-        return y.T
+        if not all(self.shape):
+            return numpy.empty((self.shape[0], *other.shape[1:]), dtype=self.dtype)
+        return self._as_handle_matrix() @ other
 
     def __neg__(self):
         return MKLMatrix(-self.data, self.rowptr, self.colidx, self.shape[1])
 
     @property
     def T(self):
-        if self.shape[0] != self.shape[1]:
-            raise NotImplementedError('MKLMatrix does not yet support transpose of non-square matrices')
-        job = numpy.array([0, 1, 1, 0, 0, 1], numpy.int32)
-        data = numpy.empty_like(self.data)
-        rowptr = numpy.empty_like(self.rowptr)
-        colidx = numpy.empty_like(self.colidx)
-        info = c_int()
-        self.mkl_('csrcsc', job.ctypes,
-                  byref(c_int(self.shape[0])), self.data.ctypes,
-                  self.colidx.ctypes, self.rowptr.ctypes, data.ctypes, colidx.ctypes,
-                  rowptr.ctypes, byref(info))
-        return MKLMatrix(data, rowptr, colidx, self.shape[1])
+        if not all(self.shape):
+            rowptr = numpy.zeros(self.shape[1] + 1, dtype=numpy.int32)
+            colidx = numpy.empty(0, dtype=numpy.int32)
+            values = numpy.empty(0, dtype=self.dtype)
+        else:
+            rowptr, colidx, values = self._as_handle_matrix().transpose().export()
+        return MKLMatrix(values, rowptr, colidx, self.shape[0])
 
     def _submatrix(self, rows, cols):
         keep = rows.repeat(numpy.diff(self.rowptr))
