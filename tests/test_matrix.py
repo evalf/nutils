@@ -207,7 +207,7 @@ class backend(testing.TestCase):
         v = 10.
         other = matrix.assemble_coo(numpy.full(self.n, v), numpy.arange(self.n), self.n, numpy.full(self.n, j), self.n)
         add = self.matrix + other
-        numpy.testing.assert_equal(actual=add.export('dense'), desired=self.exact + numpy.eye(self.n)[j]*v)
+        numpy.testing.assert_almost_equal(actual=add.export('dense'), desired=self.exact + numpy.eye(self.n)[j]*v, decimal=300)
         with self.assertRaises(TypeError):
             self.matrix + 'foo'
         with self.assertRaises(matrix.MatrixError):
@@ -218,7 +218,7 @@ class backend(testing.TestCase):
         v = 10.
         other = matrix.assemble_coo(numpy.full(self.n, v), numpy.arange(self.n), self.n, numpy.full(self.n, j), self.n)
         sub = self.matrix - other
-        numpy.testing.assert_equal(actual=sub.export('dense'), desired=self.exact - numpy.eye(self.n)[j]*v)
+        numpy.testing.assert_almost_equal(actual=sub.export('dense'), desired=self.exact - numpy.eye(self.n)[j]*v, decimal=300)
         with self.assertRaises(TypeError):
             self.matrix - 'foo'
         with self.assertRaises(matrix.MatrixError):
