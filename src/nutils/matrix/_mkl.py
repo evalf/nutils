@@ -11,10 +11,7 @@ if libmkl is None:
 
 
 def assemble(data, rowptr, colidx, ncols):
-    # In the increments below the output dtype is set to int32 not only to avoid
-    # an additional allocation, but crucially also to avoid truncation in case
-    # the incremented index overflows the original type.
-    return MKLMatrix(data, ncols=ncols, rowptr=numpy.add(rowptr, 1, dtype=numpy.int32), colidx=numpy.add(colidx, 1, dtype=numpy.int32))
+    return MKLMatrix(data, rowptr, colidx, ncols)
 
 
 class Pardiso:
@@ -60,7 +57,7 @@ class Pardiso:
         self.iparm[10] = 1 # enable scaling (default for nonsymmetric matrices, recommended for highly indefinite symmetric matrices)
         self.iparm[12] = 1 # enable matching (default for nonsymmetric matrices, recommended for highly indefinite symmetric matrices)
         self.iparm[27] = 0 # double precision data
-        self.iparm[34] = 0 # one-based indexing
+        self.iparm[34] = 1 # zero-based indexing
         self.iparm[36] = 0 # csr matrix format
         self._phase(12)  # analysis, numerical factorization
         log.debug('peak memory use {:,d}k'.format(max(self.iparm[14], self.iparm[15]+self.iparm[16])))
@@ -125,7 +122,7 @@ class MKL_Complex16(Structure):
     _fields_ = [("real", c_double), ("imag", c_double)]
 
 
-SPARSE_INDEX_BASE_ONE = c_int(1)
+SPARSE_INDEX_BASE_ZERO = c_int(0)
 SPARSE_OPERATION_NON_TRANSPOSE = c_int(10)
 SPARSE_OPERATION_CONJUGATE_TRANSPOSE = c_int(12)
 SPARSE_MATRIX_TYPE_GENERAL = c_int(20)
@@ -179,7 +176,7 @@ class HandleMatrix:
         ncols = ncols.__index__()
         status = f(
             byref(handle),
-            SPARSE_INDEX_BASE_ONE,
+            SPARSE_INDEX_BASE_ZERO,
             c_int(nrows),
             c_int(ncols),
             rowptr[:-1].ctypes,
@@ -232,12 +229,12 @@ class HandleMatrix:
             raise RuntimeError(f"MKL sparse export csr failed with error code {status}")
         assert out_rows.value == self._nrows
         assert out_cols.value == self._ncols
-        assert p_rows_start[0] == 1
-        assert out_base.value == 1
+        assert p_rows_start[0] == 0
+        assert out_base.value == 0
         assert cast(p_rows_end, c_void_p).value == cast(
             p_rows_start, c_void_p
         ).value + sizeof(c_int)
-        nnz = p_rows_end[self._nrows - 1] - 1
+        nnz = p_rows_end[self._nrows - 1]
 
         # The __array_interface__ approach below achieves that all three arrays
         # have self as their .base attribute, so that the referenced memory
@@ -355,7 +352,7 @@ class MKLMatrix(Matrix):
     '''matrix implementation based on sorted coo data'''
 
     def __init__(self, data, rowptr, colidx, ncols):
-        assert len(data) == len(colidx) == rowptr[-1]-1
+        assert len(data) == len(colidx) == rowptr[-1]
         self.data = numpy.ascontiguousarray(data, dtype=numpy.complex128 if data.dtype.kind == 'c' else numpy.float64)
         self.rowptr = numpy.ascontiguousarray(rowptr, dtype=numpy.int32)
         self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
@@ -372,7 +369,7 @@ class MKLMatrix(Matrix):
         if isinstance(mat, MKLMatrix) and mat.dtype == self.dtype:
             return mat
         data, colidx, rowptr = mat.export('csr')
-        return MKLMatrix(data.astype(self.dtype, copy=False), rowptr+1, colidx+1, self.shape[1])
+        return MKLMatrix(data.astype(self.dtype, copy=False), rowptr, colidx, self.shape[1])
 
     def __add__(self, other):
         if not all(self.shape):
@@ -406,27 +403,27 @@ class MKLMatrix(Matrix):
 
     def _submatrix(self, rows, cols):
         keep = rows.repeat(numpy.diff(self.rowptr))
-        keep &= cols[self.colidx-1]
+        keep &= cols[self.colidx]
         if keep.all():  # all nonzero entries are kept
             rowptr = self.rowptr[numpy.hstack([True, rows])]
             keep = slice(None)  # avoid array copies
         else:
-            rowptr = numpy.cumsum([1] + [keep[i:j].sum() for i, j in numeric.overlapping(self.rowptr-1)[rows]], dtype=numpy.int32)
+            rowptr = numpy.cumsum([0] + [keep[i:j].sum() for i, j in numeric.overlapping(self.rowptr)[rows]], dtype=numpy.int32)
         data = self.data[keep]
-        assert rowptr[-1] == len(data)+1
-        colidx = (self.colidx if cols.all() else cols.cumsum(dtype=numpy.int32)[self.colidx-1])[keep]
+        assert rowptr[-1] == len(data)
+        colidx = (self.colidx if cols.all() else cols.cumsum(dtype=numpy.int32)[self.colidx] - 1)[keep]
         return MKLMatrix(data, rowptr, colidx, cols.sum())
 
     def export(self, form):
         if form == 'dense':
             dense = numpy.zeros(self.shape, self.dtype)
-            for row, i, j in zip(dense, self.rowptr[:-1]-1, self.rowptr[1:]-1):
-                row[self.colidx[i:j]-1] = self.data[i:j]
+            for row, i, j in zip(dense, self.rowptr[:-1], self.rowptr[1:]):
+                row[self.colidx[i:j]] = self.data[i:j]
             return dense
         if form == 'csr':
-            return self.data, self.colidx-1, self.rowptr-1
+            return self.data, self.colidx, self.rowptr
         if form == 'coo':
-            return self.data, (numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1)
+            return self.data, (numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx)
         raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
     def _solver_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12, preconargs={}, **args):
@@ -501,12 +498,12 @@ class MKLMatrix(Matrix):
             return (1./v).__mul__
         upper = numpy.zeros(len(self.data), dtype=bool)
         rowptr = numpy.empty_like(self.rowptr)
-        rowptr[0] = 1
+        rowptr[0] = 0
         diagdom = True
-        for irow, (n, m) in enumerate(numeric.overlapping(self.rowptr-1), start=1):
+        for irow, (n, m) in enumerate(numeric.overlapping(self.rowptr)):
             d = n + self.colidx[n:m].searchsorted(irow)
             upper[d:m] = True
-            rowptr[irow] = rowptr[irow-1] + (m-d)
+            rowptr[irow+1] = rowptr[irow] + (m-d)
             diagdom = diagdom and d < m and self.colidx[d] == irow and abs(self.data[n:m]).sum() < 2 * abs(self.data[d])
         if diagdom:
             log.debug('matrix is diagonally dominant, solving as SPD')
