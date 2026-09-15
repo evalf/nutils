@@ -715,36 +715,43 @@ def cli(f, *, argv=None):
         print('\n'.join(help))
         sys.exit(0)
 
+    if args and "=" not in args[0]:
+        preset, *args = args
+    else:
+        preset = None
+
+    kwargs = {}
+    string_args = {}
+
     stringly_doc = stringly.util.DocString(f)
     stringly_presets = stringly_doc.presets
     stringly_defaults = stringly_doc.defaults
 
-    if args and '=' not in args[0]:
-        path, *args = args
-        if path in stringly_presets:
-            warnings.deprecation(
-                "Embedded presets are deprecated and will be removed in Nutils"
-                "11. Consider copying the 'arguments' output to a .yml file and"
-                "using that as a first argument instead.")
-            kwargs = stringly_presets[path]
-        else:
-            kwargs = load(path, sig).arguments
-    else:
-        if stringly_defaults:
-            warnings.deprecation(
-                "Embedded function defaults are deprecated and will be removed"
-                "in Nutils 11. Consider changing them into actual default values"
-                "of the Python function.")
-            kwargs = stringly_defaults
-        else:
-            kwargs = {}
+    if stringly_defaults:
+        warnings.deprecation(
+            "Embedded function defaults are deprecated and will be removed "
+            "in Nutils 11. Consider changing them into actual default values "
+            "of the Python function.")
+        string_args.update(stringly_defaults)
+
+    if preset in stringly_presets:
+        warnings.deprecation(
+            "Embedded presets are deprecated and will be removed in Nutils "
+            "11. Consider copying the 'arguments' output to a .yml file and "
+            "using that as a first argument instead.")
+        string_args.update(stringly_presets[preset])
+    elif preset:
+        kwargs.update(load(preset, sig).arguments)
 
     for arg in args:
-        name, sep, value = arg.partition('=')
+        name, sep, value = arg.partition("=")
+        string_args[name] = sep and value
+
+    for name, value in string_args.items():
         if name not in sig.parameters:
             sys.exit(f"Error: invalid argument {name!r}")
         T = _infer_type(sig.parameters[name])
-        if sep is None:
+        if value is None:
             if T is not bool:
                 sys.exit(f"Error: argument {name!r} requires a value")
             kwargs[name] = True
