@@ -9,7 +9,6 @@ the ``export`` method.
 from .. import _util as util, warnings, numeric
 import numpy
 import importlib
-import os
 
 from ._base import Matrix, MatrixError, BackendNotAvailable, ToleranceNotReached
 for cls in Matrix, MatrixError, BackendNotAvailable, ToleranceNotReached:
@@ -149,11 +148,6 @@ def assemble_block_csr(blocks):
         # Required shortcut because numpy.concatenate cannot deal with empty lists
         return empty((len(rowptr)-1, ncols), dtype)
     return assemble_csr(numpy.concatenate(values), numpy.array(rowptr), numpy.concatenate(colidx), ncols)
-
-
-def fromsparse(data, inplace=False):
-    (rowidx, colidx), values, (nrows, ncols) = sparse.extract(sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True))
-    return assemble_coo(values, rowidx, nrows, colidx, ncols)
 
 
 def empty(shape, dtype=float):

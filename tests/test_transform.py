@@ -1,4 +1,4 @@
-from nutils import transform, evaluable, numeric, types
+from nutils import transform, numeric, types
 from nutils.testing import TestCase
 import numpy
 

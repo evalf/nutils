@@ -15,16 +15,13 @@ selected sample points, and is typically used in combination with the "bezier"
 set.
 '''
 
-from . import types, _util as util, function, evaluable, warnings
+from . import types, _util as util, function, evaluable
 from .pointsseq import PointsSequence
 from .transformseq import Transforms
 from functools import cached_property
 from typing import Iterable, Mapping, Optional, Sequence, Tuple, Union
 import numpy
-import numbers
 import os
-import treelog as log
-import abc
 
 _PointsShape = Tuple[evaluable.Array, ...]
 _TransformChainsMap = Mapping[str, Tuple[Tuple[Transforms, ...], int]]
@@ -1007,7 +1004,7 @@ class _Basis(function.Array):
         # make sure this is the last axis of `space_coords`.
         if len(args.points_shape) not in where:
             space_coords = evaluable.InsertAxis(space_coords, aligned_space_coords.shape[-1])
-            where += len(points_shape),
+            where += len(args.points_shape),
         elif where[-1] != len(args.points_shape):
             space_coords = evaluable.Transpose(space_coords, numpy.argsort(where))
             where = tuple(sorted(where))

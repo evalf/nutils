@@ -1,4 +1,4 @@
-from nutils import evaluable, expression_v1, function, mesh, warnings
+from nutils import evaluable, expression_v1, function, mesh
 from nutils.testing import TestCase
 import pickle
 import numpy
@@ -22,7 +22,7 @@ class Array:
         return self.text
 
     def __eq__(self, other):
-        return type(self) == type(other) and self.text == other.text
+        return type(self) is type(other) and self.text == other.text
 
     def __hash__(self):
         return hash(self.text)

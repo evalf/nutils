@@ -30,14 +30,12 @@ In addition to ``solve_linear`` the solver module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, evaluable, cache, numeric, types, _util as util, matrix, warnings
+from . import function, evaluable, cache, types, matrix, warnings
 from dataclasses import dataclass
 from typing import Optional, Union, Tuple, Dict, Any, Iterator, Callable
-import abc
 import numpy
 import itertools
 import functools
-import collections
 import math
 import treelog as log
 
@@ -482,7 +480,7 @@ class System:
             if tol <= 0:
                 raise ValueError('iterative solver requires a strictly positive tolerance')
             arguments, resnorm = next(m)
-            with log.context(f'iter 0'):
+            with log.context('iter 0'):
                 log.info(f'residual norm: {resnorm:.1e}')
             resnorm0 = resnorm
             iiter = 0
@@ -883,7 +881,7 @@ class Arnoldi:
                 yield system.construct(arguments, x), resnorm
                 res -= w @ dres_space[:i+1]
 
-        log.info(f'updating jacobian')
+        log.info('updating jacobian')
         self.__cached_matrix = jac
 
         linargs = _copy_with_defaults(self.linargs, symmetric=system.is_symmetric)

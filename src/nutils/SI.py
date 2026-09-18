@@ -227,7 +227,7 @@ class Dimension(type):
             raise ValueError(f'expected a str, got {type(value).__name__}')
         q = parse(value)
         expect = float if not cls.__powers else cls
-        if type(q) != expect:
+        if type(q) is not expect:
             raise DimensionError(f'expected {expect.__name__}, got {type(q).__name__}')
         return q
 

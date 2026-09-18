@@ -34,7 +34,7 @@ def _log_msg(*msg, color: Optional[str] = None, title: Optional[str] = None, fil
     print(*msg)
 
     if color:
-        print(f'\033[0m', end='')
+        print('\033[0m', end='')
 
 
 debug = functools.partial(_log_msg)

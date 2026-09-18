@@ -1,5 +1,5 @@
-from nutils import element, points, transform, numeric
-from nutils.testing import TestCase, parametrize
+from nutils import element, points, numeric
+from nutils.testing import TestCase
 import numpy
 
 

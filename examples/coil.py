@@ -107,7 +107,6 @@ def main(nelems: int = 50,
     ns.rot = numpy.stack([function.scatter(function.trignormal(ns.θ), 3, [0, 1]), function.kronecker(1., 0, 3, 2)])
     ns.eθ = numpy.stack(['-sin(θ)', 'cos(θ)', '0'] @ ns)
 
-    X = RZ * REV
     ns.x = ns.rz @ ns.rot
     ns.define_for('x', gradient='∇', jacobians=('dV', 'dS'), curl='curl')
     ns.A = RZ.field('A', btype='spline', degree=degree, removedofs=[[0, -1], [-1]], dtype=complex) * ns.eθ
@@ -148,7 +147,6 @@ def main(nelems: int = 50,
         A = numpy.concatenate([A, A], axis=0)
         Bmag = numpy.concatenate([Bmag, Bmag], axis=0)
         tri = numpy.concatenate([smpl.tri+i*smpl.npoints for i in range(2)])
-        hull = numpy.concatenate([smpl.hull+i*smpl.npoints for i in range(2)])
         imBi = ax.tripcolor(-r, z, tri, Bmag.imag, shading='gouraud', cmap='Greens')
         imBi.set_clim(0, Bmax)
         ax.tricontour(-r, z, tri, -A.imag, colors='k', linewidths=.5, levels=levels)
@@ -175,7 +173,6 @@ def main(nelems: int = 50,
         ax.set_yticks(numpy.concatenate([-zticks[::-1], [0], zticks]), minor=True)
         ax.tick_params(direction='in', which='minor', bottom=True, top=True, left=True, right=True)
         # Real and imag indicator.
-        spine = next(iter(ax.spines.values()))
         ax.axvline(0, color='k')
         ax.text(0, .95, '← imag ', horizontalalignment='right', verticalalignment='bottom', transform=ax.get_xaxis_transform())
         ax.text(0, .95, ' real →', horizontalalignment='left', verticalalignment='bottom', transform=ax.get_xaxis_transform())

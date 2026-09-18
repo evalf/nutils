@@ -4,7 +4,7 @@ if typing.TYPE_CHECKING:
 else:
     Protocol = object
 
-from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
+from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, FrozenSet
 from . import evaluable, numeric, _util as util, types, warnings, debug_flags
 from ._util import nutils_dispatch
 from functools import cached_property
@@ -15,7 +15,6 @@ import numpy
 import functools
 import operator
 import numbers
-import inspect
 import fractions
 import treelog
 import dataclasses
@@ -220,7 +219,7 @@ if debug_flags.lower:
     def _debug_lower(self, args: LowerArgs) -> evaluable.Array:
         result = self._ArrayMeta__debug_lower_orig(args)
         assert isinstance(result, evaluable.Array)
-        offset = 0 if type(self) == _WithoutPoints else len(args.points_shape)
+        offset = 0 if type(self) is _WithoutPoints else len(args.points_shape)
         assert result.ndim == self.ndim + offset
         assert tuple(sh.__index__() for sh in result.shape[offset:]) == self.shape, 'shape mismatch'
         assert result.dtype == self.dtype, ('dtype mismatch', self.__class__)
@@ -1132,21 +1131,6 @@ class _Opposite(Array):
         return self._arg.lower(args)
 
 
-class _RootCoords(Array):
-
-    def __init__(self, space: str, ndims: int) -> None:
-        self._space = space
-        super().__init__((ndims,), float, frozenset({space}), {})
-
-    def lower(self, args: LowerArgs) -> evaluable.Array:
-        inv_linear = evaluable.diagonalize(evaluable.ones(tuple(evaluable.constant(n) for n in self.shape)))
-        inv_linear = evaluable.prependaxes(inv_linear, args.points_shape)
-        arg = args[space]
-        tip_coords = evaluable.WithDerivative(arg.coordinates, _tip_derivative_target(self._space, tip_coords.shape[-1]), evaluable.Diagonalize(evaluable.ones(tip_coords.shape)))
-        coords = evaluable.TransformCoords(None, arg.transforms, arg.index, tip_coords)
-        return evaluable.WithDerivative(coords, _root_derivative_target(self._space, evaluable.constant(self.shape[0])), inv_linear)
-
-
 class _TransformsIndex(Array):
 
     def __init__(self, space: str, transforms: Transforms) -> None:
@@ -1781,7 +1765,7 @@ def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
     s = __s
     axis = __axis
     n = array.shape[axis]
-    if s.step == None or s.step == 1:
+    if s.step is None or s.step == 1:
         start = 0 if s.start is None else s.start if s.start >= 0 else s.start + n
         stop = n if s.stop is None else s.stop if s.stop >= 0 else s.stop + n
         if start == 0 and stop == n:
@@ -1885,7 +1869,7 @@ def _argument_to_array(d: Any, array: Array) -> Iterable[Tuple[Argument, Array]]
             arg = Argument(arg, *array.arguments[arg])
         elif not isinstance(arg, Argument):
             raise ValueError('Key must be string or argument')
-        elif arg.name not in arguments:
+        elif arg.name not in array.arguments:
             continue
         elif array.arguments[arg.name] != (arg.shape, arg.dtype):
             raise ValueError(f'Argument {arg.name!r} has wrong shape or dtype')
@@ -3683,18 +3667,6 @@ class __implementations__:
         if a.ndim < 2 or a.shape[-2] != a.shape[-1]:
             raise ValueError('Last 2 dimensions of the array must be square')
         return _Wrapper(evaluable.Inverse, a, shape=a.shape, dtype=complex if a.dtype == complex else float)
-
-    @implements(numpy.ndim)
-    def ndim(a):
-        return a.ndim
-
-    @implements(numpy.size)
-    def size(a):
-        return a.size
-
-    @implements(numpy.shape)
-    def shape(a):
-        return a.shape
 
     @implements(numpy.diagonal)
     def diagonal(a, offset=0, axis1=0, axis2=1):
