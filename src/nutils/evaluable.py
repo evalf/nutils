@@ -6648,28 +6648,8 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
     elif stats not in ('log', False):
         raise ValueError(f'`stats` must be `None`, `False` or `"log"` but got {stats!r}')
 
-    # Build return value format string `ret` with the same structure as `func`
-    # and convert `func` to a flat list.
-    stack = [func]
-    ret_fmt = []
-    funcs = []
-    MakeTuple = collections.namedtuple('MakeTuple', ('n'))
-    while stack:
-        obj = stack.pop()
-        if isinstance(obj, MakeTuple):
-            m = len(ret_fmt) - obj.n
-            ret_fmt[m:] = ['(' + ', '.join(ret_fmt[m:]) + (',)' if obj.n == 1 else ')')]
-        elif isinstance(obj, (tuple, list)):
-            stack.append(MakeTuple(len(obj)))
-            stack.extend(reversed(obj))
-        elif isinstance(obj, Array) or isinstance(obj, Evaluable) and not cache_const_intermediates:
-            funcs.append(obj)
-            ret_fmt.append('{}')
-        else:
-            raise ValueError(f'expected a `nutils.evaluable.Array`, `tuple` or `list` but got {obj!r}')
-    ret_fmt, = ret_fmt
-
-    # Simplify and optimize `funcs`.
+    # Convert `func` to a flat list, simplify, optimize, and identify loop blocks.
+    funcs, slices = util.flatten(func)
     if _simplify:
         funcs = [func.simplified for func in funcs]
     if _optimize:
@@ -6814,9 +6794,14 @@ def compile(func, /, *, stats: typing.Optional[str] = None, cache_const_intermed
             _pyast.Exec(_pyast.Variable('log_stats').call(_pyast.Variable('ret_tuple'), _pyast.Variable('stats'))),
         ])
 
+    retval = [v.py_expr for v in py_funcs]
+    for s in slices:
+        retval[s] = "(" + ", ".join(retval[s]) + (",)" if s.stop - s.start == 1 else ")"),
+    assert len(retval) == 1
+
     lines = ['def compiled(a):']
     lines.extend(main.lines)
-    lines.append('return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]) + '\n')
+    lines.append('return ' + retval[0] + '\n')
     script = '\n    '.join(lines)
 
     if debug_flags.compile:
