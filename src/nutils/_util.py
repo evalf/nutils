@@ -849,22 +849,52 @@ def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]], condense: boo
 
 
 def nutils_dispatch(f):
-    '''Decorator for nutils-dispatching based on argument types.'''
+    '''Decorator for nutils-dispatching based on argument types.
+
+    When a function that is decorated by @nutils_dispatch is called, then all
+    of the calling arguments are checked for the existence of a
+    ``__nutils_dispatch__`` class method, entering lists and tuples an
+    arbitrary nestings thereof.
+
+    The ``__nutils_dispatch__`` method takes three arguments: the decorated
+    function object, the positional arguments tuple, and the keyword arguments
+    dictionary. Taking a greedy approach, the first discovered method that does
+    not return ``NotImplemented`` cuts the search short and its return value is
+    returned instead of the wrapped function, which in a typical application
+    will have been called via the dispatch handler instead.
+
+    Note that the function object that is passed to ``__nutils_dispatch__`` is
+    the function _after_ decoration. This serves two purposes:
+
+     1. When a handler strips its object wrappers and calls the function, it
+        repeats the above search, resulting in automatic recursion in case
+        there are multiple dispatcheable frameworks in play at once.
+
+     2. It makes that the dispatch function can match the function object
+        against those present in the module namespace. Note, however, this only
+        works if the function is not modified further later on. It is therefore
+        important that the ``nutils_dispatch`` is the last (top) decorator
+        applied to a function.
+    '''
 
     sig = inspect.signature(f)
 
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
-        seen = set()
         bound = sig.bind(*args, **kwargs)
         bound.apply_defaults()
-        for arg in bound.args:
-            T = type(arg)
-            if hasattr(T, '__nutils_dispatch__') and T not in seen:
+        types = {}
+        stack = list(bound.args)
+        for item in stack:
+            if isinstance(item, (list, tuple)):
+                stack.extend(item)
+            else:
+                types[type(item)] = None  # add type to ordered set
+        for T in types:
+            if hasattr(T, '__nutils_dispatch__'):
                 retval = T.__nutils_dispatch__(wrapper, bound.args, bound.kwargs)
                 if retval is not NotImplemented:
                     return retval
-                seen.add(T)
         return f(*args, **kwargs)
 
     return wrapper
