@@ -2413,6 +2413,11 @@ def evaluate(*arrays, arguments={}):
     return evaluable.eval_once(tuple(map(evaluable.asarray, arrays)), arguments=arguments)
 
 
+@nutils_dispatch
+def compile(arrays):
+    return evaluable.compile(util.nested_map(evaluable.asarray, arrays))
+
+
 def as_coo(array):
     '''Convert any array to an evaluable tuple of sparse COO data.
 
