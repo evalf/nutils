@@ -208,21 +208,13 @@ class single_or_multiple:
         if isinstance(arg, map) or inspect.isgenerator(arg):
             arg = tuple(arg)
         # 1. flatten arg = [a, (b, [c, d]), e] to flatarg = [a, b, c, d, e].
-        flatarg = []
-        slices = []
-        stack = [arg]
-        while stack:
-            obj = stack.pop()
-            if isinstance(obj, (tuple, list)):
-                stack.extend(reversed(obj))
-                slices.append((len(flatarg), len(flatarg) + len(obj)))
-            else:
-                flatarg.append(obj)
+        flatarg, slices = flatten(arg)
         # 2. call wrapped function with flattened first argument
-        retvals = tuple(self.__wrapped__(tuple(flatarg), *args, **kwargs))
+        retvals = list(self.__wrapped__(flatarg, *args, **kwargs))
+        assert len(retvals) == len(flatarg)
         # 3. reconstruct nested sequences as tuples
-        for i, j in reversed(slices):
-            retvals = *retvals[:i], retvals[i:j], *retvals[j:]
+        for s in slices:
+            retvals[s] = tuple(retvals[s]),
         assert len(retvals) == 1
         return retvals[0]
 
