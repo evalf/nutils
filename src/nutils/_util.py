@@ -133,6 +133,41 @@ def obj2str(obj):
         else str(obj)
 
 
+def flatten(obj):
+    """Flatten nested tuple/list and return slices for reassembly.
+
+    Given an object with arbitrary nestings of lists and/or tuples, return a
+    tuple of flattened items and a tuple of slices that can be used to restore
+    the original nested structure.
+
+    Example
+    -------
+    >>> items = [1, [[2, 3], 4]]
+    >>> flat, slices = flatten(items)
+    >>> flat
+    (1, 2, 3, 4)
+    >>> restore = list(flat)
+    >>> for s in slices:
+    ...     restore[s] = restore[s],
+    >>> len(restore) == 1
+    True
+    >>> restore[0]
+    [1, [[2, 3], 4]]
+    """
+
+    items = []
+    slices = []
+    stack = [obj]
+    while stack:
+        obj = stack.pop()
+        if isinstance(obj, (tuple, list)):
+            stack.extend(reversed(obj))
+            slices.append(slice(len(items), len(items) + len(obj)))
+        else:
+            items.append(obj)
+    return tuple(items), tuple(reversed(slices))
+
+
 class single_or_multiple:
     """
     Method wrapper, converts first positional argument to tuple: tuples/lists

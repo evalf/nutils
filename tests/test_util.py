@@ -642,3 +642,35 @@ class function(TestCase):
             '    1/0',
             '    ~^~', 'ZeroDivisionError: division by zero',
         ])
+
+
+class flatten(TestCase):
+
+    def test_scalar(self):
+        items, slices = util.flatten(1)
+        self.assertEqual(items, (1,))
+        self.assertEqual(slices, ())
+
+    def test_list(self):
+        items, slices = util.flatten([1, 2, 3])
+        self.assertEqual(items, (1, 2, 3))
+        self.assertEqual(slices, (slice(0, 3),))
+
+    def test_tuple(self):
+        items, slices = util.flatten((1, 2, 3))
+        self.assertEqual(items, (1, 2, 3))
+        self.assertEqual(slices, (slice(0, 3),))
+
+    def test_empty(self):
+        items, slices = util.flatten([])
+        self.assertEqual(items, ())
+        self.assertEqual(slices, (slice(0, 0),))
+
+    def test_nested(self):
+        items, slices = util.flatten((1, [2, (3, [4, 5], 6, []), [7]], (8, 9)))
+        self.assertEqual(items, (1, 2, 3, 4, 5, 6, 7, 8, 9))
+        restored = list(items)
+        for s in slices:
+            restored[s] = restored[s],
+        self.assertEqual(len(restored), 1)
+        self.assertEqual(restored[0], [1, [2, [3, [4, 5], 6, []], [7]], [8, 9]])
