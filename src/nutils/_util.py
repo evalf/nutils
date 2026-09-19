@@ -206,6 +206,9 @@ class single_or_multiple:
 
     def __call__(self, arg, *args, **kwargs):
         if isinstance(arg, map) or inspect.isgenerator(arg):
+            warnings.deprecation(f"calling {self.__wrapped__.__name__} with a "
+                "map or generator argument is deprecated and will be removed in "
+                "Nutils 11; please use a tuple or list instead.")
             arg = tuple(arg)
         # 1. flatten arg = [a, (b, [c, d]), e] to flatarg = [a, b, c, d, e].
         flatarg, slices = flatten(arg)
