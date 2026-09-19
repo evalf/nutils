@@ -674,3 +674,22 @@ class flatten(TestCase):
             restored[s] = restored[s],
         self.assertEqual(len(restored), 1)
         self.assertEqual(restored[0], [1, [2, [3, [4, 5], 6, []], [7]], [8, 9]])
+
+
+class nested_map(TestCase):
+
+    def test_scalar(self):
+        v = util.nested_map(str, 1)
+        self.assertEqual(v, '1')
+
+    def test_list(self):
+        v = util.nested_map(str, [1, 2, 3])
+        self.assertEqual(v, ['1', '2', '3'])
+
+    def test_tuple(self):
+        v = util.nested_map(str, (1, 2, 3))
+        self.assertEqual(v, ('1', '2', '3'))
+
+    def test_nested(self):
+        v = util.nested_map(int, ('1', ['2', '3'], '4'))
+        self.assertEqual(v, (1, [2, 3], 4))

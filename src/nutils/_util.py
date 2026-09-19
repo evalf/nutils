@@ -222,6 +222,28 @@ class single_or_multiple:
         return retvals[0]
 
 
+def nested_map(f, obj):
+    """Map nested lists/tuples onto function.
+
+    This function is similar to Python's native map, except that it maps not
+    general iterables but nestings of lists and tuples, the structure of which
+    is retained in the return value. Unlike the native map, nested_map is not a
+    generator.
+
+    Example
+    -------
+    >>> nested_map(str, [1, (2, 3)])
+    ['1', ('2', '3')]
+    """
+
+    if type(obj) in (list, tuple):
+        items = [nested_map(f, item) for item in obj]
+        if type(obj) is tuple:
+            return tuple(items)
+        return items
+    return f(obj)
+
+
 def loadlib(name):
     '''Find and load a dynamic library.
 
