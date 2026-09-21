@@ -60,7 +60,6 @@ class Domain:
         bezier = topo.sample('bezier', 2)
         bezier_structure = topo['fluid'].boundary['structure'].sample('bezier', 3)
         bezier_cylinder = topo['fluid'].boundary['cylinder'].sample('bezier', 3)
-        A = topo.points['A'].sample('gauss', 1).eval(geom)
         with export.mplfigure('mesh.jpg', dpi=150) as fig:
             ax = fig.add_subplot(111)
             export.triplot(ax, bezier.eval(geom), hull=bezier.hull)
@@ -370,7 +369,7 @@ def main(domain: Domain = Domain(), solid: Optional[Solid] = Solid(), fluid: Opt
                 im = export.triplot(ax, x/'m', numpy.linalg.norm(u/'m/s', axis=1), tri=bezier.tri, cmap='inferno', clim=(0, vmax/'m/s'))
                 ax.tricontour(*(x/'m').T, bezier.tri, p/pstep, numpy.arange(*numpy.quantile(numpy.ceil(p / pstep), [0,1])),
                     colors='white', linestyles='solid', linewidths=1, alpha=.33)
-                fig.colorbar(im, orientation='horizontal', label=f'velocity [m/s]')
+                fig.colorbar(im, orientation='horizontal', label='velocity [m/s]')
                 export.triplot(ax, xb/'m', hull=bbezier.tri, linewidth=1)
                 ax.set_xlim(0, 2*domain.channel_height/'m')
                 ax.set_ylim(0, domain.channel_height/'m')

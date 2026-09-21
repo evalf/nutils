@@ -5,7 +5,6 @@ from numbers import Integral
 from . import types, numeric, _util as util, transform, element
 from functools import cached_property
 from .elementseq import References
-from .transform import TransformChain
 import abc
 import itertools
 import operator

@@ -641,7 +641,8 @@ def name_of_main():
 def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptname: str = '', outdir: str = '', outuri: str = ''):
     '''Context to add a HtmlLog to the active logger.'''
 
-    import html, base64
+    import html
+    import base64
 
     if not scriptname and (not outdir or outrooturi and not outuri):
         scriptname = name_of_main()
@@ -744,7 +745,7 @@ def cli(f, *, argv=None):
             sys.exit(f"Error: invalid argument {name!r}")
         T = _infer_type(sig.parameters[name])
         if sep is None:
-            if T != bool:
+            if T is not bool:
                 sys.exit(f"Error: argument {name!r} requires a value")
             kwargs[name] = True
         else:

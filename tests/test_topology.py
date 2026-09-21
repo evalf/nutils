@@ -1,15 +1,13 @@
-from nutils import element, mesh, topology, function, transformseq, evaluable, transform, _util as util
+from nutils import element, mesh, topology, function, transformseq, evaluable, _util as util
 from nutils.testing import TestCase, parametrize
 from nutils.elementseq import References
 import numpy
-import copy
 import sys
 import pickle
 import subprocess
 import base64
 import itertools
 import os
-import unittest
 
 
 def as_rounded_list(data):
@@ -1426,8 +1424,8 @@ class SimplexTopology(TestCase, CommonTests, TransformChainsTests, ConformingTes
         simplices = numpy.array([[10,13,25],[10,18,25],[13,21,25],[18,21,25]])
         transforms = transformseq.IndexTransforms(2, len(simplices))
         topo = topology.SimplexTopology('X', simplices, transforms, transforms)
-        self.assertEqual(self.topo.contiguous_simplices.tolist(), self.topo.simplices.tolist())
-        self.assertEqual(self.topo.nverts, 5)
+        self.assertEqual(topo.contiguous_simplices.tolist(), self.topo.simplices.tolist())
+        self.assertEqual(topo.nverts, 5)
 
     def test_boundary(self):
         self.assertIsInstance(self.topo.boundary, topology.SimplexTopology)

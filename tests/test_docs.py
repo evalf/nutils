@@ -3,13 +3,8 @@ from nutils._backports import DocTestFinder
 import unittest
 import importlib
 import os
-import tempfile
 import pathlib
-import functools
 import warnings
-import subprocess
-import sys
-import treelog
 import nutils.testing
 
 

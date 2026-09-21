@@ -1,9 +1,11 @@
 from ._base import BackendNotAvailable
 
 try:
-    from ._mkl import assemble
+    from . import _mkl as _backend
 except BackendNotAvailable:
     try:
-        from ._scipy import assemble
+        from . import _scipy as _backend
     except BackendNotAvailable:
-        from ._numpy import assemble
+        from . import _numpy as _backend
+
+assemble = _backend.assemble

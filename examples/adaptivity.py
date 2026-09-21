@@ -3,7 +3,7 @@
 # dependencies = ["nutils>=9", "matplotlib>=3"]
 # ///
 
-from nutils import mesh, function, export, testing
+from nutils import mesh, export, testing
 from nutils.solver import System
 from nutils.expression_v2 import Namespace
 import numpy

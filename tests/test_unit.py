@@ -1,4 +1,4 @@
-from nutils import testing, unit, types, warnings
+from nutils import testing, unit
 
 
 class Unit(testing.TestCase):
@@ -11,7 +11,6 @@ class Unit(testing.TestCase):
     def check(self, *args, **powers):
         s, v = args
         u = self.U(s)
-        U = type(u)
         self.assertEqual(u, v)
         self.assertEqual(self.U._parse(s).powers, powers)
 

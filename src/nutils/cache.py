@@ -3,8 +3,6 @@ The cache module.
 """
 
 from . import types, _util as util
-import os
-import numpy
 import functools
 import inspect
 import builtins
@@ -12,8 +10,6 @@ import pathlib
 import pickle
 import itertools
 import hashlib
-import abc
-import contextlib
 import treelog as log
 import appdirs
 

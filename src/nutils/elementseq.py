@@ -1,6 +1,6 @@
 """The elementseq module."""
 
-from . import types, numeric, _util as util
+from . import types, numeric
 from .element import Reference
 from .pointsseq import PointsSequence
 from functools import cached_property

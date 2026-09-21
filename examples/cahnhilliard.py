@@ -7,7 +7,7 @@ from nutils import mesh, function, numeric, export, testing
 from nutils.solver import System
 from nutils.expression_v2 import Namespace
 try:
-    from nutils.units.typing import Length, Time, Density, Tension, Energy, Pressure, Velocity
+    from nutils.units.typing import Length, Time, Density, Tension, Energy
 except ModuleNotFoundError as e:
     if hasattr(e, 'add_note'):
         e.add_note("Consider installing the units package via: pip install nutils-units")

@@ -140,7 +140,7 @@ import numpy
 import operator
 import types as builtin_types
 from typing import Any, Callable, Dict, List, Mapping, Optional, overload, Tuple, Union
-from . import function, types, warnings
+from . import function, types
 
 
 # Convenience function to create a constant in ExpressionAST (details in
@@ -852,14 +852,9 @@ class _ExpressionParser:
             indices = self._consume() if self._next.type == 'indices' else None
             if target.type == 'geometry':
                 raise SyntaxError('the gradient syntax `dx_i:u` is no longer supported; use `d(u, x_i)` instead')
-            elif target.type == 'argument':
+            else:
                 assert target.data.startswith('?')
                 raise SyntaxError('the derivative syntax `d?a:u` is no longer supported; use `d(u, ?a)` instead')
-            func = self.parse_var(False)
-            if target.type == 'geometry':
-                return func.grad(indices.data if indices else '', geom, 'grad')
-            else:
-                return func.derivative(arg)
         elif not omitted_indices and self._next.type == 'eye':
             self._consume()
             indices = self._consume() if self._next.type == 'indices' else None
@@ -1054,7 +1049,6 @@ class _ExpressionParser:
             value = self.parse_var(omitted_indices)
 
         while True:
-            stop = self._next.pos
             if self._next_non_whitespace.type in (')', ']', '}', '>', 'EOF', '+', '-', '/', '|', ','):
                 break
             self._consume_assert_whitespace()
@@ -1205,7 +1199,6 @@ class _ExpressionParser:
                 tokens.append(_Token('eye', m_eye, pos))
                 pos += len(m_eye)
                 continue
-            m_normal = _string_startswith(self.expression, self.normal_symbols, start=pos)
             if m_variable:
                 tokens.append(_Token('variable', m_variable, pos))
                 pos += len(m_variable)

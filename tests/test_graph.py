@@ -189,14 +189,11 @@ class InvisibleNode(TestCase):
         self.assertFalse(self.node)
 
     def test_generate_asciitree_nodes(self):
-        cache = {}
         self.assertEqual(list(self.node._generate_asciitree_nodes({}, {None: (f'%X{i}' for i in itertools.count())}, 'S', 'B')), ['S\n'])
 
     def test_collect_graphviz_nodes_edges(self):
-        cache = {}
         nodes = {}
         edges = []
-        cnt = map(str, itertools.count())
         self.assertEqual(self.node._collect_graphviz_nodes_edges({}, map(str, itertools.count()), nodes, edges, None, None), None)
         self.assertEqual(edges, [])
         self.assertEqual(nodes, {})
@@ -223,7 +220,6 @@ class generate(TestCase):
         e = _graph.RegularNode('e', (a,), {}, None, E)
         f = _graph.RegularNode('f', (b, e), {}, None, C)
         g = _graph.RegularNode('g', (a,), {}, None, D)
-        h = _graph.RegularNode('h', (d, f), {}, None, B)
         i = _graph.RegularNode('i', (e, f, g), {}, None, E)
         j = _graph.RegularNode('j', (i,), {}, None)
         self.multiple = j

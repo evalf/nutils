@@ -21,10 +21,9 @@ from .elementseq import References
 from .pointsseq import PointsSequence
 from .sample import Sample
 
-from dataclasses import dataclass
 from functools import reduce
 from os import environ
-from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union, Sequence
+from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Tuple, Union, Sequence
 
 import itertools
 import numpy
@@ -436,7 +435,7 @@ class Topology:
         ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
         if edit is not None:
             warnings.deprecation('edit is deprecated and will be removed in Nutils 11')
-            funcs = edit(func)
+            func = edit(func)
         return self.sample(ischeme, degree).integral(func)
 
     def projection(self, fun: function.Array, onto: function.Array, geometry: function.Array, **kwargs) -> function.Array:
@@ -1048,7 +1047,7 @@ if environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
 
         def __and__(self, other: Any) -> Topology:
             result = super().__and__(other)
-            if type(self) == type(other) and result is NotImplemented:
+            if type(self) is type(other) and result is NotImplemented:
                 raise SkipTest('`{}` does not implement `Topology.__and__`'.format(type(self).__qualname__))
             return result
 
@@ -1059,7 +1058,7 @@ if environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
             return result
 
         def __sub__(self, other: Any) -> Topology:
-            if type(self) == type(other):
+            if type(self) is type(other):
                 raise SkipTest('`{}` does not implement `Topology.__sub__`'.format(type(self).__qualname__))
             else:
                 return NotImplemented
@@ -2440,7 +2439,7 @@ class SimplexTopology(TransformChainsTopology):
     def __init__(self, space: str, simplices: numpy.ndarray, transforms: transformseq.Transforms, opposites: transformseq.Transforms):
         assert isinstance(space, str), f'space={space!r}'
         assert isinstance(simplices, numpy.ndarray), f'simplices={simplices!r}'
-        assert len(simplices), f'simplices is empty'
+        assert len(simplices), 'simplices is empty'
         assert simplices.shape == (len(transforms), transforms.fromdims+1)
         self.simplices = numpy.asarray(simplices)
         assert numpy.greater(self.simplices[:, 1:], self.simplices[:, :-1]).all(), 'nodes should be sorted'

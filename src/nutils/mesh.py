@@ -6,7 +6,7 @@ accompanying geometry function. Meshes can either be generated on the fly, e.g.
 provided at this point.
 """
 
-from . import topology, function, _util as util, element, numeric, transform, transformseq, warnings, types, cache
+from . import topology, function, _util as util, element, numeric, transform, transformseq, types, cache
 from .solver import System
 from .elementseq import References
 from .transform import TransformItem
@@ -17,11 +17,8 @@ from pathlib import Path
 import numpy
 import os
 import itertools
-import re
 import math
 import treelog as log
-import io
-import contextlib
 import tempfile
 import subprocess
 import shutil

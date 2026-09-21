@@ -258,7 +258,7 @@ class Quantity(unittest.TestCase):
 
     def test_hash(self):
         v = SI.Velocity('2m/s')
-        h = hash(v)
+        hash(v)
 
     def test_reshape(self):
         F32 = numpy.array([[1.,2.,3.],[4.,5.,6.]]) * SI.units.N

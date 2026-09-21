@@ -1,17 +1,13 @@
 from nutils import _util as util, warnings, types
-from nutils.testing import TestCase, parametrize, requires
+from nutils.testing import TestCase
 import unittest
 import tempfile
 import pathlib
 import os
 import io
-import contextlib
-import inspect
 import treelog
 import datetime
-import numpy
 import sys
-import contextlib
 import traceback
 
 
@@ -423,7 +419,6 @@ class IDDict(TestCase):
     def test_contains(self):
         self.assertIn(self.a, self.d)
         self.assertIn(self.b, self.d)
-        c = 'c'
         self.assertNotIn('c', self.d)
 
     def test_len(self):
@@ -552,8 +547,11 @@ class replace(TestCase):
             else:
                 return self
 
-    class Ten(Base): pass
-    class Intermediate(Base): pass
+    class Ten(Base):
+        pass
+
+    class Intermediate(Base):
+        pass
 
     @staticmethod
     @util.shallow_replace

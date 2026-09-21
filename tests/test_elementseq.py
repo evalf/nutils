@@ -1,9 +1,8 @@
-from nutils.testing import TestCase, parametrize
+from nutils.testing import TestCase
 import nutils.elementseq
 import nutils.element
 import nutils.warnings
 import nutils.types
-import unittest
 import numpy
 import itertools
 import operator

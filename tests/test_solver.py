@@ -495,7 +495,7 @@ class System(TestCase):
         v = function.field('v', domain.basis('std', degree=1), shape=(2,))
         f = domain.integral(v[:,numpy.newaxis] * u[numpy.newaxis,:] * function.J(geom), degree=2)
         with self.assertRaisesRegex(ValueError, 'System requires a scalar valued function argument'):
-            sys = solver.System(f, trial='u', test='v')
+            solver.System(f, trial='u', test='v')
 
 
 class system_finitestrain(TestCase):

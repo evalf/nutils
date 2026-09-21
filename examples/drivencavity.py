@@ -93,7 +93,7 @@ def main(nelems: int = 32,
     '''
 
     if compatible and (strongbc or etype != 'square'):
-        raise Exception(f'compatible mode requires square elements and weak boundary conditions')
+        raise Exception('compatible mode requires square elements and weak boundary conditions')
 
     domain, geom = mesh.unitsquare(nelems, etype)
     domain.center_hor = domain.trim(geom[1] - .5, maxrefine=0).boundary['trimmed'].sample('bezier', 9)

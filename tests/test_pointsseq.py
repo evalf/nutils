@@ -1,11 +1,10 @@
-from nutils.testing import TestCase, parametrize
+from nutils.testing import TestCase
 import nutils.pointsseq
 import nutils.element
 import nutils.points
 import nutils.warnings
 import nutils.evaluable
 import nutils.types
-import unittest
 import numpy
 import itertools
 import operator

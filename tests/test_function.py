@@ -1,4 +1,4 @@
-from nutils import evaluable, function, mesh, numeric, types, points, transformseq, transform, element, warnings
+from nutils import evaluable, function, mesh, numeric, types, transformseq, element
 from nutils.testing import TestCase, parametrize
 import nutils_poly as poly
 import numpy
@@ -132,7 +132,7 @@ class integral_compatibility(TestCase):
 
     def test_argshapes_shape_mismatch(self):
         with self.assertRaises(Exception):
-            f = function.Argument('a', (2,), dtype=int)[None] + function.Argument('a', (3,), dtype=int)[:, None]
+            function.Argument('a', (2,), dtype=int)[None] + function.Argument('a', (3,), dtype=int)[:, None]
 
 
 @parametrize
@@ -1328,7 +1328,7 @@ class CommonBasis:
         _arg_ndofs = self.basis._arg_ndofs
         # try pickle, unpickle
         s = pickle.dumps(self.basis)
-        basis = pickle.loads(s)
+        pickle.loads(s)
         # confirm that all cached properties is still as they were
         self.assertEqual(_arg_dofs, self.basis._arg_dofs)
         self.assertEqual(_arg_coeffs, self.basis._arg_coeffs)

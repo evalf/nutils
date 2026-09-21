@@ -12,7 +12,6 @@ from typing import Tuple, FrozenSet
 from numbers import Integral
 import numpy
 import functools
-import itertools
 import warnings
 import math
 _ = numpy.newaxis

@@ -67,7 +67,7 @@ Dummy function to test argument parsing.
 
 class choose(method):
 
-    def other(*_):
+    def other(self, *_):
         self.fail("wrong function")
 
     def _cli(self, *args, funcname='main'):
