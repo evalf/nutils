@@ -169,7 +169,7 @@ class Sample(types.Singleton):
         if legacy:
             raise ValueError('legacy mode has been removed in Nutils 10')
 
-        return function.eval(map(self.integral, funcs), arguments)
+        return function.eval([self.integral(func) for func in funcs], arguments)
 
     @util.nutils_dispatch
     def integral(self, __func: function.IntoArray) -> function.Array:
@@ -198,7 +198,7 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function.eval(map(self.bind, funcs), arguments)
+        return function.eval([self.bind(func) for func in funcs], arguments)
 
     def _integral(self, func: function.Array) -> function.Array:
         '''Create Integral object for postponed integration.

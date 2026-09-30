@@ -568,7 +568,7 @@ _check('inflate-range', lambda f: evaluable.Inflate(f, evaluable.Range(evaluable
 _check('inflate-twice', lambda f: evaluable._inflate(evaluable.Inflate(f, evaluable.constant([[0,1],[2,0]]), evaluable.constant(3)), evaluable.constant([0, 1, 0]), evaluable.constant(2), axis=0), lambda a: numpy.einsum('ij,jklm,lmn->ikn', [[1,0,1],[0,1,0]], a, [[[1,0,0],[0,1,0]],[[0,0,1],[1,0,0]]]), ANY(3,5,2,2))
 _check('take', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 2])), lambda a: a[:, [0, 3, 2]], ANY(2, 4))
 _check('take-duplicate', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 0])), lambda a: a[:, [0, 3, 0]], ANY(2, 4))
-_check('choose', lambda a, b, c: evaluable.Choose(a % 2, evaluable.stack([b, c], -1)), lambda a, b, c: numpy.choose(a % 2, [b, c]), INT(3, 3), ANY(3, 3), ANY(3, 3))
+_check('choose', lambda a, b, c: evaluable.Choose(a % 2, (b, c)), lambda a, b, c: numpy.choose(a % 2, [b, c]), INT(3, 3), ANY(3, 3), ANY(3, 3))
 _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], ANY(5, 3))
 _check('normal1d', evaluable.Orthonormal, lambda G, a: numpy.sign(a), numpy.zeros([3,1,0]), NZ(3, 1))
 _check('normal2d', evaluable.Orthonormal, lambda G, a: numeric.normalize(a - numeric.normalize(G[...,0]) * ((a * numeric.normalize(G[...,0])).sum(-1))[...,numpy.newaxis]), POS(3, 2, 1), ANY(3, 2))
@@ -1219,6 +1219,30 @@ class Einsum(TestCase):
         arg = numpy.arange(6)
         with self.assertRaisesRegex(ValueError, 'axis group dimensions cannot be negative'):
             evaluable.einsum('Aij->ijA', evaluable.constant(arg), A=-1)
+
+
+class Choose(TestCase):
+
+    def test_allequal(self):
+        index = evaluable.Argument("index", (), int)
+        arg = evaluable.Argument("arg", (), float)
+        v = evaluable.choose(index, arg, arg, arg).simplified
+        self.assertEqual(v, arg)
+
+    def test_binary(self):
+        index = evaluable.Argument("index", (), int)
+        arg = evaluable.Argument("arg", (), float)
+        v1 = evaluable.choose(index, arg, evaluable.constant(2.0) * arg)
+        v2 = evaluable.choose(index, arg**evaluable.constant(2.0), evaluable.constant(1.0) - arg)
+        for op in "add", "mul":
+            with self.subTest(op):
+                op = getattr(operator, op)
+                v = op(v1, v2).simplified
+                self.assertIsInstance(v, evaluable.Choose)
+                val = evaluable.eval_once(v, arguments={'index': 0, 'arg': 5.})
+                self.assertEqual(val, op(5, 5**2))
+                val = evaluable.eval_once(v, arguments={'index': 1, 'arg': 7.})
+                self.assertEqual(val, op(2*7, (1-7)))
 
 
 @parametrize

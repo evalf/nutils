@@ -133,6 +133,41 @@ def obj2str(obj):
         else str(obj)
 
 
+def flatten(obj):
+    """Flatten nested tuple/list and return slices for reassembly.
+
+    Given an object with arbitrary nestings of lists and/or tuples, return a
+    tuple of flattened items and a tuple of slices that can be used to restore
+    the original nested structure.
+
+    Example
+    -------
+    >>> items = [1, [[2, 3], 4]]
+    >>> flat, slices = flatten(items)
+    >>> flat
+    (1, 2, 3, 4)
+    >>> restore = list(flat)
+    >>> for s in slices:
+    ...     restore[s] = restore[s],
+    >>> len(restore) == 1
+    True
+    >>> restore[0]
+    [1, [[2, 3], 4]]
+    """
+
+    items = []
+    slices = []
+    stack = [obj]
+    while stack:
+        obj = stack.pop()
+        if isinstance(obj, (tuple, list)):
+            stack.extend(reversed(obj))
+            slices.append(slice(len(items), len(items) + len(obj)))
+        else:
+            items.append(obj)
+    return tuple(items), tuple(reversed(slices))
+
+
 class single_or_multiple:
     """
     Method wrapper, converts first positional argument to tuple: tuples/lists
@@ -171,25 +206,42 @@ class single_or_multiple:
 
     def __call__(self, arg, *args, **kwargs):
         if isinstance(arg, map) or inspect.isgenerator(arg):
+            warnings.deprecation(f"calling {self.__wrapped__.__name__} with a "
+                "map or generator argument is deprecated and will be removed in "
+                "Nutils 11; please use a tuple or list instead.")
             arg = tuple(arg)
         # 1. flatten arg = [a, (b, [c, d]), e] to flatarg = [a, b, c, d, e].
-        flatarg = []
-        slices = []
-        stack = [arg]
-        while stack:
-            obj = stack.pop()
-            if isinstance(obj, (tuple, list)):
-                stack.extend(reversed(obj))
-                slices.append((len(flatarg), len(flatarg) + len(obj)))
-            else:
-                flatarg.append(obj)
+        flatarg, slices = flatten(arg)
         # 2. call wrapped function with flattened first argument
-        retvals = tuple(self.__wrapped__(tuple(flatarg), *args, **kwargs))
+        retvals = list(self.__wrapped__(flatarg, *args, **kwargs))
+        assert len(retvals) == len(flatarg)
         # 3. reconstruct nested sequences as tuples
-        for i, j in reversed(slices):
-            retvals = *retvals[:i], retvals[i:j], *retvals[j:]
+        for s in slices:
+            retvals[s] = tuple(retvals[s]),
         assert len(retvals) == 1
         return retvals[0]
+
+
+def nested_map(f, obj):
+    """Map nested lists/tuples onto function.
+
+    This function is similar to Python's native map, except that it maps not
+    general iterables but nestings of lists and tuples, the structure of which
+    is retained in the return value. Unlike the native map, nested_map is not a
+    generator.
+
+    Example
+    -------
+    >>> nested_map(str, [1, (2, 3)])
+    ['1', ('2', '3')]
+    """
+
+    if type(obj) in (list, tuple):
+        items = [nested_map(f, item) for item in obj]
+        if type(obj) is tuple:
+            return tuple(items)
+        return items
+    return f(obj)
 
 
 def loadlib(name):
@@ -715,36 +767,43 @@ def cli(f, *, argv=None):
         print('\n'.join(help))
         sys.exit(0)
 
+    if args and "=" not in args[0]:
+        preset, *args = args
+    else:
+        preset = None
+
+    kwargs = {}
+    string_args = {}
+
     stringly_doc = stringly.util.DocString(f)
     stringly_presets = stringly_doc.presets
     stringly_defaults = stringly_doc.defaults
 
-    if args and '=' not in args[0]:
-        path, *args = args
-        if path in stringly_presets:
-            warnings.deprecation(
-                "Embedded presets are deprecated and will be removed in Nutils"
-                "11. Consider copying the 'arguments' output to a .yml file and"
-                "using that as a first argument instead.")
-            kwargs = stringly_presets[path]
-        else:
-            kwargs = load(path, sig).arguments
-    else:
-        if stringly_defaults:
-            warnings.deprecation(
-                "Embedded function defaults are deprecated and will be removed"
-                "in Nutils 11. Consider changing them into actual default values"
-                "of the Python function.")
-            kwargs = stringly_defaults
-        else:
-            kwargs = {}
+    if stringly_defaults:
+        warnings.deprecation(
+            "Embedded function defaults are deprecated and will be removed "
+            "in Nutils 11. Consider changing them into actual default values "
+            "of the Python function.")
+        string_args.update(stringly_defaults)
+
+    if preset in stringly_presets:
+        warnings.deprecation(
+            "Embedded presets are deprecated and will be removed in Nutils "
+            "11. Consider copying the 'arguments' output to a .yml file and "
+            "using that as a first argument instead.")
+        string_args.update(stringly_presets[preset])
+    elif preset:
+        kwargs.update(load(preset, sig).arguments)
 
     for arg in args:
-        name, sep, value = arg.partition('=')
+        name, sep, value = arg.partition("=")
+        string_args[name] = sep and value
+
+    for name, value in string_args.items():
         if name not in sig.parameters:
             sys.exit(f"Error: invalid argument {name!r}")
         T = _infer_type(sig.parameters[name])
-        if sep is None:
+        if value is None:
             if T is not bool:
                 sys.exit(f"Error: argument {name!r} requires a value")
             kwargs[name] = True
@@ -812,22 +871,52 @@ def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]], condense: boo
 
 
 def nutils_dispatch(f):
-    '''Decorator for nutils-dispatching based on argument types.'''
+    '''Decorator for nutils-dispatching based on argument types.
+
+    When a function that is decorated by @nutils_dispatch is called, then all
+    of the calling arguments are checked for the existence of a
+    ``__nutils_dispatch__`` class method, entering lists and tuples an
+    arbitrary nestings thereof.
+
+    The ``__nutils_dispatch__`` method takes three arguments: the decorated
+    function object, the positional arguments tuple, and the keyword arguments
+    dictionary. Taking a greedy approach, the first discovered method that does
+    not return ``NotImplemented`` cuts the search short and its return value is
+    returned instead of the wrapped function, which in a typical application
+    will have been called via the dispatch handler instead.
+
+    Note that the function object that is passed to ``__nutils_dispatch__`` is
+    the function _after_ decoration. This serves two purposes:
+
+     1. When a handler strips its object wrappers and calls the function, it
+        repeats the above search, resulting in automatic recursion in case
+        there are multiple dispatcheable frameworks in play at once.
+
+     2. It makes that the dispatch function can match the function object
+        against those present in the module namespace. Note, however, this only
+        works if the function is not modified further later on. It is therefore
+        important that the ``nutils_dispatch`` is the last (top) decorator
+        applied to a function.
+    '''
 
     sig = inspect.signature(f)
 
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
-        seen = set()
         bound = sig.bind(*args, **kwargs)
         bound.apply_defaults()
-        for arg in bound.args:
-            T = type(arg)
-            if hasattr(T, '__nutils_dispatch__') and T not in seen:
+        types = {}
+        stack = list(bound.args)
+        for item in stack:
+            if isinstance(item, (list, tuple)):
+                stack.extend(item)
+            else:
+                types[type(item)] = None  # add type to ordered set
+        for T in types:
+            if hasattr(T, '__nutils_dispatch__'):
                 retval = T.__nutils_dispatch__(wrapper, bound.args, bound.kwargs)
                 if retval is not NotImplemented:
                     return retval
-                seen.add(T)
         return f(*args, **kwargs)
 
     return wrapper

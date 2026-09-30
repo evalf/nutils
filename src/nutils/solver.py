@@ -21,7 +21,7 @@ u,k + v f`` and solve for ``res == 0`` using ``solve_linear``:
 >>> res = domain.integral('(basis_n,i u_,i + basis_n) d:x' @ ns, degree=2)
 >>> lhs = solver.solve_linear('lhs', residual=res, constrain=cons)
 solve > solving for argument lhs (36) using direct method
-solve > residual norm: 1.5e-15
+solve > residual norm: ...e-15
 
 The coefficients ``lhs`` represent the solution to the Poisson problem.
 
