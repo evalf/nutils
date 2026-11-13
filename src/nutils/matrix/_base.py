@@ -223,13 +223,14 @@ class Matrix:
         solve = self.getprecon(precon, **args, **preconargs)
         return solve(rhs)
 
-    def _solver_arnoldi(self, rhs, atol, precon='direct', truncate=None, preconargs={}, **args):
+    def _solver_arnoldi(self, rhs, atol, precon='direct', truncate=None, miniter=1, maxiter=float("inf"), preconargs={}, **args):
         solve = self.getprecon(precon, **args, **preconargs)
         lhs = numpy.zeros_like(rhs)
         res = rhs
         resnorm = numpy.linalg.norm(res, axis=0).max()
         krylov = collections.deque(maxlen=truncate)  # unlimited if truncate is None
-        while resnorm > atol:
+        iiter = 0
+        while iiter < miniter or iiter < maxiter and resnorm > atol:
             k = solve(res)
             v = self @ k
             for k_, v_, v2_ in krylov:  # orthogonolize v (modified Gramm-Schmidt)
@@ -252,6 +253,7 @@ class Matrix:
             lhs = newlhs
             resnorm = newresnorm
             krylov.append((k, v, v2))
+            iiter += 1
         return lhs
 
     def submatrix(self, rows, cols):

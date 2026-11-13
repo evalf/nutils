@@ -315,6 +315,7 @@ backend('numpy',
     backend='numpy',
     solve_args=[
         dict(solver='arnoldi'),
+        dict(solver='arnoldi', miniter=0),
         dict(solver='direct', atol=1e-8),
         dict(solver='arnoldi', atol=1e-5, precon='diag'),
     ],
