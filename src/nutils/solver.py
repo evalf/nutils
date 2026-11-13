@@ -437,7 +437,7 @@ class System:
 
     @cache.function
     @log.withcontext
-    def solve(self, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, tol: float = 0., miniter: int = 0, maxiter: Optional[int] = None, method: Optional[Callable[...,Union[MethodIter,MethodValue]]] = None) -> Tuple[ArrayDict, float]:
+    def solve(self, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, tol: float = 0., miniter: int = 1, maxiter: Optional[int] = None, method: Optional[Callable[...,Union[MethodIter,MethodValue]]] = None) -> Tuple[ArrayDict, float]:
         '''Solve the system.
 
         Determines the trial arguments for which the derivatives of the
