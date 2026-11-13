@@ -203,10 +203,6 @@ class Matrix:
             raise MatrixError('right-hand size shape does not match matrix shape')
         rhsnorm = numpy.linalg.norm(rhs, axis=0).max()
         atol = max(atol, rtol * rhsnorm)
-        if rhsnorm <= atol:
-            if rhsnorm: # rhs != 0; solution is inexact
-                treelog.warning('skipping linear solver because initial vector is within tolerance')
-            return numpy.zeros_like(rhs)
         solver_method, solver_name = self._method('solver', solver)
         treelog.debug('solving {} dof system to {} using {} solver'.format(self.shape[0], 'tolerance {:.0e}'.format(atol) if atol else 'machine precision', solver_name))
         try:
