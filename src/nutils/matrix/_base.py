@@ -229,7 +229,7 @@ class Matrix:
         res = rhs
         resnorm = numpy.linalg.norm(res, axis=0).max()
         krylov = collections.deque(maxlen=truncate)  # unlimited if truncate is None
-        while resnorm > atol:
+        while True:
             k = solve(res)
             v = self @ k
             for k_, v_, v2_ in krylov:  # orthogonolize v (modified Gramm-Schmidt)
@@ -251,6 +251,8 @@ class Matrix:
                 treelog.debug('residual decreased by {:.1f} orders using {} krylov vectors'.format(numpy.log10(resnorm/newresnorm), len(krylov)))
             lhs = newlhs
             resnorm = newresnorm
+            if resnorm <= atol:
+                break
             krylov.append((k, v, v2))
         return lhs
 
