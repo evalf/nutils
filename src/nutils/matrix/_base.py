@@ -97,7 +97,7 @@ class Matrix:
         supp[row[abs(data) > tol]] = True
         return supp
 
-    def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='arnoldi', atol=0., rtol=0., **solverargs):
+    def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', atol=0., rtol=0., **solverargs):
         '''Solve system given right hand side vector and/or constraints.
 
         Args
