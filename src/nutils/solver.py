@@ -305,6 +305,7 @@ class System:
         v = numpy.concatenate([arguments[t].ravel() for t in self.trials])
         free = numpy.isnan(v)
         if x is None:
+            arguments = arguments.copy()
             assert not free.any()
             free = return_free and numpy.ones_like(free)
         else:
