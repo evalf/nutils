@@ -201,6 +201,8 @@ class Matrix:
             raise MatrixError('constrained matrix is not square: {}x{}'.format(*self.shape))
         if rhs.shape[0] != self.shape[0]:
             raise MatrixError('right-hand size shape does not match matrix shape')
+        if not self.shape[0]: # 0 x 0 matrix
+            return numpy.zeros([0], self.dtype)
         rhsnorm = numpy.linalg.norm(rhs, axis=0).max()
         atol = max(atol, rtol * rhsnorm)
         solver_method, solver_name = self._method('solver', solver)
