@@ -259,14 +259,14 @@ class System:
             self.__value = value
 
         self.__cache = {}
+        self.__initargs = (self.__value if self.is_symmetric else self.__block_residual), self.trials
 
     @property
     def __nutils_hash__(self):
-        return types.nutils_hash(('System', self.trials, self.__value if self.is_symmetric else self.__block_residual))
+        return types.nutils_hash(('solver.System', *self.__initargs))
 
     def __reduce__(self):
-        initargs = self.__value if self.is_symmetric else self.__block_residual, self.trials
-        return System, initargs
+        return System, self.__initargs
 
     def deconstruct(self, arguments, constrain):
         arguments = arguments.copy()
