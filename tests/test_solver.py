@@ -105,7 +105,7 @@ class laplace_field(TestCase):
         u = function.field('u', basis)
         v = function.field('v', basis)
         sqr = domain.boundary['left'].integral(u**2, degree=2)
-        self.cons = solver.optimize('u,', sqr)
+        self.cons = solver.optimize('u,', sqr, droptol=1e-10)
         self.residual = domain.integral((v.grad(geom) @ u.grad(geom))*function.J(geom), degree=2) \
             + domain.boundary['top'].integral(v*function.J(geom), degree=2)
 
