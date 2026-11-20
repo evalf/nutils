@@ -6,6 +6,7 @@ import contextlib
 import tempfile
 import logging
 import pickle
+import itertools
 
 
 @contextlib.contextmanager
@@ -105,7 +106,7 @@ class laplace_field(TestCase):
         u = function.field('u', basis)
         v = function.field('v', basis)
         sqr = domain.boundary['left'].integral(u**2, degree=2)
-        self.cons = solver.optimize('u,', sqr)
+        self.cons = solver.optimize('u,', sqr, droptol=1e-10)
         self.residual = domain.integral((v.grad(geom) @ u.grad(geom))*function.J(geom), degree=2) \
             + domain.boundary['top'].integral(v*function.J(geom), degree=2)
 
@@ -340,7 +341,47 @@ class theta_time(TestCase):
 
 class System(TestCase):
 
-    def assertPickle(self, sys, args, res):
+    def check_system(self, f, is_symmetric, is_linear, is_constant_matrix):
+        sys = solver.System(f, trial="u", test="v" if not is_symmetric else None)
+        self.assertEqual(sys.is_symmetric, is_symmetric)
+        self.assertEqual(sys.is_linear, is_linear)
+        self.assertEqual(sys.is_constant_matrix, is_constant_matrix)
+        args = {'u': numpy.arange(10, dtype=float), 't': 5}
+        J = f.derivative('u' if is_symmetric else 'v')
+        expect_jac = J.derivative('u').eval(args)
+        expect_res = J.eval(args)
+        if is_symmetric:
+            expect_val = f.eval(args)
+        # call the various assemble_ methods in different orders
+        steps = range(5 if is_symmetric else 3)
+        for order in itertools.permutations(steps):
+            sys._System__cache.clear()
+            oldjac = None
+            for i in order:
+                if i == 0:
+                    jac = sys.assemble_jacobian(arguments=args)
+                    self.assertAllAlmostEqual(jac.export('dense'), expect_jac)
+                elif i == 1:
+                    res = sys.assemble_residual(arguments=args)
+                    self.assertAllAlmostEqual(res, expect_res)
+                elif i == 2:
+                    jac, res = sys.assemble_jacobian_residual(arguments=args)
+                    self.assertAllAlmostEqual(jac.export('dense'), expect_jac)
+                    self.assertAllAlmostEqual(res, expect_res)
+                elif i == 3:
+                    val = sys.assemble_value(arguments=args)
+                    self.assertAlmostEqual(val, expect_val)
+                elif i == 4:
+                    jac, res, val = sys.assemble_jacobian_residual_value(arguments=args)
+                    self.assertAllAlmostEqual(jac.export('dense'), expect_jac)
+                    self.assertAllAlmostEqual(res, expect_res)
+                    self.assertAlmostEqual(val, expect_val)
+                if is_constant_matrix and i in (0, 2, 4):
+                    if oldjac is None:
+                        oldjac = jac
+                    else:
+                        self.assertIs(jac, oldjac)
+        # check nutils_hash & pickle
         h = types.nutils_hash(sys)
         s = pickle.dumps(sys)
         sys_ = pickle.loads(s)
@@ -354,47 +395,13 @@ class System(TestCase):
         u = function.field('u', domain.basis('std', degree=1))
         v = function.field('v', domain.basis('std', degree=1))
         f = domain.integral(v * (1 + u) * function.J(geom), degree=2)
-        sys = solver.System(f, trial='u', test='v')
-        self.assertTrue(sys.is_linear)
-        self.assertFalse(sys.is_symmetric)
-        self.assertTrue(sys.is_constant_matrix)
-        self.assertEqual(sys.trials, ('u',))
-        self.assertEqual(sys.trial_shapes, ((10,),))
-        args = {'u': numpy.arange(10, dtype=float)}
-        mat = sys.assemble_jacobian(arguments=args)
-        vec = sys.assemble_residual(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
-        self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
-        newargs = {'u': numpy.ones(10)}
-        mat_, vec_, val_ = sys.assemble(arguments=newargs)
-        self.assertIs(mat_, mat)
-        self.assertAllAlmostEqual(vec_, f.derivative('v').eval(newargs))
-        self.assertIs(val_, None)
-        self.assertPickle(sys, args, vec)
+        self.check_system(f, is_symmetric=False, is_linear=True, is_constant_matrix=True)
 
     def test_constant_symmetric(self):
         domain, geom = mesh.rectilinear([9])
         u = function.field('u', domain.basis('std', degree=1))
         f = domain.integral((1 + u - u**2) * function.J(geom), degree=2)
-        sys = solver.System(f, trial='u')
-        self.assertTrue(sys.is_linear)
-        self.assertTrue(sys.is_symmetric)
-        self.assertTrue(sys.is_constant_matrix)
-        self.assertEqual(sys.trials, ('u',))
-        self.assertEqual(sys.trial_shapes, ((10,),))
-        args = {'u': numpy.arange(10, dtype=float)}
-        mat = sys.assemble_jacobian(arguments=args)
-        vec = sys.assemble_residual(arguments=args)
-        val = sys.assemble_value(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), args))
-        self.assertAllAlmostEqual(vec, f.derivative('u').eval(args))
-        self.assertAlmostEqual(val, f.eval(args))
-        newargs = {'u': numpy.ones(10)}
-        mat_, vec_, val_ = sys.assemble(arguments=newargs)
-        self.assertIs(mat_, mat)
-        self.assertAllAlmostEqual(vec_, f.derivative('u').eval(newargs))
-        self.assertAlmostEqual(val_, f.eval(newargs))
-        self.assertPickle(sys, args, vec)
+        self.check_system(f, is_symmetric=True, is_linear=True, is_constant_matrix=True)
 
     def test_constant_matrix(self):
         domain, geom = mesh.rectilinear([9])
@@ -402,23 +409,7 @@ class System(TestCase):
         v = function.field('v', domain.basis('std', degree=1))
         t = function.field('t')
         f = domain.integral(v * (t + u) * function.J(geom), degree=2)
-        sys = solver.System(f, trial='u', test='v')
-        self.assertTrue(sys.is_linear)
-        self.assertFalse(sys.is_symmetric)
-        self.assertTrue(sys.is_constant_matrix)
-        self.assertEqual(sys.trials, ('u',))
-        self.assertEqual(sys.trial_shapes, ((10,),))
-        args = {'u': numpy.arange(10, dtype=float), 't': 5}
-        mat = sys.assemble_jacobian(arguments=args)
-        vec = sys.assemble_residual(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
-        self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
-        newargs = {'u': numpy.ones(10), 't': -1}
-        mat_, vec_, val_ = sys.assemble(arguments=newargs)
-        self.assertIs(mat_, mat)
-        self.assertAllAlmostEqual(vec_, f.derivative('v').eval(newargs))
-        self.assertIs(val_, None)
-        self.assertPickle(sys, args, vec)
+        self.check_system(f, is_symmetric=False, is_linear=True, is_constant_matrix=True)
 
     def test_linear(self):
         domain, geom = mesh.rectilinear([9])
@@ -426,22 +417,7 @@ class System(TestCase):
         v = function.field('v', domain.basis('std', degree=1))
         t = function.field('t')
         f = domain.integral(v * (u * t + 1) * function.J(geom), degree=2)
-        sys = solver.System(f, trial='u', test='v')
-        self.assertTrue(sys.is_linear)
-        self.assertFalse(sys.is_symmetric)
-        self.assertFalse(sys.is_constant_matrix)
-        self.assertEqual(sys.trials, ('u',))
-        self.assertEqual(sys.trial_shapes, ((10,),))
-        args = {'u': numpy.arange(10, dtype=float), 't': 5}
-        mat = sys.assemble_jacobian(arguments=args)
-        vec = sys.assemble_residual(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
-        self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
-        mat_, vec_, val_ = sys.assemble(arguments=args)
-        self.assertAllAlmostEqual(mat_.export('dense'), mat.export('dense'))
-        self.assertAllAlmostEqual(vec_, vec)
-        self.assertIs(val_, None)
-        self.assertPickle(sys, args, vec)
+        self.check_system(f, is_symmetric=False, is_linear=True, is_constant_matrix=False)
 
     def test_nonlinear(self):
         domain, geom = mesh.rectilinear([9])
@@ -449,45 +425,13 @@ class System(TestCase):
         v = function.field('v', domain.basis('std', degree=1))
         t = function.field('t')
         f = domain.integral(v * (u**2 + t) * function.J(geom), degree=2)
-        sys = solver.System(f, trial='u', test='v')
-        self.assertFalse(sys.is_linear)
-        self.assertFalse(sys.is_symmetric)
-        self.assertFalse(sys.is_constant_matrix)
-        self.assertEqual(sys.trials, ('u',))
-        self.assertEqual(sys.trial_shapes, ((10,),))
-        args = {'u': numpy.arange(10, dtype=float), 't': 5}
-        mat = sys.assemble_jacobian(arguments=args)
-        vec = sys.assemble_residual(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('v').derivative('u'), args))
-        self.assertAllAlmostEqual(vec, f.derivative('v').eval(args))
-        mat_, vec_, val_ = sys.assemble(arguments=args)
-        self.assertAllAlmostEqual(mat_.export('dense'), mat.export('dense'))
-        self.assertAllAlmostEqual(vec_, vec)
-        self.assertAlmostEqual(val_, None)
-        self.assertPickle(sys, args, vec)
+        self.check_system(f, is_symmetric=False, is_linear=False, is_constant_matrix=False)
 
     def test_nonlinear_symmetric(self):
         domain, geom = mesh.rectilinear([9])
         u = function.field('u', domain.basis('std', degree=1))
         f = domain.integral(numpy.exp(u) * function.J(geom), degree=2)
-        sys = solver.System(f, trial='u')
-        self.assertFalse(sys.is_linear)
-        self.assertTrue(sys.is_symmetric)
-        self.assertFalse(sys.is_constant_matrix)
-        self.assertEqual(sys.trials, ('u',))
-        self.assertEqual(sys.trial_shapes, ((10,),))
-        args = {'u': numpy.arange(10, dtype=float)}
-        mat = sys.assemble_jacobian(arguments=args)
-        vec = sys.assemble_residual(arguments=args)
-        val = sys.assemble_value(arguments=args)
-        self.assertAllAlmostEqual(mat.export('dense'), function.eval(f.derivative('u').derivative('u'), args))
-        self.assertAllAlmostEqual(vec, f.derivative('u').eval(args))
-        self.assertAlmostEqual(val, f.eval(args))
-        mat_, vec_, val_ = sys.assemble(arguments=args)
-        self.assertAllAlmostEqual(mat_.export('dense'), mat.export('dense'))
-        self.assertAllAlmostEqual(vec_, vec)
-        self.assertAlmostEqual(val_, val)
-        self.assertPickle(sys, args, vec)
+        self.check_system(f, is_symmetric=True, is_linear=False, is_constant_matrix=False)
 
     def test_nonscalar(self):
         domain, geom = mesh.rectilinear([9])

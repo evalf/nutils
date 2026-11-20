@@ -97,7 +97,7 @@ class Matrix:
         supp[row[abs(data) > tol]] = True
         return supp
 
-    def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='arnoldi', atol=0., rtol=0., **solverargs):
+    def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', atol=0., rtol=0., **solverargs):
         '''Solve system given right hand side vector and/or constraints.
 
         Args
@@ -201,12 +201,10 @@ class Matrix:
             raise MatrixError('constrained matrix is not square: {}x{}'.format(*self.shape))
         if rhs.shape[0] != self.shape[0]:
             raise MatrixError('right-hand size shape does not match matrix shape')
+        if not self.shape[0]: # 0 x 0 matrix
+            return numpy.zeros([0], self.dtype)
         rhsnorm = numpy.linalg.norm(rhs, axis=0).max()
         atol = max(atol, rtol * rhsnorm)
-        if rhsnorm <= atol:
-            if rhsnorm: # rhs != 0; solution is inexact
-                treelog.warning('skipping linear solver because initial vector is within tolerance')
-            return numpy.zeros_like(rhs)
         solver_method, solver_name = self._method('solver', solver)
         treelog.debug('solving {} dof system to {} using {} solver'.format(self.shape[0], 'tolerance {:.0e}'.format(atol) if atol else 'machine precision', solver_name))
         try:
@@ -233,7 +231,7 @@ class Matrix:
         res = rhs
         resnorm = numpy.linalg.norm(res, axis=0).max()
         krylov = collections.deque(maxlen=truncate)  # unlimited if truncate is None
-        while resnorm > atol:
+        while True:
             k = solve(res)
             v = self @ k
             for k_, v_, v2_ in krylov:  # orthogonolize v (modified Gramm-Schmidt)
@@ -255,6 +253,8 @@ class Matrix:
                 treelog.debug('residual decreased by {:.1f} orders using {} krylov vectors'.format(numpy.log10(resnorm/newresnorm), len(krylov)))
             lhs = newlhs
             resnorm = newresnorm
+            if resnorm <= atol:
+                break
             krylov.append((k, v, v2))
         return lhs
 
