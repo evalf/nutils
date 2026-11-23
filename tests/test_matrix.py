@@ -239,7 +239,7 @@ class backend(testing.TestCase):
         rhs = numpy.arange(self.matrix.shape[0])
         for args in self.solve_args:
             for lhs0 in None, numpy.arange(rhs.size)/rhs.size:
-                with self.subTest('{},lhs0={}'.format(args.get('solver', 'direct'), 'none' if lhs0 is None else 'single')):
+                with self.subTest('{},lhs0={}'.format(args['solver'], 'none' if lhs0 is None else 'single')):
                     lhs = self.matrix.solve(rhs, lhs0=lhs0, **args)
                     res = numpy.linalg.norm(self.matrix @ lhs - rhs)
                     self.assertLess(res, args.get('atol', 1e-10))
@@ -256,13 +256,13 @@ class backend(testing.TestCase):
         singularmatrix = matrix.diag(numpy.arange(self.n)-self.n//2)
         rhs = numpy.ones(self.n)
         for args in self.solve_args:
-            with self.subTest(args.get('solver', 'direct')), self.assertRaises(matrix.MatrixError):
+            with self.subTest(args['solver']), self.assertRaises(matrix.MatrixError):
                 singularmatrix.solve(rhs, **dict(args, atol=.1))
 
     def test_solve_repeated(self):
         rhs = numpy.arange(self.matrix.shape[0])
         for args in self.solve_args:
-            with self.subTest(args.get('solver', 'direct')):
+            with self.subTest(args['solver']):
                 for i in range(3):
                     lhs = self.matrix.solve(rhs, **args)
                     res = numpy.linalg.norm(self.matrix @ lhs - rhs)
@@ -274,7 +274,7 @@ class backend(testing.TestCase):
         cons[0] = 10
         cons[-1] = 20
         for args in self.solve_args:
-            with self.subTest(args.get('solver', 'direct')):
+            with self.subTest(args['solver']):
                 lhs = self.matrix.solve(constrain=cons, **args)
                 self.assertEqual(lhs[0], cons[0])
                 self.assertEqual(lhs[-1], cons[-1])
@@ -312,45 +312,68 @@ class backend(testing.TestCase):
 
 
 backend('numpy',
-        backend='numpy',
-        solve_args=[{},
-                    dict(solver='direct', atol=1e-8),
-                    dict(atol=1e-5, precon='diag')])
+    backend='numpy',
+    solve_args=[
+        dict(solver='arnoldi'),
+        dict(solver='arnoldi', miniter=0),
+        dict(solver='direct', atol=1e-8),
+        dict(solver='arnoldi', atol=1e-5, precon='diag'),
+    ],
+)
 
 backend('numpy:complex',
-        backend='numpy',
-        complex=True,
-        solve_args=[{},
-                    dict(solver='direct', atol=1e-8)])
+    backend='numpy',
+    complex=True,
+    solve_args=[
+        dict(solver='arnoldi'),
+        dict(solver='direct', atol=1e-8),
+    ],
+)
 
 backend('scipy',
-        backend='scipy',
-        solve_args=[{},
-                    dict(solver='direct', atol=1e-8),
-                    dict(atol=1e-5, precon='diag', truncate=5),
-                    dict(solver='gmres', atol=1e-5, restart=100, precon='spilu0'),
-                    dict(solver='gmres', atol=1e-5, precon='splu'),
-                    dict(solver='cg', atol=1e-5, precon='diag')] + [
-            dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres')])
+    backend='scipy',
+    solve_args=[
+        dict(solver='arnoldi'),
+        dict(solver='arnoldi', atol=1e-5, precon='diag', truncate=5),
+        dict(solver='bicg', atol=1e-5),
+        dict(solver='bicgstab', atol=1e-5),
+        dict(solver='cg', atol=1e-5),
+        dict(solver='cg', atol=1e-5, precon='diag'),
+        dict(solver='cgs', atol=1e-5),
+        dict(solver='direct', atol=1e-8),
+        dict(solver='gmres', atol=1e-5, precon='splu'),
+        dict(solver='gmres', atol=1e-5, restart=100, precon='spilu0'),
+        dict(solver='lgmres', atol=1e-5),
+    ],
+)
 
 backend('scipy:complex',
-        backend='scipy',
-        complex=True,
-        solve_args=[{},
-                    dict(solver='direct', atol=1e-8)])
+    backend='scipy',
+    complex=True,
+    solve_args=[
+        dict(solver='arnoldi'),
+        dict(solver='direct', atol=1e-8),
+    ],
+)
 
 backend('mkl',
-        backend='mkl',
-        solve_args=[{},
-                    dict(solver='direct', atol=1e-8),
-                    dict(solver='direct', symmetric=True, atol=1e-8),
-                    dict(atol=1e-5, precon='diag', truncate=5),
-                    dict(solver='fgmres', atol=1e-8),
-                    dict(solver='fgmres', atol=1e-8, precon='diag')])
+    backend='mkl',
+    solve_args=[
+        dict(solver='arnoldi'),
+        dict(solver='arnoldi', atol=1e-5, precon='diag', truncate=5),
+        dict(solver='direct', atol=1e-8),
+        dict(solver='direct', symmetric=True, atol=1e-8),
+        dict(solver='fgmres', atol=1e-8),
+        dict(solver='fgmres', atol=1e-8, precon='diag'),
+    ],
+)
 
 backend('mkl:complex',
-        backend='mkl',
-        complex=True,
-        solve_args=[{},
-                    dict(solver='direct', atol=1e-8),
-                    dict(solver='direct', symmetric=True, atol=1e-8)])
+    backend='mkl',
+    complex=True,
+    solve_args=[
+        dict(solver='arnoldi'),
+        dict(solver='direct', atol=1e-8),
+        dict(solver='direct', symmetric=True, atol=1e-8),
+    ],
+)

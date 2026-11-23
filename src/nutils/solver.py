@@ -250,23 +250,40 @@ class System:
         block_residual = [evaluable._flat(res) for res in residuals]
         block_jacobian = [[evaluable._flat(evaluable.derivative(res, arg).simplified, 2) for arg in self.trial_args] for res in block_residual]
 
+        # General case:
+        # - jacobian J(trial, other)
+        # - residual r(trial, other)
+        # - functional (if is_symmetric) f(trial, other)
         self.is_linear = not any(arg.name in self.trials for row in block_jacobian for col in row for arg in col.arguments)
+        # Linear case:
+        # - jacobian J(other)
+        # - residual r0(other) + J(other) trial
+        # - functional (if is_symmetric) f0(other) + r0(other) trial + 0.5 trial J(other) trial
         self.is_constant_matrix = self.is_linear and not any(col.arguments for row in block_jacobian for col in row)
+        # Constant matrix case:
+        # - jacobian J
+        # - residual r0(other) + J trial
+        # - functional (if is_symmetric) f0(other) + r0(other) trial + 0.5 trial J trial
 
         self.__block_jacobian = tuple(tuple(map(evaluable.as_csr, row)) for row in block_jacobian)
         self.__block_residual = tuple(block_residual)
         if self.is_symmetric:
             self.__value = value
+        if self.is_linear:
+            z = dict(zip(self.trials, map(evaluable.zeros_like, self.trial_args)))
+            self.__block_residual0 = tuple(evaluable.replace_arguments(vector, z).simplified for vector in block_residual)
+            if self.is_symmetric:
+                self.__value0 = evaluable.replace_arguments(value, z).simplified
 
         self.__cache = {}
+        self.__initargs = (self.__value if self.is_symmetric else self.__block_residual), self.trials
 
     @property
     def __nutils_hash__(self):
-        return types.nutils_hash(('System', self.trials, self.__value if self.is_symmetric else self.__block_residual))
+        return types.nutils_hash(('solver.System', *self.__initargs))
 
     def __reduce__(self):
-        initargs = self.__value if self.is_symmetric else self.__block_residual, self.trials
-        return System, initargs
+        return System, self.__initargs
 
     def deconstruct(self, arguments, constrain):
         arguments = arguments.copy()
@@ -305,6 +322,7 @@ class System:
         v = numpy.concatenate([arguments[t].ravel() for t in self.trials])
         free = numpy.isnan(v)
         if x is None:
+            arguments = arguments.copy()
             assert not free.any()
             free = return_free and numpy.ones_like(free)
         else:
@@ -312,32 +330,37 @@ class System:
             arguments = arguments | {t: v[s].reshape(shape) for t, shape, s in zip(self.trials, self.trial_shapes, self.__trial_slices)}
         return (arguments, free) if return_free else arguments
 
+    def _cached_compile(self, *args):
+        key = "eval", *args
+        if (eval_ := self.__cache.get(key)) is None:
+            eval_ = evaluable.compile(args if len(args) > 1 else args[0])
+            self.__cache[key] = eval_
+        return eval_
+
     @log.withcontext
     def assemble_jacobian(self, arguments: ArrayDict, x=None):
         arguments, free = self.construct(arguments, x, return_free=True)
-        key = 'jacobian'
-        jacobian = self.__cache.get(key)
-        if jacobian is None:
+        if (jac := self.__cache.get("jac")) is None:
+            eval_ = self._cached_compile(self.__block_jacobian)
+            jacblocks = eval_(arguments)
+            jac = matrix.assemble_block_csr(jacblocks)
             if self.is_constant_matrix:
-                jacobian = matrix.assemble_block_csr(evaluable.eval_once(self.__block_jacobian))
-                self.__cache[key] = jacobian
-            else:
-                eval_ = evaluable.compile(self.__block_jacobian)
-                jacobian = matrix.assemble_block_csr(eval_(arguments))
-                self.__cache[key] = eval_
-        elif not self.is_constant_matrix:
-            jacobian = matrix.assemble_block_csr(jacobian(arguments))
-        return jacobian.submatrix(free, free)
+                self.__cache["jac"] = jac
+        return jac.submatrix(free, free)
 
     @log.withcontext
     def assemble_residual(self, arguments: ArrayDict, x=None):
         arguments, free = self.construct(arguments, x, return_free=True)
-        key = 'residual'
-        residual = self.__cache.get(key)
-        if residual is None:
-            residual = evaluable.compile(self.__block_residual)
-            self.__cache[key] = residual
-        res = numpy.concatenate(residual(arguments))
+        if (jac := self.__cache.get("jac")) is None:
+            eval_ = self._cached_compile(self.__block_residual)
+            resblocks = eval_(arguments)
+            res = numpy.concatenate(resblocks)
+        else:
+            trial = numpy.concatenate([arguments.pop(t).ravel() for t in self.trials])
+            eval_ = self._cached_compile(self.__block_residual0)
+            res0blocks = eval_(arguments)
+            res0 = numpy.concatenate(res0blocks)
+            res = res0 + jac @ trial
         return res[free]
 
     @log.withcontext
@@ -345,42 +368,38 @@ class System:
         if not self.is_symmetric:
             raise Exception('value is not defined')
         arguments = self.construct(arguments, x)
-        key = 'value'
-        value = self.__cache.get(key)
-        if value is None:
-            value = evaluable.compile(self.__value)
-            self.__cache[key] = value
-        return value(arguments)
+        if (jac := self.__cache.get("jac")) is None:
+            eval_ = self._cached_compile(self.__value)
+            val = eval_(arguments)
+        else:
+            trial = numpy.concatenate([arguments.pop(t).ravel() for t in self.trials])
+            eval_ = self._cached_compile(self.__block_residual0, self.__value0)
+            res0blocks, val0 = eval_(arguments)
+            res0 = numpy.concatenate(res0blocks)
+            val = val0 + res0 @ trial + 0.5 * ((jac @ trial) @ trial)
+        return val
 
     @log.withcontext
     def assemble_jacobian_residual(self, arguments: ArrayDict, x=None):
         arguments, free = self.construct(arguments, x, return_free=True)
-        key = 'jacobian_residual'
-        f = self.__cache.get(key)
-        if self.is_linear:
-            if f is None:
-                z = dict(zip(self.trials, map(evaluable.zeros_like, self.trial_args)))
-                block_residual = tuple(evaluable.replace_arguments(vector, z).simplified for vector in self.__block_residual)
-                f = evaluable.compile((self.__block_jacobian, block_residual))
-                self.__cache[key] = f
-            jac_blocks, res_blocks = f(arguments)
-            if self.is_constant_matrix:
-                key = 'jacobian'
-                jac = self.__cache.get(key)
-                if jac is None:
-                    jac = matrix.assemble_block_csr(jac_blocks)
-                    self.__cache[key] = jac
-            else:
-                jac = matrix.assemble_block_csr(jac_blocks)
-            res = numpy.concatenate(res_blocks)
-            res += jac @ numpy.concatenate([arguments[t].ravel() for t in self.trials])
+        if not self.is_linear:
+            eval_ = self._cached_compile(self.__block_jacobian, self.__block_residual)
+            jacblocks, resblocks = eval_(arguments)
+            res = numpy.concatenate(resblocks)
+            jac = matrix.assemble_block_csr(jacblocks)
         else:
-            if f is None:
-                f = evaluable.compile((self.__block_jacobian, self.__block_residual))
-                self.__cache[key] = f
-            jac_blocks, res_blocks = f(arguments)
-            jac = matrix.assemble_block_csr(jac_blocks)
-            res = numpy.concatenate(res_blocks)
+            trial = numpy.concatenate([arguments.pop(t).ravel() for t in self.trials])
+            if (jac := self.__cache.get("jac")) is None:
+                eval_ = self._cached_compile(self.__block_jacobian, self.__block_residual0)
+                jacblocks, res0blocks = eval_(arguments)
+                jac = matrix.assemble_block_csr(jacblocks)
+                if self.is_constant_matrix:
+                    self.__cache["jac"] = jac
+            else:
+                eval_ = self._cached_compile(self.__block_residual0)
+                res0blocks = eval_(arguments)
+            res0 = numpy.concatenate(res0blocks)
+            res = res0 + jac @ trial
         return jac.submatrix(free, free), res[free]
 
     @log.withcontext
@@ -388,38 +407,26 @@ class System:
         if not self.is_symmetric:
             raise Exception('value is not defined')
         arguments, free = self.construct(arguments, x, return_free=True)
-        key = 'jacobian_residual_value'
-        f = self.__cache.get(key)
-        if self.is_linear:
-            if f is None:
-                z = dict(zip(self.trials, map(evaluable.zeros_like, self.trial_args)))
-                f = evaluable.compile((
-                    self.__block_jacobian,
-                    tuple(evaluable.replace_arguments(vector, z) for vector in self.__block_residual),
-                    evaluable.replace_arguments(self.__value, z)))
-                self.__cache[key] = f
-            jac_blocks, res_blocks, val = f(arguments)
-            if self.is_constant_matrix:
-                key = 'jacobian'
-                jac = self.__cache.get(key)
-                if jac is None:
-                    jac = matrix.assemble_block_csr(jac_blocks)
-                    self.__cache[key] = jac
-            else:
-                jac = matrix.assemble_block_csr(jac_blocks)
-            res = numpy.concatenate(res_blocks)
-            x = numpy.concatenate([arguments[t].ravel() for t in self.trials])
-            jac_x = jac @ x
-            val = self.dtype(val + res @ x + .5 * (x @ jac_x))
-            res += jac_x
+        if not self.is_linear:
+            eval_ = self._cached_compile(self.__block_jacobian, self.__block_residual, self.__value)
+            jacblocks, resblocks, val = eval_(arguments)
+            res = numpy.concatenate(resblocks)
+            jac = matrix.assemble_block_csr(jacblocks)
         else:
-            if f is None:
-                f = evaluable.compile((self.__block_jacobian, self.__block_residual, self.__value))
-                self.__cache[key] = f
-            jac_blocks, res_blocks, val = f(arguments)
-            jac = matrix.assemble_block_csr(jac_blocks)
-            res = numpy.concatenate(res_blocks)
-            val = self.dtype(val)
+            trial = numpy.concatenate([arguments.pop(t).ravel() for t in self.trials])
+            if (jac := self.__cache.get("jac")) is None:
+                eval_ = self._cached_compile(self.__block_jacobian, self.__block_residual0, self.__value0)
+                jacblocks, res0blocks, val0 = eval_(arguments)
+                jac = matrix.assemble_block_csr(jacblocks)
+                if self.is_constant_matrix:
+                    self.__cache["jac"] = jac
+            else:
+                eval_ = self._cached_compile(self.__block_residual0, self.__value0)
+                res0blocks, val0 = eval_(arguments)
+            res0 = numpy.concatenate(res0blocks)
+            res = res0 + jac @ trial
+            val = val0 + 0.5 * (res0 + res) @ trial
+
         return jac.submatrix(free, free), res[free], val
 
     def assemble(self, arguments: ArrayDict, x=None):
@@ -437,7 +444,7 @@ class System:
 
     @cache.function
     @log.withcontext
-    def solve(self, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, tol: float = 0., miniter: int = 0, maxiter: Optional[int] = None, method: Optional[Callable[...,Union[MethodIter,MethodValue]]] = None) -> Tuple[ArrayDict, float]:
+    def solve(self, *, arguments: ArrayDict = {}, constrain: ArrayDict = {}, tol: float = 0., miniter: int = 1, maxiter: Optional[int] = None, method: Optional[Callable[...,Union[MethodIter,MethodValue]]] = None) -> Tuple[ArrayDict, float]:
         '''Solve the system.
 
         Determines the trial arguments for which the derivatives of the
